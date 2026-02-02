@@ -6,3 +6,6 @@ dist/
 # data outputs
 /data/graphs/
 tmp-integration-test/
+
+# viz generated data
+packages/viz/public/graph.json

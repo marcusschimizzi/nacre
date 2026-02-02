@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nacre — Memory Graph</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <div id="graph"></div>
+  <div id="ui">
+    <div id="search-bar">
+      <input type="text" id="search-input" placeholder="Search nodes..." autocomplete="off" />
+    </div>
+    <div id="controls">
+      <div id="filter-types"></div>
+      <div id="filter-edges"></div>
+      <label id="weight-filter">
+        <span>Min weight</span>
+        <input type="range" id="weight-slider" min="0" max="100" value="0" />
+        <span id="weight-value">0.00</span>
+      </label>
+    </div>
+    <div id="details" class="hidden"></div>
+    <div id="legend"></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
