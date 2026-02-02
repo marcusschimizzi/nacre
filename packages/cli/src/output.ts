@@ -49,11 +49,20 @@ export function formatConsolidationSummary(
   const totalNodes = Object.keys(result.graph.nodes).length;
   const totalEdges = Object.keys(result.graph.edges).length;
 
-  return [
+  const lines = [
     `Consolidation complete in ${elapsedMs}ms`,
     `  Nodes: ${totalNodes} total (${result.newNodes} new, ${result.reinforcedNodes} reinforced)`,
     `  Edges: ${totalEdges} total (${result.newEdges} new)`,
     `  Decayed: ${result.decayedEdges} edges`,
     `  Pending: ${result.pendingEdges.length} sub-threshold edges`,
-  ].join('\n');
+  ];
+
+  if (result.failures.length > 0) {
+    lines.push(`  Failures: ${result.failures.length} file(s) skipped`);
+    for (const f of result.failures) {
+      lines.push(`    ${f.path}: ${f.error}`);
+    }
+  }
+
+  return lines.join('\n');
 }

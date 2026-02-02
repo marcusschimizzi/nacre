@@ -126,6 +126,11 @@ export interface EntityMap {
   ignore: string[];
 }
 
+export interface FileFailure {
+  path: string;
+  error: string;
+}
+
 export interface ConsolidationResult {
   graph: NacreGraph;
   newNodes: number;
@@ -134,6 +139,7 @@ export interface ConsolidationResult {
   reinforcedEdges: number;
   decayedEdges: number;
   pendingEdges: PendingEdge[];
+  failures: FileFailure[];
 }
 
 // === Brief & Alerts Types (Phase 3) ===

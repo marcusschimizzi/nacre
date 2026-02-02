@@ -110,9 +110,38 @@ export function reinforceEdge(
   edge.lastReinforced = evidence.date;
   edge.stability =
     1 + graph.config.reinforcementBoost * Math.log(edge.reinforcementCount + 1);
-  edge.evidence.push(evidence);
+
+  if (edge.evidence.length < 20) {
+    edge.evidence.push(evidence);
+  }
 
   return edge;
+}
+
+export interface AdjacencyEntry {
+  edgeId: string;
+  neighborId: string;
+}
+
+export type AdjacencyMap = Record<string, AdjacencyEntry[]>;
+
+export function buildAdjacencyMap(graph: NacreGraph): AdjacencyMap {
+  const map: AdjacencyMap = {};
+
+  for (const nodeId of Object.keys(graph.nodes)) {
+    map[nodeId] = [];
+  }
+
+  for (const edge of Object.values(graph.edges)) {
+    if (map[edge.source]) {
+      map[edge.source].push({ edgeId: edge.id, neighborId: edge.target });
+    }
+    if (map[edge.target]) {
+      map[edge.target].push({ edgeId: edge.id, neighborId: edge.source });
+    }
+  }
+
+  return map;
 }
 
 export function findNodeByLabel(

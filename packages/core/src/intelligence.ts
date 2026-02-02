@@ -9,33 +9,26 @@ import type {
   ScoredNode,
   SuggestionResult,
 } from './types.js';
+import type { AdjacencyMap } from './graph.js';
+import { buildAdjacencyMap } from './graph.js';
 import { computeCurrentWeight, daysBetween } from './decay.js';
 import { getClusters } from './query.js';
 
-function countEdgesForNode(graph: NacreGraph, nodeId: string): number {
-  let count = 0;
-  for (const edge of Object.values(graph.edges)) {
-    if (edge.source === nodeId || edge.target === nodeId) count++;
+function getNeighborSet(adj: AdjacencyMap, nodeId: string): Set<string> {
+  const neighbors = new Set<string>();
+  for (const entry of adj[nodeId] ?? []) {
+    neighbors.add(entry.neighborId);
   }
-  return count;
-}
-
-function getDirectlyConnected(graph: NacreGraph, nodeId: string): Set<string> {
-  const connected = new Set<string>();
-  for (const edge of Object.values(graph.edges)) {
-    if (edge.source === nodeId) connected.add(edge.target);
-    else if (edge.target === nodeId) connected.add(edge.source);
-  }
-  return connected;
+  return neighbors;
 }
 
 function getSharedNeighborCount(
-  graph: NacreGraph,
+  adj: AdjacencyMap,
   nodeA: string,
   nodeB: string,
 ): number {
-  const neighborsA = getDirectlyConnected(graph, nodeA);
-  const neighborsB = getDirectlyConnected(graph, nodeB);
+  const neighborsA = getNeighborSet(adj, nodeA);
+  const neighborsB = getNeighborSet(adj, nodeB);
   let shared = 0;
   for (const n of neighborsA) {
     if (neighborsB.has(n)) shared++;
@@ -49,6 +42,7 @@ export function generateSuggestions(
   options: { maxSuggestions?: number; now?: Date } = {},
 ): SuggestionResult {
   const { maxSuggestions = 10 } = options;
+  const adj = buildAdjacencyMap(graph);
   const suggestions: ConnectionSuggestion[] = [];
 
   const threshold = graph.config.coOccurrenceThreshold;
@@ -89,7 +83,7 @@ export function generateSuggestions(
   );
 
   const highConnectivity = nodeIds
-    .map((id) => ({ id, edges: countEdgesForNode(graph, id) }))
+    .map((id) => ({ id, edges: adj[id]?.length ?? 0 }))
     .filter((n) => n.edges >= 3)
     .sort((a, b) => b.edges - a.edges)
     .slice(0, 30);
@@ -102,7 +96,7 @@ export function generateSuggestions(
 
       if (existingEdges.has(key) || pendingKeys.has(key)) continue;
 
-      const shared = getSharedNeighborCount(graph, a, b);
+      const shared = getSharedNeighborCount(adj, a, b);
       if (shared < 2) continue;
 
       const nodeA = graph.nodes[a];
@@ -135,8 +129,8 @@ export function generateSuggestions(
     if (edge.type !== 'co-occurrence') continue;
     if (edge.weight < 0.3) continue;
 
-    const srcEdgeCount = countEdgesForNode(graph, src.id);
-    const tgtEdgeCount = countEdgesForNode(graph, tgt.id);
+    const srcEdgeCount = adj[src.id]?.length ?? 0;
+    const tgtEdgeCount = adj[tgt.id]?.length ?? 0;
 
     const typeCombo = src.type < tgt.type
       ? `${src.type}+${tgt.type}`
@@ -234,12 +228,13 @@ export function analyzeSignificance(
   options: { recentDays?: number; now?: Date } = {},
 ): InsightResult {
   const { recentDays = 7, now = new Date() } = options;
+  const adj = buildAdjacencyMap(graph);
   const nowStr = now.toISOString();
   const nodes = Object.values(graph.nodes);
 
   const scored: ScoredNode[] = nodes.map((node) => {
     const daysSinceReinforced = daysBetween(node.lastReinforced, nowStr);
-    const edgeCount = countEdgesForNode(graph, node.id);
+    const edgeCount = adj[node.id]?.length ?? 0;
     const score =
       node.mentionCount * 0.3 +
       node.reinforcementCount * 0.3 +
@@ -280,13 +275,12 @@ export function analyzeSignificance(
       if (s.node.mentionCount < 2) return false;
       if (s.daysSinceReinforced <= recentDays) return false;
 
-      const connectedEdges = Object.values(graph.edges).filter(
-        (e) => e.source === s.node.id || e.target === s.node.id,
-      );
-      const avgWeight = connectedEdges.reduce((sum, e) => {
-        const w = computeCurrentWeight(e, now, graph.config);
-        return sum + w;
-      }, 0) / (connectedEdges.length || 1);
+      const entries = adj[s.node.id] ?? [];
+      const avgWeight = entries.reduce((sum, entry) => {
+        const edge = graph.edges[entry.edgeId];
+        if (!edge) return sum;
+        return sum + computeCurrentWeight(edge, now, graph.config);
+      }, 0) / (entries.length || 1);
 
       return avgWeight < 0.4;
     })

@@ -13,6 +13,8 @@ import type {
   SearchOptions,
   SearchResult,
 } from './types.js';
+import type { AdjacencyMap } from './graph.js';
+import { buildAdjacencyMap } from './graph.js';
 import { calculateStability, computeCurrentWeight, daysBetween } from './decay.js';
 import { levenshteinDistance, normalize } from './resolve.js';
 
@@ -35,6 +37,7 @@ export function getNeighbors(
   nodeId: string,
   hops = 1,
 ): { nodes: MemoryNode[]; edges: MemoryEdge[] } {
+  const adj = buildAdjacencyMap(graph);
   const visited = new Set<string>();
   const edgeSet = new Set<string>();
   let frontier = [nodeId];
@@ -43,17 +46,11 @@ export function getNeighbors(
   for (let hop = 0; hop < hops; hop++) {
     const next: string[] = [];
     for (const nid of frontier) {
-      for (const edge of Object.values(graph.edges)) {
-        let neighbor: string | null = null;
-        if (edge.source === nid) neighbor = edge.target;
-        else if (edge.target === nid) neighbor = edge.source;
-
-        if (neighbor !== null) {
-          edgeSet.add(edge.id);
-          if (!visited.has(neighbor)) {
-            visited.add(neighbor);
-            next.push(neighbor);
-          }
+      for (const entry of adj[nid] ?? []) {
+        edgeSet.add(entry.edgeId);
+        if (!visited.has(entry.neighborId)) {
+          visited.add(entry.neighborId);
+          next.push(entry.neighborId);
         }
       }
     }
@@ -75,17 +72,13 @@ export function getRelated(
   graph: NacreGraph,
   nodeId: string,
 ): MemoryNode[] {
-  const edgesWithWeight: Array<{ neighborId: string; weight: number }> = [];
+  const adj = buildAdjacencyMap(graph);
+  const entries = adj[nodeId] ?? [];
 
-  for (const edge of Object.values(graph.edges)) {
-    let neighborId: string | null = null;
-    if (edge.source === nodeId) neighborId = edge.target;
-    else if (edge.target === nodeId) neighborId = edge.source;
-
-    if (neighborId !== null) {
-      edgesWithWeight.push({ neighborId, weight: edge.weight });
-    }
-  }
+  const edgesWithWeight = entries.map((entry) => ({
+    neighborId: entry.neighborId,
+    weight: graph.edges[entry.edgeId]?.weight ?? 0,
+  }));
 
   edgesWithWeight.sort((a, b) => b.weight - a.weight);
 
@@ -111,6 +104,7 @@ export function getFading(
 export function getClusters(
   graph: NacreGraph,
 ): Record<string, string[]> {
+  const adj = buildAdjacencyMap(graph);
   const nodeIds = Object.keys(graph.nodes);
   const visited = new Set<string>();
   const clusters: Record<string, string[]> = {};
@@ -126,14 +120,10 @@ export function getClusters(
       const current = queue.shift()!;
       component.push(current);
 
-      for (const edge of Object.values(graph.edges)) {
-        let neighbor: string | null = null;
-        if (edge.source === current) neighbor = edge.target;
-        else if (edge.target === current) neighbor = edge.source;
-
-        if (neighbor !== null && !visited.has(neighbor) && graph.nodes[neighbor]) {
-          visited.add(neighbor);
-          queue.push(neighbor);
+      for (const entry of adj[current] ?? []) {
+        if (!visited.has(entry.neighborId) && graph.nodes[entry.neighborId]) {
+          visited.add(entry.neighborId);
+          queue.push(entry.neighborId);
         }
       }
     }
@@ -154,19 +144,12 @@ export function getClusters(
   return clusters;
 }
 
-function countEdgesForNode(graph: NacreGraph, nodeId: string): number {
-  let count = 0;
-  for (const edge of Object.values(graph.edges)) {
-    if (edge.source === nodeId || edge.target === nodeId) count++;
-  }
-  return count;
-}
-
 function scoreNodes(
   graph: NacreGraph,
   now: Date,
   recentDays: number,
 ): ScoredNode[] {
+  const adj = buildAdjacencyMap(graph);
   const nowStr = now.toISOString();
 
   return Object.values(graph.nodes).map((node) => {
@@ -175,7 +158,7 @@ function scoreNodes(
       ? 1.0 - (daysSinceReinforced / recentDays) * 0.5
       : Math.max(0, 0.5 - (daysSinceReinforced - recentDays) / 60);
 
-    const edgeCount = countEdgesForNode(graph, node.id);
+    const edgeCount = adj[node.id]?.length ?? 0;
 
     const score =
       node.mentionCount * 0.3 +

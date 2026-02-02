@@ -7,6 +7,7 @@ import {
   type NacreGraph,
   type PendingEdge,
   type ConsolidationResult,
+  type FileFailure,
 } from '@nacre/core';
 import { scanDirectories, detectChanges, hashFileSync } from './discover.js';
 import { parseMarkdown, extractSections } from './parse.js';
@@ -67,61 +68,67 @@ export async function consolidate(
   const edgesBefore = Object.keys(graph.edges).length;
   let reinforcedNodes = 0;
   let reinforcedEdges = 0;
+  const failures: FileFailure[] = [];
 
   for (const filePath of toProcess) {
-    const content = readFileSync(filePath, 'utf8');
-    const fileDate = extractDateFromFilename(filePath) ?? now.toISOString().slice(0, 10);
+    try {
+      const content = readFileSync(filePath, 'utf8');
+      const fileDate = extractDateFromFilename(filePath) ?? now.toISOString().slice(0, 10);
 
-    const tree = parseMarkdown(content);
-    const sections = extractSections(tree, filePath);
+      const tree = parseMarkdown(content);
+      const sections = extractSections(tree, filePath);
 
-    const structural = extractStructural(sections, filePath);
-    const nlpEntities = extractNLP(sections, filePath);
-    const custom = extractCustom(sections, filePath);
-    const allEntities = [...structural, ...nlpEntities, ...custom];
+      const structural = extractStructural(sections, filePath);
+      const nlpEntities = extractNLP(sections, filePath);
+      const custom = extractCustom(sections, filePath);
+      const allEntities = [...structural, ...nlpEntities, ...custom];
 
-    const nodesBeforeFile = Object.keys(graph.nodes).length;
-    const edgesBeforeFile = Object.keys(graph.edges).length;
+      const nodesBeforeFile = Object.keys(graph.nodes).length;
+      const edgesBeforeFile = Object.keys(graph.edges).length;
 
-    const result = processFileExtractions(
-      graph,
-      allEntities,
-      sections,
-      filePath,
-      fileDate,
-      entityMap,
-      pendingEdges,
-    );
-    pendingEdges = result.pendingEdges;
+      const result = processFileExtractions(
+        graph,
+        allEntities,
+        sections,
+        filePath,
+        fileDate,
+        entityMap,
+        pendingEdges,
+      );
+      pendingEdges = result.pendingEdges;
 
-    const nodesAfterFile = Object.keys(graph.nodes).length;
-    const edgesAfterFile = Object.keys(graph.edges).length;
+      const nodesAfterFile = Object.keys(graph.nodes).length;
+      const edgesAfterFile = Object.keys(graph.edges).length;
 
-    reinforcedNodes += Math.max(
-      0,
-      allEntities.length - (nodesAfterFile - nodesBeforeFile),
-    );
-    reinforcedEdges += Math.max(
-      0,
-      (edgesAfterFile - edgesBeforeFile),
-    );
+      reinforcedNodes += Math.max(
+        0,
+        allEntities.length - (nodesAfterFile - nodesBeforeFile),
+      );
+      reinforcedEdges += Math.max(
+        0,
+        (edgesAfterFile - edgesBeforeFile),
+      );
 
-    const hash = hashFileSync(filePath);
-    const existingIdx = graph.processedFiles.findIndex(
-      (pf) => pf.path === filePath,
-    );
-    if (existingIdx >= 0) {
-      graph.processedFiles[existingIdx] = {
-        path: filePath,
-        hash,
-        lastProcessed: now.toISOString(),
-      };
-    } else {
-      graph.processedFiles.push({
-        path: filePath,
-        hash,
-        lastProcessed: now.toISOString(),
-      });
+      const hash = hashFileSync(filePath);
+      const existingIdx = graph.processedFiles.findIndex(
+        (pf) => pf.path === filePath,
+      );
+      if (existingIdx >= 0) {
+        graph.processedFiles[existingIdx] = {
+          path: filePath,
+          hash,
+          lastProcessed: now.toISOString(),
+        };
+      } else {
+        graph.processedFiles.push({
+          path: filePath,
+          hash,
+          lastProcessed: now.toISOString(),
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      failures.push({ path: filePath, error: message });
     }
   }
 
@@ -148,5 +155,6 @@ export async function consolidate(
     reinforcedEdges,
     decayedEdges: decayed,
     pendingEdges,
+    failures,
   };
 }
