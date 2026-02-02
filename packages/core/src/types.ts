@@ -135,3 +135,64 @@ export interface ConsolidationResult {
   decayedEdges: number;
   pendingEdges: PendingEdge[];
 }
+
+// === Brief & Alerts Types (Phase 3) ===
+
+export interface ScoredNode {
+  node: MemoryNode;
+  score: number;
+  edgeCount: number;
+  daysSinceReinforced: number;
+}
+
+export interface FadingEdgeInfo {
+  edge: MemoryEdge;
+  sourceLabel: string;
+  targetLabel: string;
+  currentWeight: number;
+  daysSinceReinforced: number;
+  estimatedDaysUntilDormant: number;
+}
+
+export interface ClusterInfo {
+  hub: string;
+  hubType: EntityType;
+  members: string[];
+  size: number;
+}
+
+export interface GraphStats {
+  totalNodes: number;
+  totalEdges: number;
+  entityTypeCounts: Record<string, number>;
+  edgeTypeCounts: Record<string, number>;
+  averageWeight: number;
+  dormantEdges: number;
+}
+
+export interface BriefResult {
+  topEntities: ScoredNode[];
+  activeNodes: ScoredNode[];
+  fadingEdges: FadingEdgeInfo[];
+  clusters: ClusterInfo[];
+  stats: GraphStats;
+  summary: string;
+}
+
+export interface AlertResult {
+  fadingEdges: FadingEdgeInfo[];
+  orphanNodes: MemoryNode[];
+  healthScore: number;
+  summary: string;
+}
+
+export interface SearchOptions {
+  type?: EntityType;
+  sinceDays?: number;
+  now?: Date;
+}
+
+export interface SearchResult {
+  node: MemoryNode;
+  matchScore: number;
+}

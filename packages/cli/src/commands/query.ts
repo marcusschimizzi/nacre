@@ -7,6 +7,8 @@ import {
   getFading,
   getClusters,
   generateBrief,
+  searchNodes,
+  type EntityType,
   type NacreGraph,
 } from '@nacre/core';
 import { formatText, formatJSON } from '../output.js';
@@ -19,7 +21,7 @@ export default defineCommand({
   args: {
     search: {
       type: 'positional',
-      description: 'Entity to search for',
+      description: 'Entity to search for (supports multiple space-separated terms)',
       required: false,
     },
     hops: {
@@ -42,6 +44,19 @@ export default defineCommand({
     brief: {
       type: 'boolean',
       description: 'Generate context briefing',
+    },
+    search_: {
+      type: 'boolean',
+      description: 'Fuzzy multi-term search across all nodes',
+      alias: 's',
+    },
+    type: {
+      type: 'string',
+      description: 'Filter by entity type (person, project, tool, concept, etc.)',
+    },
+    since: {
+      type: 'string',
+      description: 'Filter to nodes seen within N days (e.g. 7, 30)',
     },
     format: {
       type: 'string',
@@ -66,10 +81,16 @@ export default defineCommand({
 
     const fmt = args.format as string;
     const now = new Date();
+    const typeFilter = args.type as EntityType | undefined;
+    const sinceDays = args.since ? parseInt(args.since as string, 10) : undefined;
 
     if (args.brief) {
-      const text = generateBrief(graph, { now });
-      console.log(text);
+      const result = generateBrief(graph, { now });
+      if (fmt === 'json') {
+        console.log(formatJSON(result));
+      } else {
+        console.log(result.summary);
+      }
       return;
     }
 
@@ -95,13 +116,42 @@ export default defineCommand({
 
     const search = args.search as string | undefined;
     if (!search) {
-      console.error('Provide a search term, or use --brief, --clusters, or --fading');
+      if (typeFilter || sinceDays !== undefined) {
+        const results = searchNodes(graph, [], { type: typeFilter, sinceDays, now });
+        if (fmt === 'json') {
+          console.log(formatJSON(results));
+        } else {
+          const nodes = results.map((r) => r.node);
+          console.log(formatText({ nodes }));
+        }
+        return;
+      }
+      console.error('Provide a search term, or use --brief, --clusters, --fading, --type, or --since');
       process.exit(1);
+    }
+
+    if (args.search_ || typeFilter || sinceDays !== undefined) {
+      const terms = search.split(/\s+/).filter((t) => t.length > 0);
+      const results = searchNodes(graph, terms, { type: typeFilter, sinceDays, now });
+      if (fmt === 'json') {
+        console.log(formatJSON(results));
+      } else {
+        if (results.length === 0) {
+          console.log('No matches found.');
+        } else {
+          console.log(`Found ${results.length} match${results.length === 1 ? '' : 'es'}:`);
+          for (const r of results) {
+            console.log(`  ${r.node.label} (${r.node.type}) — score: ${r.matchScore.toFixed(2)}, mentions: ${r.node.mentionCount}`);
+          }
+        }
+      }
+      return;
     }
 
     const node = findNode(graph, search);
     if (!node) {
       console.error(`Node not found: ${search}`);
+      console.error('Tip: use -s for fuzzy search, or --type / --since to filter');
       process.exit(1);
     }
 

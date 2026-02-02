@@ -1,4 +1,4 @@
-import type { ConsolidationResult, MemoryNode, MemoryEdge } from '@nacre/core';
+import type { ConsolidationResult, MemoryNode, MemoryEdge, BriefResult } from '@nacre/core';
 
 export function formatJSON(data: unknown): string {
   return JSON.stringify(data, null, 2);
@@ -8,12 +8,12 @@ export function formatText(data: {
   nodes?: MemoryNode[];
   edges?: MemoryEdge[];
   clusters?: Record<string, string[]>;
-  brief?: string;
+  brief?: BriefResult;
 }): string {
   const lines: string[] = [];
 
   if (data.brief) {
-    lines.push(data.brief);
+    lines.push(data.brief.summary);
   }
 
   if (data.clusters) {
