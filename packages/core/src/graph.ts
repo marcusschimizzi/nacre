@@ -14,7 +14,7 @@ export function generateNodeId(label: string): string {
   return createHash('sha256')
     .update(label.toLowerCase().trim())
     .digest('hex')
-    .slice(0, 12);
+    .slice(0, 16);
 }
 
 export function generateEdgeId(source: string, target: string, type: EdgeType): string {
@@ -24,7 +24,7 @@ export function generateEdgeId(source: string, target: string, type: EdgeType): 
 
 export function createGraph(config?: Partial<GraphConfig>): NacreGraph {
   return {
-    version: 1,
+    version: 2,
     lastConsolidated: '',
     processedFiles: [],
     nodes: {},

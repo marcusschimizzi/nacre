@@ -1,7 +1,7 @@
 export type { ConsolidateOptions } from './pipeline.js';
 export { consolidate } from './pipeline.js';
 
-export { hashFile, scanDirectories, detectChanges } from './discover.js';
+export { hashFile, scanDirectories, detectChanges, toRelativePath } from './discover.js';
 export { parseMarkdown, extractSections } from './parse.js';
 export type { Section } from './parse.js';
 export { extractStructural } from './extract/structural.js';

@@ -96,11 +96,28 @@ describe('consolidation pipeline (integration)', () => {
       graph.processedFiles.length >= 14,
       `expected 14+ processed files, got ${graph.processedFiles.length}`,
     );
+
+    for (const pf of graph.processedFiles) {
+      assert.ok(
+        !pf.path.startsWith('/'),
+        `processedFiles should use relative paths, got absolute: ${pf.path}`,
+      );
+    }
   });
 
   it('persists graph.json and pending-edges.json', async () => {
     assert.ok(existsSync(resolve(OUT_DIR, 'graph.json')), 'graph.json should exist');
     assert.ok(existsSync(resolve(OUT_DIR, 'pending-edges.json')), 'pending-edges.json should exist');
+  });
+
+  it('generates 16-char hex node IDs', async () => {
+    const graphPath = resolve(OUT_DIR, 'graph.json');
+    const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as NacreGraph;
+
+    for (const id of Object.keys(graph.nodes)) {
+      assert.equal(id.length, 16, `node ID should be 16 hex chars, got ${id.length}: ${id}`);
+      assert.match(id, /^[0-9a-f]{16}$/, `node ID should be hex: ${id}`);
+    }
   });
 
   it('incremental run produces 0 new nodes', async () => {

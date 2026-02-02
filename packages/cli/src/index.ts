@@ -5,6 +5,7 @@ import briefCmd from './commands/brief.js';
 import alertsCmd from './commands/alerts.js';
 import suggestCmd from './commands/suggest.js';
 import insightsCmd from './commands/insights.js';
+import serveCmd from './commands/serve.js';
 
 const main = defineCommand({
   meta: {
@@ -20,6 +21,7 @@ const main = defineCommand({
     alerts: alertsCmd,
     suggest: suggestCmd,
     insights: insightsCmd,
+    serve: serveCmd,
   },
 });
 

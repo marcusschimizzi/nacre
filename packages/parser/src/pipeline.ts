@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { basename, resolve, relative } from 'node:path';
 import {
   createGraph,
   loadEntityMap,
@@ -59,8 +59,9 @@ export async function consolidate(
     opts.entityMapPath ?? resolve('data', 'entity-map.json'),
   );
 
+  const basePath = resolve(opts.inputs[0]);
   const files = await scanDirectories(opts.inputs);
-  const changes = await detectChanges(files, graph.processedFiles);
+  const changes = await detectChanges(files, graph.processedFiles, basePath);
 
   const toProcess = [...changes.newFiles, ...changes.changedFiles];
 
@@ -110,18 +111,19 @@ export async function consolidate(
       );
 
       const hash = hashFileSync(filePath);
+      const relPath = relative(basePath, filePath);
       const existingIdx = graph.processedFiles.findIndex(
-        (pf) => pf.path === filePath,
+        (pf) => pf.path === relPath,
       );
       if (existingIdx >= 0) {
         graph.processedFiles[existingIdx] = {
-          path: filePath,
+          path: relPath,
           hash,
           lastProcessed: now.toISOString(),
         };
       } else {
         graph.processedFiles.push({
-          path: filePath,
+          path: relPath,
           hash,
           lastProcessed: now.toISOString(),
         });

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { resolve, extname } from 'node:path';
+import { resolve, relative, extname } from 'node:path';
 import type { DiscoveryResult, FileHash } from '@nacre/core';
 
 export async function hashFile(filePath: string): Promise<string> {
@@ -48,13 +48,19 @@ export async function scanDirectories(inputs: string[]): Promise<string[]> {
   return files.sort();
 }
 
+export function toRelativePath(absPath: string, basePath: string): string {
+  return relative(basePath, absPath);
+}
+
 export async function detectChanges(
   files: string[],
   processedFiles: FileHash[],
+  basePath?: string,
 ): Promise<DiscoveryResult> {
   const hashMap = new Map<string, string>();
   for (const pf of processedFiles) {
-    hashMap.set(pf.path, pf.hash);
+    const key = basePath ? resolve(basePath, pf.path) : pf.path;
+    hashMap.set(key, pf.hash);
   }
 
   const result: DiscoveryResult = {
