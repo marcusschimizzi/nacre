@@ -75,6 +75,13 @@ export interface ForceLink {
   reinforcementCount: number;
   firstFormed: string;
   lastReinforced: string;
+  stability: number;
+}
+
+export interface GraphConfig {
+  decayRate: number;
+  reinforcementBoost: number;
+  visibilityThreshold: number;
 }
 
 export interface AppState {
@@ -85,4 +92,5 @@ export interface AppState {
   visibleTypes: Set<string>;
   visibleEdgeTypes: Set<string>;
   minWeight: number;
+  scrubDate: Date | null;
 }

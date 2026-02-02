@@ -1,6 +1,6 @@
 import ForceGraph3D from '3d-force-graph';
 import * as THREE from 'three';
-import type { ForceNode, ForceLink, AppState } from './types.ts';
+import type { ForceNode, ForceLink, AppState, GraphConfig } from './types.ts';
 import {
   createNodeObject,
   edgeWidth,
@@ -10,6 +10,11 @@ import {
 import { createTemporalForce } from './forces.ts';
 import { showNodeDetails, hideDetails } from './details.ts';
 import { BG_COLOR, NACRE_THRESHOLD, VISIBILITY_THRESHOLD } from './theme.ts';
+import {
+  computeWeightAtDate,
+  isNodeVisibleAtDate,
+  isEdgeVisibleAtDate,
+} from './time-scrub.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Graph = any;
@@ -19,11 +24,17 @@ export function createGraphView(
   nodes: ForceNode[],
   links: ForceLink[],
   state: AppState,
+  config: GraphConfig,
 ): Graph {
   const nodeMap = new Map<string, ForceNode>();
   for (const n of nodes) nodeMap.set(n.id, n);
 
   const now = new Date().toISOString();
+
+  function getEffectiveWeight(link: ForceLink): number {
+    if (!state.scrubDate) return link.weight;
+    return computeWeightAtDate(link, state.scrubDate, config);
+  }
 
   const graph: Graph = new ForceGraph3D(container);
 
@@ -36,22 +47,26 @@ export function createGraphView(
     .nodeLabel('')
     .nodeVisibility((node: ForceNode) => {
       if (!state.visibleTypes.has(node.type)) return false;
+      if (state.scrubDate && !isNodeVisibleAtDate(node.firstSeen, state.scrubDate)) return false;
       return true;
     })
-    .linkWidth((link: ForceLink) => edgeWidth(link))
+    .linkWidth((link: ForceLink) => edgeWidth(link, getEffectiveWeight(link)))
     .linkColor((link: ForceLink) => edgeColor(link))
     .linkOpacity(0.6)
     .linkVisibility((link: ForceLink) => {
       if (!state.visibleEdgeTypes.has(link.type)) return false;
-      if (link.weight < state.minWeight) return false;
-      if (link.weight < VISIBILITY_THRESHOLD) return false;
+      if (state.scrubDate && !isEdgeVisibleAtDate(link.firstFormed, state.scrubDate)) return false;
+      const w = getEffectiveWeight(link);
+      if (w < state.minWeight) return false;
+      if (w < VISIBILITY_THRESHOLD) return false;
       return true;
     })
     .linkDirectionalArrowLength((link: ForceLink) => link.directed ? 4 : 0)
     .linkDirectionalArrowRelPos(0.85)
     .linkDirectionalArrowColor((link: ForceLink) => edgeColor(link))
     .linkDirectionalParticles((link: ForceLink) => {
-      if (link.weight >= NACRE_THRESHOLD && link.type === 'explicit') return 2;
+      const w = getEffectiveWeight(link);
+      if (w >= NACRE_THRESHOLD && link.type === 'explicit') return 2;
       return 0;
     })
     .linkDirectionalParticleWidth(1.5)
@@ -70,10 +85,11 @@ export function createGraphView(
     linkForce
       .distance((link: ForceLink) => {
         const base = 40;
-        const weightFactor = 1 - Math.min(link.weight, 1);
+        const w = getEffectiveWeight(link);
+        const weightFactor = 1 - Math.min(w, 1);
         return base + weightFactor * 80;
       })
-      .strength((link: ForceLink) => 0.1 + link.weight * 0.3);
+      .strength((link: ForceLink) => 0.1 + getEffectiveWeight(link) * 0.3);
   }
 
   graph.warmupTicks(80);
@@ -83,6 +99,14 @@ export function createGraphView(
   setupInteraction(graph, state, links, nodeMap);
 
   return graph;
+}
+
+export function refreshGraph(graph: Graph): void {
+  graph
+    .nodeVisibility(graph.nodeVisibility())
+    .linkVisibility(graph.linkVisibility())
+    .linkWidth(graph.linkWidth())
+    .linkDirectionalParticles(graph.linkDirectionalParticles());
 }
 
 function setupLighting(graph: Graph): void {

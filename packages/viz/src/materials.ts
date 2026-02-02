@@ -57,8 +57,9 @@ export function createNodeObject(node: ForceNode): THREE.Mesh {
   return mesh;
 }
 
-export function edgeWidth(link: ForceLink): number {
-  const w = link.weight / link.baseWeight;
+export function edgeWidth(link: ForceLink, weightOverride?: number): number {
+  const weight = weightOverride ?? link.weight;
+  const w = link.baseWeight > 0 ? weight / link.baseWeight : 0;
   return EDGE_BASE_WIDTH + (EDGE_MAX_WIDTH - EDGE_BASE_WIDTH) * Math.min(w, 1);
 }
 

@@ -130,6 +130,37 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+#time-scrub {
+  border-top: 1px solid rgba(120, 120, 180, 0.15);
+  padding-top: 10px;
+}
+
+#time-scrub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+#time-scrub-date {
+  color: #b4a0ff;
+  font-variant-numeric: tabular-nums;
+}
+
+#time-slider {
+  width: 100%;
+  accent-color: #b4a0ff;
+  cursor: pointer;
+}
+
+#time-scrub-range {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: rgba(160, 160, 200, 0.4);
+  margin-top: 2px;
+}
+
 #details {
   position: absolute;
   bottom: 16px;

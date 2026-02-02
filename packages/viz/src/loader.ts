@@ -1,13 +1,20 @@
-import type { NacreGraphData, ForceNode, ForceLink } from './types.ts';
+import type { NacreGraphData, ForceNode, ForceLink, GraphConfig } from './types.ts';
 
-export async function loadGraph(url: string): Promise<{ nodes: ForceNode[]; links: ForceLink[] }> {
+export interface LoadResult {
+  nodes: ForceNode[];
+  links: ForceLink[];
+  config: GraphConfig;
+  dateRange: { earliest: string; latest: string };
+}
+
+export async function loadGraph(url: string): Promise<LoadResult> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to load graph: ${res.status}`);
   const data: NacreGraphData = await res.json();
   return transformGraph(data);
 }
 
-export function transformGraph(data: NacreGraphData): { nodes: ForceNode[]; links: ForceLink[] } {
+export function transformGraph(data: NacreGraphData): LoadResult {
   const edgeCounts = new Map<string, number>();
   const maxWeights = new Map<string, number>();
 
@@ -47,9 +54,23 @@ export function transformGraph(data: NacreGraphData): { nodes: ForceNode[]; link
     reinforcementCount: e.reinforcementCount,
     firstFormed: e.firstFormed,
     lastReinforced: e.lastReinforced,
+    stability: e.stability,
   }));
 
-  return { nodes, links };
+  let earliest = '';
+  let latest = '';
+  for (const n of nodes) {
+    if (!earliest || n.firstSeen < earliest) earliest = n.firstSeen;
+    if (!latest || n.lastReinforced > latest) latest = n.lastReinforced;
+  }
+
+  const config: GraphConfig = {
+    decayRate: data.config.decayRate,
+    reinforcementBoost: data.config.reinforcementBoost,
+    visibilityThreshold: data.config.visibilityThreshold,
+  };
+
+  return { nodes, links, config, dateRange: { earliest, latest } };
 }
 
 export function getEntityTypes(nodes: ForceNode[]): string[] {

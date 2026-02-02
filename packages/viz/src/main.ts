@@ -1,6 +1,6 @@
 import { loadGraph, getEntityTypes, getEdgeTypes } from './loader.ts';
-import { createGraphView, searchAndFocus } from './graph-view.ts';
-import { initControls } from './controls.ts';
+import { createGraphView, refreshGraph, searchAndFocus } from './graph-view.ts';
+import { initControls, initTimeScrub } from './controls.ts';
 import type { AppState, ForceNode } from './types.ts';
 
 const GRAPH_URL = '/graph.json';
@@ -13,12 +13,13 @@ const state: AppState = {
   visibleTypes: new Set(),
   visibleEdgeTypes: new Set(),
   minWeight: 0,
+  scrubDate: null,
 };
 
 async function init(): Promise<void> {
   const container = document.getElementById('graph')!;
 
-  let data: { nodes: ForceNode[]; links: any[] };
+  let data: Awaited<ReturnType<typeof loadGraph>>;
   try {
     data = await loadGraph(GRAPH_URL);
   } catch {
@@ -38,11 +39,17 @@ async function init(): Promise<void> {
   const entityTypes = getEntityTypes(data.nodes);
   const edgeTypes = getEdgeTypes(data.links);
 
-  const graph = createGraphView(container, data.nodes, data.links, state);
+  const graph = createGraphView(container, data.nodes, data.links, state, data.config);
 
   initControls(state, entityTypes, edgeTypes, () => {
-    (graph as any).nodeVisibility((graph as any).nodeVisibility());
-    (graph as any).linkVisibility((graph as any).linkVisibility());
+    refreshGraph(graph);
+  });
+
+  const earliest = new Date(data.dateRange.earliest);
+  const latest = new Date(data.dateRange.latest);
+
+  initTimeScrub(state, earliest, latest, () => {
+    refreshGraph(graph);
   });
 
   const searchInput = document.getElementById('search-input') as HTMLInputElement;

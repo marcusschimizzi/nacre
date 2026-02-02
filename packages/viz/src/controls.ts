@@ -1,5 +1,9 @@
 import type { AppState } from './types.ts';
 import { NODE_COLORS, EDGE_STYLES } from './theme.ts';
+import {
+  sliderValueToDate,
+  formatDateLabel,
+} from './time-scrub.ts';
 
 export function initControls(
   state: AppState,
@@ -11,6 +15,34 @@ export function initControls(
   initEdgeTypeFilters(state, edgeTypes, onFilterChange);
   initWeightSlider(state, onFilterChange);
   initLegend(entityTypes);
+}
+
+export function initTimeScrub(
+  state: AppState,
+  earliest: Date,
+  latest: Date,
+  onScrubChange: () => void,
+): void {
+  const slider = document.getElementById('time-slider') as HTMLInputElement;
+  const dateLabel = document.getElementById('time-scrub-date')!;
+  const startLabel = document.getElementById('time-scrub-start')!;
+  const endLabel = document.getElementById('time-scrub-end')!;
+
+  startLabel.textContent = formatDateLabel(earliest);
+  endLabel.textContent = formatDateLabel(latest);
+  dateLabel.textContent = formatDateLabel(latest);
+
+  slider.addEventListener('input', () => {
+    const value = parseInt(slider.value, 10);
+    const date = sliderValueToDate(value, earliest, latest);
+
+    state.scrubDate = value >= 100 ? null : date;
+    dateLabel.textContent = state.scrubDate
+      ? formatDateLabel(date)
+      : formatDateLabel(latest);
+
+    onScrubChange();
+  });
 }
 
 function initEntityTypeFilters(
