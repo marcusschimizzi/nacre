@@ -55,6 +55,7 @@ export function transformGraph(data: NacreGraphData): LoadResult {
     firstFormed: e.firstFormed,
     lastReinforced: e.lastReinforced,
     stability: e.stability,
+    evidence: e.evidence?.slice(0, 5),
   }));
 
   let earliest = '';

@@ -76,6 +76,7 @@ export interface ForceLink {
   firstFormed: string;
   lastReinforced: string;
   stability: number;
+  evidence?: Array<{ file: string; date: string; context: string }>;
 }
 
 export interface GraphConfig {

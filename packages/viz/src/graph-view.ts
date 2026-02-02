@@ -6,6 +6,7 @@ import {
   edgeWidth,
   edgeColor,
   edgeOpacity,
+  createNacreMaterial,
 } from './materials.ts';
 import { createTemporalForce } from './forces.ts';
 import { showNodeDetails, hideDetails } from './details.ts';
@@ -71,7 +72,39 @@ export function createGraphView(
     })
     .linkDirectionalParticleWidth(1.5)
     .linkDirectionalParticleSpeed(0.004)
-    .linkDirectionalParticleColor((link: ForceLink) => edgeColor(link));
+    .linkDirectionalParticleColor((link: ForceLink) => edgeColor(link))
+    .linkThreeObjectExtend(true)
+    .linkThreeObject((link: ForceLink) => {
+      const w = getEffectiveWeight(link);
+      if (w < NACRE_THRESHOLD) return false;
+
+      const radius = edgeWidth(link, w) * 0.6;
+      const geometry = new THREE.CylinderGeometry(radius, radius, 1, 8, 1, true);
+      geometry.rotateX(Math.PI / 2); // default Y-axis → Z-axis for lookAt
+      const material = createNacreMaterial(w, graph.camera());
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData.isNacre = true;
+      return mesh;
+    })
+    .linkPositionUpdate((obj: THREE.Object3D | undefined, coords: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }) => {
+      if (!obj?.userData?.isNacre) return false;
+
+      const { start, end } = coords;
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const dz = end.z - start.z;
+      const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      obj.position.set(
+        (start.x + end.x) / 2,
+        (start.y + end.y) / 2,
+        (start.z + end.z) / 2,
+      );
+      obj.scale.set(1, 1, length);
+      obj.lookAt(end.x, end.y, end.z);
+
+      return true;
+    });
 
   graph.d3Force('temporal', createTemporalForce(nodes, now));
 
@@ -97,6 +130,7 @@ export function createGraphView(
 
   setupLighting(graph);
   setupInteraction(graph, state, links, nodeMap);
+  startLabelVisibilityLoop(graph, nodes);
 
   return graph;
 }
@@ -123,6 +157,29 @@ function setupLighting(graph: Graph): void {
   const point = new THREE.PointLight(0xb4a0ff, 0.4, 500);
   point.position.set(-50, -100, 50);
   scene.add(point);
+}
+
+const LABEL_VISIBILITY_DISTANCE = 150;
+
+function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
+  function tick() {
+    const cam = graph.camera();
+    if (!cam) { requestAnimationFrame(tick); return; }
+    const camPos = cam.position;
+
+    for (const node of nodes) {
+      const obj = (node as unknown as { __threeObj?: THREE.Mesh }).__threeObj;
+      if (!obj) continue;
+      const dist = camPos.distanceTo(obj.position);
+      for (const child of obj.children) {
+        if (child.userData?.isLabel) {
+          child.visible = dist < LABEL_VISIBILITY_DISTANCE;
+        }
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 function setupInteraction(
@@ -164,7 +221,49 @@ function setupInteraction(
     updateHighlights(graph, state);
   });
 
+  graph.onLinkHover((link: ForceLink | null) => {
+    if (state.hoveredNode) return;
+
+    if (link) {
+      const src = typeof link.source === 'string' ? link.source : link.source.id;
+      const tgt = typeof link.target === 'string' ? link.target : link.target.id;
+      const srcLabel = nodeMap.get(src)?.label ?? src;
+      const tgtLabel = nodeMap.get(tgt)?.label ?? tgt;
+
+      let html = `
+        <div class="label">${escapeTooltipHtml(srcLabel)} → ${escapeTooltipHtml(tgtLabel)}</div>
+        <div class="meta">${link.type} &middot; weight ${link.weight.toFixed(2)}</div>
+      `;
+
+      if (link.evidence?.length) {
+        const items = link.evidence.slice(0, 3).map((e) => {
+          const ctx = e.context.length > 80 ? e.context.slice(0, 77) + '…' : e.context;
+          return `<div class="evidence">${escapeTooltipHtml(ctx)}</div>`;
+        });
+        html += items.join('');
+      }
+
+      tooltip.style.display = 'block';
+      tooltip.innerHTML = html;
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
+
+  let lastClickedNode: ForceNode | null = null;
+  let lastClickTime = 0;
+
   graph.onNodeClick((node: ForceNode) => {
+    const now = Date.now();
+    const isDoubleClick = lastClickedNode?.id === node.id && (now - lastClickTime) < 350;
+    lastClickedNode = node;
+    lastClickTime = now;
+
+    if (isDoubleClick) {
+      flyToCluster(graph, node, links, nodeMap);
+      return;
+    }
+
     state.selectedNode = node;
     flyToNode(graph, node);
     showNodeDetails(node, links, nodeMap, (neighborId) => {
@@ -214,6 +313,56 @@ function flyToNode(graph: Graph, node: ForceNode): void {
   );
 }
 
+function flyToCluster(
+  graph: Graph,
+  node: ForceNode,
+  links: ForceLink[],
+  nodeMap: Map<string, ForceNode>,
+): void {
+  const neighborIds = new Set<string>();
+  neighborIds.add(node.id);
+
+  for (const link of links) {
+    const src = typeof link.source === 'string' ? link.source : link.source.id;
+    const tgt = typeof link.target === 'string' ? link.target : link.target.id;
+    if (src === node.id) neighborIds.add(tgt);
+    if (tgt === node.id) neighborIds.add(src);
+  }
+
+  let cx = 0, cy = 0, cz = 0;
+  let count = 0;
+  let maxSpread = 0;
+
+  const centerX = node.x ?? 0;
+  const centerY = node.y ?? 0;
+  const centerZ = node.z ?? 0;
+
+  for (const id of neighborIds) {
+    const n = nodeMap.get(id);
+    if (!n) continue;
+    const nx = n.x ?? 0;
+    const ny = n.y ?? 0;
+    const nz = n.z ?? 0;
+    cx += nx; cy += ny; cz += nz;
+    count++;
+    const dist = Math.hypot(nx - centerX, ny - centerY, nz - centerZ);
+    if (dist > maxSpread) maxSpread = dist;
+  }
+
+  if (count === 0) return;
+  cx /= count; cy /= count; cz /= count;
+
+  const viewDist = Math.max(maxSpread * 1.5, 80);
+  const dist = Math.hypot(cx, cy, cz) || 1;
+  const ratio = 1 + viewDist / dist;
+
+  graph.cameraPosition(
+    { x: cx * ratio, y: cy * ratio, z: cz * ratio },
+    { x: cx, y: cy, z: cz },
+    1500,
+  );
+}
+
 function updateHighlights(graph: Graph, state: AppState): void {
   graph
     .nodeThreeObject(graph.nodeThreeObject())
@@ -229,6 +378,12 @@ function updateHighlights(graph: Graph, state: AppState): void {
       }
       return edgeOpacity(link);
     });
+}
+
+function escapeTooltipHtml(text: string): string {
+  const el = document.createElement('span');
+  el.textContent = text;
+  return el.innerHTML;
 }
 
 export function searchAndFocus(

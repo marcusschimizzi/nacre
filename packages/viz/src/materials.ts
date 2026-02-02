@@ -28,6 +28,35 @@ export function isRecent(node: ForceNode, days: number = 7): boolean {
   return (now - last) / 86_400_000 <= days;
 }
 
+export function createLabelSprite(text: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  const fontSize = 48;
+  ctx.font = `${fontSize}px sans-serif`;
+  const metrics = ctx.measureText(text);
+  const textWidth = metrics.width;
+
+  canvas.width = Math.ceil(textWidth) + 16;
+  canvas.height = fontSize + 16;
+
+  ctx.font = `${fontSize}px sans-serif`;
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 8, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(spriteMat);
+
+  const aspect = canvas.width / canvas.height;
+  sprite.scale.set(aspect * 4, 4, 1);
+  sprite.visible = false;
+  sprite.userData.isLabel = true;
+
+  return sprite;
+}
+
 export function createNodeObject(node: ForceNode): THREE.Mesh {
   const size = nodeSize(node);
   const color = nodeColor(node.type);
@@ -53,6 +82,10 @@ export function createNodeObject(node: ForceNode): THREE.Mesh {
     const glow = new THREE.Mesh(glowGeometry, glowMaterial);
     mesh.add(glow);
   }
+
+  const label = createLabelSprite(node.label);
+  label.position.y = size + 3;
+  mesh.add(label);
 
   return mesh;
 }
