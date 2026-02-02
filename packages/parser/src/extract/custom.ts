@@ -9,9 +9,28 @@ const KNOWN_TOOLS = [
   'compromise.js', 'remark', 'unified',
 ];
 
+const KNOWN_PROJECTS = [
+  'tide-pool', 'nacre', 'honeycomber', 'strata', 'parley', 
+  'reef', 'push', 'mock-my-draft',
+];
+
+const KNOWN_PEOPLE = [
+  'Marcus', 'Lobstar', 'Sarah',
+];
+
 const TOOL_PATTERNS = KNOWN_TOOLS.map((tool) => ({
   pattern: new RegExp(`\\b${escapeRegex(tool)}\\b`, 'gi'),
   canonical: tool,
+}));
+
+const PROJECT_PATTERNS = KNOWN_PROJECTS.map((project) => ({
+  pattern: new RegExp(`\\b${escapeRegex(project)}\\b`, 'gi'),
+  canonical: project,
+}));
+
+const PERSON_PATTERNS = KNOWN_PEOPLE.map((person) => ({
+  pattern: new RegExp(`\\b${escapeRegex(person)}\\b`, 'g'),
+  canonical: person,
 }));
 
 const GITHUB_URL_RE = /github\.com\/([a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+)/g;
@@ -31,7 +50,10 @@ export function extractCustom(
   for (const section of sections) {
     const { content, headingPath, startLine } = section;
     const seenTools = new Set<string>();
+    const seenProjects = new Set<string>();
+    const seenPeople = new Set<string>();
 
+    // Extract known tools
     for (const { pattern, canonical } of TOOL_PATTERNS) {
       const re = new RegExp(pattern.source, pattern.flags);
       if (re.test(content) && !seenTools.has(canonical.toLowerCase())) {
@@ -40,6 +62,36 @@ export function extractCustom(
           text: canonical,
           type: 'tool',
           confidence: 0.9,
+          source: 'custom',
+          position: { file: filePath, section: headingPath, line: startLine },
+        });
+      }
+    }
+
+    // Extract known projects
+    for (const { pattern, canonical } of PROJECT_PATTERNS) {
+      const re = new RegExp(pattern.source, pattern.flags);
+      if (re.test(content) && !seenProjects.has(canonical.toLowerCase())) {
+        seenProjects.add(canonical.toLowerCase());
+        entities.push({
+          text: canonical,
+          type: 'project',
+          confidence: 0.9,
+          source: 'custom',
+          position: { file: filePath, section: headingPath, line: startLine },
+        });
+      }
+    }
+
+    // Extract known people
+    for (const { pattern, canonical } of PERSON_PATTERNS) {
+      const re = new RegExp(pattern.source, pattern.flags);
+      if (re.test(content) && !seenPeople.has(canonical.toLowerCase())) {
+        seenPeople.add(canonical.toLowerCase());
+        entities.push({
+          text: canonical,
+          type: 'person',
+          confidence: 0.95,
           source: 'custom',
           position: { file: filePath, section: headingPath, line: startLine },
         });

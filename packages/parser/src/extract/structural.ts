@@ -12,6 +12,46 @@ const BOLD_RE = /\*\*([^*]+)\*\*/g;
 const CODE_RE = /`([^`]+)`/g;
 const CAUSAL_RE = /(?:led to|because of|resulted in|caused by|due to|which meant|this meant)\s/gi;
 
+/**
+ * Filter out noisy code entities that are actually paths, URLs, commands, or config strings
+ */
+function isNoisyCodeEntity(text: string): boolean {
+  // Skip paths
+  if (text.startsWith('/') || text.startsWith('./') || text.startsWith('../') || text.startsWith('~')) {
+    return true;
+  }
+  
+  // Skip URLs
+  if (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('file://')) {
+    return true;
+  }
+  
+  // Skip if contains multiple path segments (like memory/browser-setup-notes.md)
+  if (text.includes('/') && text.split('/').length > 1) {
+    return true;
+  }
+  
+  // Skip commands with flags (contains " --" or " -" followed by letters)
+  if (/\s--/.test(text) || /\s-[a-zA-Z]/.test(text)) {
+    return true;
+  }
+  
+  // Skip IP addresses and port patterns
+  if (/^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(text)) {
+    return true;
+  }
+  if (/127\.0\.0\.1|172\.17\.0\.\d+|localhost:\d+/.test(text)) {
+    return true;
+  }
+  
+  // Skip media paths and mount specs
+  if (text.startsWith('MEDIA:') || text.includes(':rw') || text.includes(':ro')) {
+    return true;
+  }
+  
+  return false;
+}
+
 export function extractStructural(
   sections: Section[],
   filePath: string,
@@ -53,6 +93,8 @@ export function extractStructural(
       if (text.length <= 1 || text.length > 40) continue;
       if (/[{}()=<>&|$+^~]/.test(text)) continue;
       if (/^\\./.test(text)) continue;
+      // Apply noise filtering
+      if (isNoisyCodeEntity(text)) continue;
       entities.push({
         text,
         type: 'tool',

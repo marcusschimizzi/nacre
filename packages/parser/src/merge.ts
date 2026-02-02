@@ -206,15 +206,27 @@ export function processFileExtractions(
     }
   }
 
+  // Temporal edge creation with controls to prevent explosion
   const allSectionKeys = [...allResolvedBySection.keys()];
-  for (let i = 0; i < allSectionKeys.length; i++) {
-    for (let j = i + 1; j < allSectionKeys.length; j++) {
+  let temporalEdgesCreated = 0;
+  const MAX_TEMPORAL_EDGES_PER_FILE = 50;
+
+  for (let i = 0; i < allSectionKeys.length && temporalEdgesCreated < MAX_TEMPORAL_EDGES_PER_FILE; i++) {
+    for (let j = i + 1; j < allSectionKeys.length && temporalEdgesCreated < MAX_TEMPORAL_EDGES_PER_FILE; j++) {
       const idsA = allResolvedBySection.get(allSectionKeys[i]) ?? [];
       const idsB = allResolvedBySection.get(allSectionKeys[j]) ?? [];
 
       for (const a of idsA) {
         for (const b of idsB) {
+          if (temporalEdgesCreated >= MAX_TEMPORAL_EDGES_PER_FILE) break;
           if (a === b) continue;
+
+          // Only create temporal edges if BOTH entities have mentionCount >= 2
+          const nodeA = graph.nodes[a];
+          const nodeB = graph.nodes[b];
+          if (!nodeA || !nodeB) continue;
+          if (nodeA.mentionCount < 2 || nodeB.mentionCount < 2) continue;
+
           const edgeId = generateEdgeId(a, b, 'temporal');
           if (!graph.edges[edgeId]) {
             addEdge(graph, {
@@ -236,6 +248,7 @@ export function processFileExtractions(
                 },
               ],
             });
+            temporalEdgesCreated++;
           } else {
             reinforceEdge(graph, edgeId, {
               file: filePath,

@@ -5,6 +5,10 @@
     "JS": "javascript",
     "Marcus S": "marcus",
     "Marcus S.": "marcus",
+    "Lobstar": "lobstar",
+    "lobstar": "lobstar",
+    "(claude)": "claude",
+    "Claude": "claude",
     "3d-force-graph": "3d-force-graph",
     "d3-force-3d": "d3-force-3d",
     "Node": "node.js",
@@ -24,6 +28,8 @@
     "our", "your", "its", "we", "they", "them", "us", "me", "he", "she",
     "you", "and", "as", "yet", "still", "here", "there", "today",
     "yesterday", "tomorrow", "day", "time", "work", "working", "worked",
-    "lesson", "plan", "session", "sprint", "review", "update", "setup"
+    "lesson", "plan", "session", "sprint", "review", "update", "setup",
+    "/projects", "/tmp", "/workspace", "file://", "dist/", "src/",
+    "node_modules", "localhost", "HEARTBEAT_OK", "172.17.0.2", "127.0.0.1"
   ]
 }

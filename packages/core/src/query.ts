@@ -245,35 +245,42 @@ function buildClusterInfos(graph: NacreGraph): ClusterInfo[] {
 function formatDaysAgo(days: number): string {
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
-  return `${days} days ago`;
+  return `${days}d ago`;
 }
 
 function formatBriefSummary(result: Omit<BriefResult, 'summary'>): string {
   const lines: string[] = [];
 
-  const active = result.activeNodes.slice(0, 8);
-  if (active.length > 0) {
-    const descriptions = active.map(
-      (s) =>
-        `${s.node.label} (${s.edgeCount} connections, ` +
-        `last seen ${formatDaysAgo(s.daysSinceReinforced)})`,
-    );
-    lines.push(`Active: ${descriptions.join(', ')}.`);
+  // Top 3 clusters with hub labels
+  if (result.clusters.length > 0) {
+    const topClusters = result.clusters.slice(0, 3);
+    const clusterDesc = topClusters
+      .map(c => `${c.hub} (${c.size})`)
+      .join(', ');
+    lines.push(`Active clusters: ${clusterDesc}.`);
   }
 
+  // Top 5 entities by recent activity
+  const recentActive = result.activeNodes.slice(0, 5);
+  if (recentActive.length > 0) {
+    const activeDesc = recentActive
+      .map(s => `${s.node.label} (${s.edgeCount} connections, ${formatDaysAgo(s.daysSinceReinforced)})`)
+      .join(', ');
+    lines.push(`Recently active: ${activeDesc}.`);
+  }
+
+  // Top 5 fading edges
   if (result.fadingEdges.length > 0) {
-    const descriptions = result.fadingEdges.slice(0, 5).map(
-      (f) => `${f.sourceLabel} \u2194 ${f.targetLabel} (${f.daysSinceReinforced}d ago, ~${f.estimatedDaysUntilDormant}d until dormant)`,
-    );
-    lines.push(`Fading: ${descriptions.join(', ')}.`);
+    const topFading = result.fadingEdges.slice(0, 5);
+    const fadingDesc = topFading
+      .map(f => `${f.sourceLabel} ↔ ${f.targetLabel} (~${f.estimatedDaysUntilDormant}d left)`)
+      .join(', ');
+    lines.push(`Fading connections: ${fadingDesc}.`);
   }
 
-  if (result.clusters.length > 1) {
-    lines.push(`Clusters: ${result.clusters.length} (largest: ${result.clusters[0].hub} with ${result.clusters[0].size} nodes).`);
-  }
-
+  // Graph stats summary
   const s = result.stats;
-  lines.push(`Graph: ${s.totalNodes} nodes, ${s.totalEdges} edges, avg weight ${s.averageWeight.toFixed(3)}, ${s.dormantEdges} dormant.`);
+  lines.push(`Graph: ${s.totalNodes} nodes, ${s.totalEdges} edges (${s.dormantEdges} dormant), avg weight ${s.averageWeight.toFixed(3)}.`);
 
   if (lines.length === 0) {
     lines.push('No active nodes in the graph.');

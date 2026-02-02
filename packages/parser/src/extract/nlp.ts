@@ -6,6 +6,8 @@ const STOP_WORDS = new Set([
   'the', 'it', 'this', 'that', 'a', 'an', 'is', 'was', 'are', 'were',
   'be', 'been', 'being', 'have', 'has', 'had', 'also', 'just', 'very',
   'good', 'great', 'well', 'much', 'big', 'day', 'today', 'phase',
+  'current', 'status', 'session', 'version', 'default', 'latest', 
+  'first', 'last', 'next', 'tasks', 'rules', 'skip', 'check',
 ]);
 
 function stripMarkdown(text: string): string {
@@ -15,7 +17,9 @@ function stripMarkdown(text: string): string {
     .replace(/`[^`]+`/g, '')
     .replace(/^#+\s+/gm, '')
     .replace(/#\w+/g, '')
-    .replace(/[—–]/g, ',');
+    .replace(/[—–]/g, ',')
+    // Strip single-word parentheticals like (claude)
+    .replace(/\(\w+\)/g, '');
 }
 
 export function extractNLP(
