@@ -3,6 +3,8 @@ import consolidateCmd from './commands/consolidate.js';
 import queryCmd from './commands/query.js';
 import briefCmd from './commands/brief.js';
 import alertsCmd from './commands/alerts.js';
+import suggestCmd from './commands/suggest.js';
+import insightsCmd from './commands/insights.js';
 
 const main = defineCommand({
   meta: {
@@ -16,6 +18,8 @@ const main = defineCommand({
     query: queryCmd,
     brief: briefCmd,
     alerts: alertsCmd,
+    suggest: suggestCmd,
+    insights: insightsCmd,
   },
 });
 

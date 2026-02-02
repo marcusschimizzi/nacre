@@ -196,3 +196,45 @@ export interface SearchResult {
   node: MemoryNode;
   matchScore: number;
 }
+
+// === Intelligence Types (Phase 4) ===
+
+export type SuggestionReason = 'pending-near-threshold' | 'structural-hole' | 'type-bridge';
+
+export interface ConnectionSuggestion {
+  sourceId: string;
+  sourceLabel: string;
+  targetId: string;
+  targetLabel: string;
+  reason: SuggestionReason;
+  confidence: number;
+  explanation: string;
+}
+
+export interface SuggestionResult {
+  suggestions: ConnectionSuggestion[];
+  summary: string;
+}
+
+export interface LabeledCluster {
+  hub: string;
+  hubType: EntityType;
+  label: string;
+  members: Array<{ id: string; label: string; type: EntityType }>;
+  size: number;
+  dominantType: EntityType;
+  typeCounts: Record<string, number>;
+}
+
+export interface SignificanceCategory {
+  label: string;
+  nodes: ScoredNode[];
+}
+
+export interface InsightResult {
+  emerging: ScoredNode[];
+  anchors: ScoredNode[];
+  fadingImportant: ScoredNode[];
+  clusters: LabeledCluster[];
+  summary: string;
+}

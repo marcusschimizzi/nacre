@@ -142,6 +142,22 @@ body {
   margin-bottom: 4px;
 }
 
+#time-play-btn {
+  background: rgba(60, 60, 100, 0.4);
+  border: 1px solid rgba(120, 120, 180, 0.2);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: #b4a0ff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+#time-play-btn:hover {
+  background: rgba(120, 100, 200, 0.3);
+}
+
 #time-scrub-date {
   color: #b4a0ff;
   font-variant-numeric: tabular-nums;

@@ -43,6 +43,43 @@ export function initTimeScrub(
 
     onScrubChange();
   });
+
+  const playBtn = document.getElementById('time-play-btn')!;
+  let intervalId: ReturnType<typeof setInterval> | null = null;
+  let isPlaying = false;
+
+  function stopPlayback(): void {
+    if (intervalId !== null) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+    isPlaying = false;
+    playBtn.textContent = '▶';
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (isPlaying) {
+      stopPlayback();
+      return;
+    }
+
+    if (parseInt(slider.value, 10) >= 100) {
+      slider.value = '0';
+    }
+
+    isPlaying = true;
+    playBtn.textContent = '⏸';
+
+    intervalId = setInterval(() => {
+      const current = parseInt(slider.value, 10);
+      if (current >= 100) {
+        stopPlayback();
+        return;
+      }
+      slider.value = String(current + 1);
+      slider.dispatchEvent(new Event('input'));
+    }, 150);
+  });
 }
 
 function initEntityTypeFilters(
