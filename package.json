@@ -10,8 +10,9 @@
     "build": "npm -ws run build",
     "typecheck": "npm -ws run typecheck",
     "test": "npx tsx --test packages/core/src/__tests__/*.test.ts",
+    "test:parser": "npx tsx --test packages/parser/src/__tests__/*.test.ts",
     "test:integration": "npx tsx --test test/integration/*.test.ts",
-    "test:all": "npx tsx --test packages/core/src/__tests__/*.test.ts test/integration/*.test.ts",
+    "test:all": "npx tsx --test packages/core/src/__tests__/*.test.ts packages/parser/src/__tests__/*.test.ts test/integration/*.test.ts",
     "lint": "npm -ws run lint"
   },
   "devDependencies": {

@@ -8,7 +8,6 @@ export { extractStructural } from './extract/structural.js';
 export { extractNLP } from './extract/nlp.js';
 export { extractCustom } from './extract/custom.js';
 export {
-  mergeExtractions,
   processFileExtractions,
   deduplicateRawEntities,
 } from './merge.js';
