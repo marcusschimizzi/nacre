@@ -1,0 +1,29 @@
+{
+  "aliases": {
+    "TS": "typescript",
+    "CC": "claude-code",
+    "JS": "javascript",
+    "Marcus S": "marcus",
+    "Marcus S.": "marcus",
+    "3d-force-graph": "3d-force-graph",
+    "d3-force-3d": "d3-force-3d",
+    "Node": "node.js",
+    "node": "node.js"
+  },
+  "ignore": [
+    "the", "it", "this", "that", "I", "a", "an", "is", "was", "are",
+    "were", "be", "been", "being", "have", "has", "had", "do", "does",
+    "did", "will", "would", "could", "should", "may", "might", "shall",
+    "can", "need", "to", "of", "in", "for", "on", "with", "at", "by",
+    "from", "up", "about", "into", "over", "after", "also", "just",
+    "some", "all", "more", "other", "than", "then", "so", "if", "or",
+    "but", "not", "no", "out", "very", "what", "which", "who", "how",
+    "when", "where", "why", "each", "every", "both", "few", "many",
+    "most", "own", "same", "well", "back", "much", "go", "get", "make",
+    "like", "new", "now", "way", "use", "her", "him", "his", "my",
+    "our", "your", "its", "we", "they", "them", "us", "me", "he", "she",
+    "you", "and", "as", "yet", "still", "here", "there", "today",
+    "yesterday", "tomorrow", "day", "time", "work", "working", "worked",
+    "lesson", "plan", "session", "sprint", "review", "update", "setup"
+  ]
+}

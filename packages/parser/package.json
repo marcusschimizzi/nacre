@@ -1,0 +1,27 @@
+{
+  "name": "@nacre/parser",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@nacre/core": "file:../core",
+    "unified": "^11.0.0",
+    "remark-parse": "^11.0.0",
+    "unist-util-visit": "^5.0.0",
+    "compromise": "^14.0.0"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test",
+    "lint": "echo 'no lint yet'"
+  }
+}

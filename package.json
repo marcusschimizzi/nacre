@@ -1,0 +1,22 @@
+{
+  "name": "nacre",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm -ws run build",
+    "typecheck": "npm -ws run typecheck",
+    "test": "npx tsx --test packages/core/src/__tests__/*.test.ts",
+    "test:integration": "npx tsx --test test/integration/*.test.ts",
+    "test:all": "npx tsx --test packages/core/src/__tests__/*.test.ts test/integration/*.test.ts",
+    "lint": "npm -ws run lint"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}
