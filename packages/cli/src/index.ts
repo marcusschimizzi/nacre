@@ -6,13 +6,14 @@ import alertsCmd from './commands/alerts.js';
 import suggestCmd from './commands/suggest.js';
 import insightsCmd from './commands/insights.js';
 import serveCmd from './commands/serve.js';
+import { migrateCommand } from './commands/migrate.js';
 
 const main = defineCommand({
   meta: {
     name: 'nacre',
-    version: '0.0.0',
+    version: '0.1.0',
     description:
-      'Spatial memory graph — turn markdown memories into a living knowledge graph',
+      'Biological memory for long-living AI agents — turn experience into a living knowledge graph',
   },
   subCommands: {
     consolidate: consolidateCmd,
@@ -22,6 +23,7 @@ const main = defineCommand({
     suggest: suggestCmd,
     insights: insightsCmd,
     serve: serveCmd,
+    migrate: migrateCommand,
   },
 });
 

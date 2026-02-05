@@ -1,6 +1,6 @@
 {
   "name": "@nacre/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,6 +11,9 @@
     }
   },
   "files": ["dist"],
+  "dependencies": {
+    "sql.js": "^1.13.0"
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

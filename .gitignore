@@ -32,3 +32,4 @@ coverage/
 # Temporary
 tmp/
 *.tmp
+packages/viz/public/
