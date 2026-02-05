@@ -1,7 +1,24 @@
 {
   "name": "nacre",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "description": "Biological memory for long-living AI agents. Graph-native, local-first, with Ebbinghaus decay and sleep/wake consolidation.",
+  "keywords": [
+    "ai-memory",
+    "knowledge-graph",
+    "agent-memory",
+    "memory-layer",
+    "llm",
+    "ai-agent",
+    "local-first",
+    "graph-database"
+  ],
+  "homepage": "https://github.com/marcussullivan/nacre",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcussullivan/nacre.git"
+  },
+  "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
     "packages/*"

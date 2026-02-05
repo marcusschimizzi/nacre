@@ -1,186 +1,190 @@
 # Nacre
 
-A spatial memory graph that turns flat markdown files into a living knowledge graph with temporal depth, intelligent forgetting, and emergent connection discovery.
+> Biological memory for long-living AI agents.
 
-Nacre is general-purpose tooling — not tied to any specific agent or workflow. Point it at a directory of markdown files, run `nacre consolidate`, and get a graph with entities, relationships, decay curves, and a 3D visualization.
+Nacre is an open-source memory layer for AI agents that models how memory actually works — formation, consolidation, decay, reinforcement, and emergent connection discovery.
+
+Built for agents that live for months, not minutes.
+
+## Why Nacre?
+
+Every AI agent wakes up with amnesia. Context windows are finite, conversation history gets truncated, and the agent that helped you yesterday has no idea what it learned.
+
+Current memory solutions are either **shallow** (vector search over past messages), **naive** (stuff everything into context), or **generic** (designed for chatbots, not persistent agents).
+
+Nacre is different:
+
+- **Graph-native** — memories are connected, not just stored. Relationships between entities are first-class, with typed edges and provenance tracking.
+- **Biologically-inspired** — Ebbinghaus decay curves with reinforcement-based stability. Important memories strengthen over time; noise fades naturally.
+- **Sleep/wake consolidation** — like hippocampal replay, nacre processes experience in batch during idle periods. Connections form during "sleep," not in real-time.
+- **Local-first** — your agent's memory is a directory on disk. No cloud service required. Copy it, back it up, version control it.
+- **Observable** — a 3D force-directed visualization lets you see, explore, and debug the memory graph. No black boxes.
 
 ## Quick Start
 
 ```bash
-npm install
-npm run build
+# Install
+npm install -g @nacre/cli
 
-# Ingest markdown files
-npx nacre consolidate ./my-notes/
+# Point nacre at your markdown files and consolidate
+nacre consolidate --input ./my-notes --graph ./data/my-graph
 
-# See what's in the graph
-npx nacre brief
+# Get a briefing on what's in the graph
+nacre brief --graph ./data/my-graph
 
-# Search for something
-npx nacre query -s "typescript"
+# Query the graph
+nacre query "typescript" --graph ./data/my-graph
 
-# Launch the 3D visualization
-npx nacre serve
+# Check for fading memories and emerging topics
+nacre alerts --graph ./data/my-graph
+
+# Get connection suggestions and cluster analysis
+nacre insights --graph ./data/my-graph
+
+# Launch the visualization
+nacre serve --graph ./data/my-graph
 ```
 
 ## How It Works
 
-**Ingestion** reads markdown files and extracts entities (people, projects, tools, concepts, decisions, events, lessons, places, tags) using three layers: structural analysis (wikilinks, bold terms, headings, code refs), NLP via compromise.js, and custom pattern matching (GitHub URLs, hashtags, scoped npm packages).
+### 1. Ingestion
 
-**Entity resolution** deduplicates extractions through normalization, alias lookup (configurable via `entity-map.json`), exact matching on existing labels, and fuzzy matching (Levenshtein distance for short strings, token overlap for long ones).
+Nacre reads markdown files (Obsidian-compatible) and extracts entities and relationships using three extraction layers:
 
-**Relationship detection** produces four edge types:
-- **Explicit** — `[[wikilinks]]` in markdown
-- **Co-occurrence** — entities mentioned in the same section or day
-- **Temporal** — events close in time
-- **Causal** — detected via phrases like "led to", "because of"
+- **Structural** — headings, wikilinks, frontmatter, code blocks, lists
+- **NLP** — noun phrases, capitalized terms, technical vocabulary
+- **Custom** — configurable patterns for known tools, projects, and people
 
-**Decay** follows the Ebbinghaus forgetting curve: `W(t) = W0 * e^(-lambda*t/S)` where stability `S = 1 + beta * ln(R+1)` grows with reinforcement count. Unreinforced edges fade; re-mentioned connections strengthen. Edges below the visibility threshold (0.05) go dormant.
+### 2. Graph Construction
 
-**Incremental processing** uses SHA-256 content hashing — only new or changed files get reprocessed.
+Extracted entities become **nodes** (typed: person, project, tool, concept, decision, event, lesson). Relationships become **edges** (typed: explicit, co-occurrence, temporal, causal) with weights, stability scores, and provenance.
 
-## Project Structure
+Entity resolution uses Levenshtein fuzzy matching and alias tracking to merge duplicates.
+
+### 3. Decay & Reinforcement
+
+Edges decay over time following an Ebbinghaus forgetting curve:
 
 ```
-packages/
-  core/     Data model, graph CRUD, decay math, entity resolution, queries, intelligence
-  parser/   7-stage pipeline: discover -> parse -> extract -> resolve -> update -> decay -> persist
-  viz/      3D force-directed graph (Three.js / WebGL via 3d-force-graph)
-  cli/      Command-line interface (7 commands)
-data/       Graph output, entity map
-test/       Integration tests and fixtures (131 tests)
+weight(t) = baseWeight × e^(-λt/stability)
 ```
 
-## CLI Commands
+Where `λ` is the decay rate and `stability` grows with reinforcement. Re-encountering a memory increases its stability, slowing future decay — just like real memory.
 
-All commands support `--format json` for programmatic use. Default graph path: `data/graphs/default/graph.json`.
+### 4. Intelligence
 
-### consolidate
+Beyond storage, nacre actively analyzes the graph:
 
-Run the ingestion pipeline on markdown files.
+- **Connection suggestions** — edges that are close to forming (pending near threshold), structural holes (two clusters that should be connected), and type bridges (e.g., a tool used by two unconnected projects)
+- **Cluster detection** — labeled groups of related entities with dominant types
+- **Significance analysis** — emerging topics (new, growing fast), anchor nodes (central, stable), and fading important connections (need attention)
 
-```bash
-nacre consolidate <source> [--out=data/graphs/default] [--entity-map=data/entity-map.json]
+### 5. Visualization
+
+A 3D force-directed graph rendered with Three.js and a custom nacre iridescent GLSL shader (Fresnel thin-film interference). Features temporal scrubbing, search, cluster zoom, and node detail panels.
+
+## Architecture
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  Parser   │───▶│   Core   │───▶│   Viz    │    │  CLI /   │
+│ Pipeline  │    │  Engine  │    │  Layer   │    │  API     │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+     ▲               │               ▲               │
+     │               ▼               │               ▼
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ Markdown  │    │  Graph   │    │ Browser  │    │  Agent   │
+│  Files    │    │  Store   │    │          │    │  Hooks   │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
 ```
 
-Produces `graph.json` and `pending-edges.json` in the output directory.
+### Packages
 
-### query
+| Package | Description |
+|---------|-------------|
+| `@nacre/core` | Graph data model, decay math, entity resolution, query engine, intelligence layer |
+| `@nacre/parser` | File discovery, markdown→AST, entity extraction (structural + NLP + custom), merge pipeline |
+| `@nacre/viz` | 3D force-directed graph with Three.js, iridescent shader, time scrub, search |
+| `@nacre/cli` | Command-line interface: consolidate, query, brief, alerts, insights, suggest, serve |
 
-Look up entities in the graph.
+## Configuration
 
-```bash
-nacre query <search> [--hops=1] [--related] [--fading] [--clusters] [--brief]
-nacre query -s "search terms" [--type=person] [--since=7]
-```
+### Entity Map
 
-Modes: neighborhood traversal (default), `--related` (by edge weight), `--fading` (approaching dormancy), `--clusters`, `--brief`, or `-s` for fuzzy multi-term search. Filter with `--type` and `--since`.
-
-### brief
-
-Context briefing — top entities, active nodes, fading edges, clusters, graph stats.
-
-```bash
-nacre brief [--top=20] [--recent-days=7]
-```
-
-### alerts
-
-Health check — fading connections, orphan nodes, overall health score.
-
-```bash
-nacre alerts
-```
-
-### suggest
-
-Connection suggestions — pending edges near threshold, structural holes, type bridges.
-
-```bash
-nacre suggest [--pending=...] [--max=10]
-```
-
-### insights
-
-Significance analysis — emerging topics, anchor nodes, fading-but-important entities.
-
-```bash
-nacre insights [--recent-days=7]
-```
-
-### serve
-
-Launch the 3D visualization. Copies graph.json into the viz package and starts a Vite dev server.
-
-```bash
-nacre serve [--graph=data/graphs/default/graph.json] [--port=5173] [--no-open]
-```
-
-## Visualization
-
-The viz is a force-directed 3D graph built on Three.js/WebGL:
-
-- Temporal z-axis — older nodes recede into depth, recent ones stay in the foreground
-- Node size scales with connectivity and mention count (log scale)
-- Node color by entity type, opacity by connection strength
-- Glow on recently reinforced nodes (< 7 days)
-- Iridescent nacre shader on strong edges (weight >= 0.5) — Fresnel-based spectral color that shifts with camera angle
-- Hover tooltips on nodes (label, type, connections) and edges (source/target, weight, evidence context)
-- Click to fly-to-node with details panel (excerpts, sources, dates, neighbors)
-- Double-click a node to frame its 1-hop neighborhood
-- Labels appear as camera gets close (< 150 units)
-- Search bar, entity/edge type filter toggles, weight threshold slider
-- Time scrub slider with play/pause for evolution replay
-
-## Entity Map
-
-Customize entity resolution with `data/entity-map.json`:
+Create `data/entity-map.json` to customize entity extraction:
 
 ```json
 {
   "aliases": {
-    "marcus": "Marcus S",
-    "ms": "Marcus S",
-    "vscode": "VS Code"
+    "TS": "typescript",
+    "JS": "javascript"
   },
-  "ignore": ["the", "this", "that", "monday", "tuesday"]
+  "ignore": ["the", "it", "this", "..."]
 }
 ```
 
-Aliases map variant names to canonical forms. Ignored terms are skipped during extraction.
+See `data/entity-map.example.json` for a full example.
 
-## Data Model
+### Graph Config
 
-Graph version: **2** (breaking change from v1 — relative paths in processedFiles, 16-char node IDs). Re-run consolidation to migrate from v1.
+Default configuration (tunable per graph):
 
-**Nodes**: 16-char hex ID (SHA-256 of normalized label), label, aliases, entity type, timestamps, mention/reinforcement counts, source files, excerpts.
-
-**Edges**: ID as `source--target--type`, weight with Ebbinghaus decay, stability, evidence array (capped at 20 entries).
-
-**Decay parameters** (defaults): decay rate 0.015, reinforcement boost 1.5, visibility threshold 0.05, co-occurrence threshold 2.
+```json
+{
+  "decayRate": 0.015,
+  "reinforcementBoost": 1.5,
+  "visibilityThreshold": 0.05,
+  "coOccurrenceThreshold": 2,
+  "baseWeights": {
+    "explicit": 1.0,
+    "coOccurrence": 0.3,
+    "temporal": 0.1,
+    "causal": 0.8
+  }
+}
+```
 
 ## Development
 
 ```bash
-npm run build          # Build all 4 packages
-npm run test:all       # Run all 131 tests
-npm run test           # Core tests only
-npm run test:parser    # Parser tests only
-npm run test:integration  # Integration tests only
+# Clone
+git clone https://github.com/yourusername/nacre.git
+cd nacre
+
+# Install dependencies
+npm install
+
+# Run tests
+npm test              # core tests
+npm run test:parser   # parser tests
+npm run test:all      # everything
+
+# Build all packages
+npm run build
+
+# Type check
+npm run typecheck
 ```
 
-The viz dev server runs independently:
+## Roadmap
 
-```bash
-cd packages/viz && npx vite
-```
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full roadmap. Key upcoming milestones:
 
-## Tech Stack
+- **SQLite storage** — migrate from JSON to SQLite for scale and vector support
+- **Embedding layer** — semantic similarity search alongside graph queries
+- **MCP server** — instant integration with Claude Desktop, Cursor, and other MCP clients
+- **REST API & SDKs** — programmatic memory access for any agent framework
+- **Episodic & procedural memory** — formalized event records and learned behaviors
 
-TypeScript, Vite, tsup, npm workspaces, 3d-force-graph, Three.js, compromise.js, unified/remark-parse, citty, JSON persistence.
+## Design Principles
 
-## Further Reading
+1. **Biological fidelity** — memory science informs architecture, not just marketing
+2. **Local-first, cloud-optional** — a nacre memory is a directory on disk
+3. **Graph-native** — the knowledge graph is primary, not a secondary index
+4. **Observable** — you can see the memory, inspect it, debug it
+5. **Incremental** — never rebuild from scratch; evolve continuously
+6. **Carbon + silicon** — works for AI agents and human knowledge workers alike
 
-- `CONCEPT.md` — vision, research findings, design principles
-- `ARCHITECTURE.md` — full technical architecture, data model details, phase plan
-- `research/` — technology research reports
+## License
+
+[Apache License 2.0](LICENSE)

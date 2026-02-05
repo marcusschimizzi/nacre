@@ -1,11 +1,34 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-.DS_Store
+*.tsbuildinfo
+
+# Data (user-specific, not committed)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Environment
 .env
+.env.local
+.env.*.local
 
-# data outputs
-/data/graphs/
-tmp-integration-test/
+# OS
+.DS_Store
+Thumbs.db
 
-# viz generated data
-packages/viz/public/graph.json
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+
+# Temporary
+tmp/
+*.tmp

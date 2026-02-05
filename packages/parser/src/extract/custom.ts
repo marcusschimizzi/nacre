@@ -1,21 +1,31 @@
 import type { RawEntity } from '@nacre/core';
 import type { Section } from '../parse.js';
 
+/**
+ * Custom entity extractor — pattern-matched extraction for known entities.
+ * 
+ * These lists serve as defaults and examples. For production use, these should
+ * be loaded from a configuration file (entity-map.json or nacre.config.json).
+ * 
+ * TODO: Load known entities from config file instead of hardcoded lists.
+ */
+
 const KNOWN_TOOLS = [
   'Claude Code', 'Codex', 'Vite', 'tmux', 'Three.js', 'VS Code',
   'Git', 'Docker', 'Playwright', 'TypeScript', 'JavaScript', 'Node.js',
   'npm', 'React', 'Next.js', 'Bun', 'Webpack', 'ESLint', 'Prettier',
-  'bitECS', 'D3.js', 'SQLite', 'WebGL', 'Esbuild', 'tsup',
-  'compromise.js', 'remark', 'unified',
+  'D3.js', 'SQLite', 'WebGL', 'Esbuild', 'tsup',
+  'remark', 'unified', 'Hono', 'Express', 'Prisma',
 ];
 
-const KNOWN_PROJECTS = [
-  'tide-pool', 'nacre', 'honeycomber', 'strata', 'parley', 
-  'reef', 'push', 'mock-my-draft',
+const KNOWN_PROJECTS: string[] = [
+  // Add your project names here for high-confidence extraction
+  // Example: 'my-project', 'acme-api'
 ];
 
-const KNOWN_PEOPLE = [
-  'Marcus', 'Lobstar', 'Sarah',
+const KNOWN_PEOPLE: string[] = [
+  // Add names of people you frequently reference
+  // Example: 'Alice', 'Bob'
 ];
 
 const TOOL_PATTERNS = KNOWN_TOOLS.map((tool) => ({
