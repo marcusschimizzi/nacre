@@ -1,8 +1,9 @@
-import { existsSync, copyFileSync } from 'node:fs';
+import { existsSync, copyFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { defineCommand } from 'citty';
 import { fileURLToPath } from 'node:url';
+import { loadGraph, closeGraph } from '../graph-loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -21,12 +22,12 @@ function findVizDir(): string {
 export default defineCommand({
   meta: {
     name: 'serve',
-    description: 'Launch the 3D graph visualization with a graph.json file',
+    description: 'Launch the 3D graph visualization',
   },
   args: {
     graph: {
       type: 'string',
-      description: 'Path to graph.json',
+      description: 'Path to graph (.db or .json)',
       default: 'data/graphs/default/graph.json',
     },
     port: {
@@ -41,19 +42,28 @@ export default defineCommand({
     },
   },
   async run({ args }) {
-    const graphPath = resolve(args.graph as string);
-
-    if (!existsSync(graphPath)) {
-      console.error(`Graph not found: ${graphPath}`);
-      console.error('Run "nacre consolidate <source>" first to generate a graph.');
-      process.exit(1);
-    }
-
+    const graphPath = args.graph as string;
     const vizDir = findVizDir();
     const dest = resolve(vizDir, 'public', 'graph.json');
 
-    copyFileSync(graphPath, dest);
-    console.log(`Copied ${graphPath} → ${dest}`);
+    // Load graph (supports both .db and .json)
+    const loaded = await loadGraph(graphPath);
+    try {
+      if (loaded.format === 'sqlite') {
+        // Export SQLite graph to JSON for the viz
+        writeFileSync(dest, JSON.stringify(loaded.graph, null, 2), 'utf8');
+        console.log(`Exported SQLite graph → ${dest}`);
+      } else {
+        // Copy JSON directly
+        const srcPath = resolve(graphPath);
+        if (srcPath !== dest) {
+          copyFileSync(srcPath, dest);
+          console.log(`Copied ${srcPath} → ${dest}`);
+        }
+      }
+    } finally {
+      closeGraph(loaded);
+    }
 
     const port = args.port as string;
     const openFlag = args.open ? '--open' : '';

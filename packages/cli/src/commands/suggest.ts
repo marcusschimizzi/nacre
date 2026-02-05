@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { defineCommand } from 'citty';
-import { generateSuggestions, type NacreGraph, type PendingEdge } from '@nacre/core';
+import { generateSuggestions, type PendingEdge } from '@nacre/core';
 import { formatJSON } from '../output.js';
+import { loadGraph, closeGraph } from '../graph-loader.js';
 
 export default defineCommand({
   meta: {
@@ -12,7 +13,7 @@ export default defineCommand({
   args: {
     graph: {
       type: 'string',
-      description: 'Path to graph.json',
+      description: 'Path to graph (.db or .json)',
       default: 'data/graphs/default/graph.json',
     },
     pending: {
@@ -31,34 +32,33 @@ export default defineCommand({
     },
   },
   async run({ args }) {
-    const graphPath = args.graph as string;
-    let graph: NacreGraph;
+    const loaded = await loadGraph(args.graph as string);
     try {
-      graph = JSON.parse(readFileSync(graphPath, 'utf8')) as NacreGraph;
-    } catch {
-      console.error(`Could not read graph at: ${graphPath}`);
-      process.exit(1);
-    }
+      const graphPath = args.graph as string;
+      const pendingPath = (args.pending as string) ??
+        resolve(dirname(graphPath), 'pending-edges.json');
+      let pendingEdges: PendingEdge[] = [];
+      try {
+        if (existsSync(pendingPath)) {
+          pendingEdges = JSON.parse(readFileSync(pendingPath, 'utf8')) as PendingEdge[];
+        }
+      } catch {
+        // pending-edges.json is optional
+      }
 
-    const pendingPath = (args.pending as string) ??
-      resolve(dirname(graphPath), 'pending-edges.json');
-    let pendingEdges: PendingEdge[] = [];
-    try {
-      pendingEdges = JSON.parse(readFileSync(pendingPath, 'utf8')) as PendingEdge[];
-    } catch {
-      // pending-edges.json is optional — suggestions still work without it
-    }
+      const maxSuggestions = parseInt(args.max as string, 10) || 10;
+      const result = generateSuggestions(loaded.graph, pendingEdges, {
+        maxSuggestions,
+        now: new Date(),
+      });
 
-    const maxSuggestions = parseInt(args.max as string, 10) || 10;
-    const result = generateSuggestions(graph, pendingEdges, {
-      maxSuggestions,
-      now: new Date(),
-    });
-
-    if (args.format === 'json') {
-      console.log(formatJSON(result));
-    } else {
-      console.log(result.summary);
+      if (args.format === 'json') {
+        console.log(formatJSON(result));
+      } else {
+        console.log(result.summary);
+      }
+    } finally {
+      closeGraph(loaded);
     }
   },
 });

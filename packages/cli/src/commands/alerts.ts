@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { defineCommand } from 'citty';
-import { generateAlerts, type NacreGraph } from '@nacre/core';
+import { generateAlerts } from '@nacre/core';
 import { formatJSON } from '../output.js';
+import { loadGraph, closeGraph } from '../graph-loader.js';
 
 export default defineCommand({
   meta: {
@@ -11,7 +11,7 @@ export default defineCommand({
   args: {
     graph: {
       type: 'string',
-      description: 'Path to graph.json',
+      description: 'Path to graph (.db or .json)',
       default: 'data/graphs/default/graph.json',
     },
     format: {
@@ -21,21 +21,16 @@ export default defineCommand({
     },
   },
   async run({ args }) {
-    const graphPath = args.graph as string;
-    let graph: NacreGraph;
+    const loaded = await loadGraph(args.graph as string);
     try {
-      graph = JSON.parse(readFileSync(graphPath, 'utf8')) as NacreGraph;
-    } catch {
-      console.error(`Could not read graph at: ${graphPath}`);
-      process.exit(1);
-    }
-
-    const result = generateAlerts(graph, { now: new Date() });
-
-    if (args.format === 'json') {
-      console.log(formatJSON(result));
-    } else {
-      console.log(result.summary);
+      const result = generateAlerts(loaded.graph, { now: new Date() });
+      if (args.format === 'json') {
+        console.log(formatJSON(result));
+      } else {
+        console.log(result.summary);
+      }
+    } finally {
+      closeGraph(loaded);
     }
   },
 });

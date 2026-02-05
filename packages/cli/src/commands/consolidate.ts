@@ -15,7 +15,7 @@ export default defineCommand({
     },
     out: {
       type: 'string',
-      description: 'Output directory for graph.json',
+      description: 'Output path — directory for JSON (graph.json), or .db file for SQLite',
       default: 'data/graphs/default',
     },
     'entity-map': {
@@ -26,11 +26,16 @@ export default defineCommand({
   },
   async run({ args }) {
     const inputs = [args.source as string];
+    const outDir = args.out as string;
     const start = Date.now();
+
+    console.log(`📖 Source: ${inputs[0]}`);
+    console.log(`💾 Output: ${outDir} (${outDir.endsWith('.db') ? 'SQLite' : 'JSON'})`);
+    console.log('');
 
     const result = await consolidate({
       inputs,
-      outDir: args.out as string,
+      outDir,
       entityMapPath: args['entity-map'] as string,
     });
 
