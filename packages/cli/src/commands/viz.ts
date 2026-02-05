@@ -21,7 +21,7 @@ function findVizDir(): string {
 
 export default defineCommand({
   meta: {
-    name: 'serve',
+    name: 'viz',
     description: 'Launch the 3D graph visualization',
   },
   args: {

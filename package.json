@@ -29,7 +29,7 @@
     "test": "npx tsx --test packages/core/src/__tests__/*.test.ts",
     "test:parser": "npx tsx --test packages/parser/src/__tests__/*.test.ts",
     "test:integration": "npx tsx --test test/integration/*.test.ts",
-    "test:all": "npx tsx --test packages/core/src/__tests__/*.test.ts packages/parser/src/__tests__/*.test.ts test/integration/*.test.ts",
+    "test:all": "npx tsx --test packages/core/src/__tests__/*.test.ts packages/parser/src/__tests__/*.test.ts packages/cli/src/__tests__/*.test.ts test/integration/*.test.ts",
     "lint": "npm -ws run lint"
   },
   "devDependencies": {
@@ -39,7 +39,10 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.9",
     "better-sqlite3": "^12.6.2",
-    "sql.js": "^1.13.0"
+    "hono": "^4.11.7",
+    "sql.js": "^1.13.0",
+    "zod": "^4.3.6"
   }
 }

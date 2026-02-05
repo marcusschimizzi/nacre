@@ -5,9 +5,10 @@ import briefCmd from './commands/brief.js';
 import alertsCmd from './commands/alerts.js';
 import suggestCmd from './commands/suggest.js';
 import insightsCmd from './commands/insights.js';
-import serveCmd from './commands/serve.js';
+import vizCmd from './commands/viz.js';
 import embedCmd from './commands/embed.js';
 import similarCmd from './commands/similar.js';
+import apiCmd from './commands/api.js';
 import { migrateCommand } from './commands/migrate.js';
 
 const main = defineCommand({
@@ -24,10 +25,11 @@ const main = defineCommand({
     alerts: alertsCmd,
     suggest: suggestCmd,
     insights: insightsCmd,
-    serve: serveCmd,
+    viz: vizCmd,
     migrate: migrateCommand,
     embed: embedCmd,
     similar: similarCmd,
+    api: apiCmd,
   },
 });
 
