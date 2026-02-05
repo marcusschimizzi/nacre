@@ -12,7 +12,7 @@
   },
   "files": ["dist"],
   "dependencies": {
-    "sql.js": "^1.13.0"
+    "better-sqlite3": "^11.0.0"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",

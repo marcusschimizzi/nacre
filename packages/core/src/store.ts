@@ -1,15 +1,15 @@
 /**
  * GraphStore — persistent storage layer for nacre's knowledge graph.
  * 
- * Uses SQLite (via sql.js for portability) as the backing store.
- * The store interface is designed to be swappable — sql.js for 
- * portability/WASM, better-sqlite3 for native performance.
+ * Uses SQLite (via better-sqlite3) as the backing store.
+ * Synchronous API, direct file writes, no manual save needed.
  * 
  * A nacre graph is a single .db file on disk.
  */
 
-import initSqlJs, { type Database } from 'sql.js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import Database from 'better-sqlite3';
+import type BetterSqlite3 from 'better-sqlite3';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type {
   MemoryNode,
@@ -75,21 +75,6 @@ CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
 
 // ── Serialization helpers ───────────────────────────────────────
 
-function nodeToRow(node: MemoryNode) {
-  return {
-    id: node.id,
-    label: node.label,
-    type: node.type,
-    aliases: JSON.stringify(node.aliases),
-    first_seen: node.firstSeen,
-    last_reinforced: node.lastReinforced,
-    mention_count: node.mentionCount,
-    reinforcement_count: node.reinforcementCount,
-    source_files: JSON.stringify(node.sourceFiles),
-    excerpts: JSON.stringify(node.excerpts),
-  };
-}
-
 function rowToNode(row: Record<string, unknown>): MemoryNode {
   return {
     id: row.id as string,
@@ -102,23 +87,6 @@ function rowToNode(row: Record<string, unknown>): MemoryNode {
     reinforcementCount: row.reinforcement_count as number,
     sourceFiles: JSON.parse(row.source_files as string),
     excerpts: JSON.parse(row.excerpts as string),
-  };
-}
-
-function edgeToRow(edge: MemoryEdge) {
-  return {
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    type: edge.type,
-    directed: edge.directed ? 1 : 0,
-    weight: edge.weight,
-    base_weight: edge.baseWeight,
-    reinforcement_count: edge.reinforcementCount,
-    first_formed: edge.firstFormed,
-    last_reinforced: edge.lastReinforced,
-    stability: edge.stability,
-    evidence: JSON.stringify(edge.evidence),
   };
 }
 
@@ -137,29 +105,6 @@ function rowToEdge(row: Record<string, unknown>): MemoryEdge {
     stability: row.stability as number,
     evidence: JSON.parse(row.evidence as string),
   };
-}
-
-// ── Query helpers ───────────────────────────────────────────────
-
-function queryAll(db: Database, sql: string, params: unknown[] = []): Record<string, unknown>[] {
-  const stmt = db.prepare(sql);
-  if (params.length) stmt.bind(params);
-  
-  const results: Record<string, unknown>[] = [];
-  while (stmt.step()) {
-    results.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return results;
-}
-
-function queryOne(db: Database, sql: string, params: unknown[] = []): Record<string, unknown> | undefined {
-  const results = queryAll(db, sql, params);
-  return results[0];
-}
-
-function execute(db: Database, sql: string, params: unknown[] = []): void {
-  db.run(sql, params);
 }
 
 // ── Store Interface ─────────────────────────────────────────────
@@ -214,50 +159,61 @@ export interface GraphStore {
 // ── SQLite Implementation ───────────────────────────────────────
 
 export class SqliteStore implements GraphStore {
-  private db: Database;
-  private dbPath: string | null;
-  private dirty: boolean = false;
+  private db: BetterSqlite3.Database;
 
-  private constructor(db: Database, dbPath: string | null) {
+  // Prepared statements (lazily cached for performance)
+  private _stmts: Record<string, BetterSqlite3.Statement> = {};
+
+  private constructor(db: BetterSqlite3.Database) {
     this.db = db;
-    this.dbPath = dbPath;
   }
 
   /**
    * Open or create a nacre graph database.
-   * Pass a file path to persist, or null for in-memory.
+   * Pass a file path to persist, or ':memory:' / undefined for in-memory.
    */
-  static async open(dbPath?: string | null): Promise<SqliteStore> {
-    const SQL = await initSqlJs();
-    
-    let db: Database;
-    const resolvedPath = dbPath ?? null;
+  static open(dbPath?: string | null): SqliteStore {
+    const resolvedPath = dbPath ?? ':memory:';
 
-    if (resolvedPath && existsSync(resolvedPath)) {
-      const buffer = readFileSync(resolvedPath);
-      db = new SQL.Database(buffer);
-    } else {
-      db = new SQL.Database();
+    // Ensure parent directory exists for file-based DBs
+    if (resolvedPath !== ':memory:' && resolvedPath !== '') {
+      const dir = dirname(resolvedPath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
     }
+
+    const db = new Database(resolvedPath);
+    
+    // Performance settings
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('foreign_keys = ON');
 
     // Initialize schema
-    db.run(SCHEMA_SQL);
+    db.exec(SCHEMA_SQL);
 
     // Set schema version if new
-    const version = queryOne(db, "SELECT value FROM meta WHERE key = 'schema_version'");
+    const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
     if (!version) {
-      execute(db, "INSERT INTO meta (key, value) VALUES ('schema_version', ?)", [String(SCHEMA_VERSION)]);
-      execute(db, "INSERT INTO meta (key, value) VALUES ('created_at', ?)", [new Date().toISOString()]);
+      db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
+      db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('created_at', new Date().toISOString());
     }
 
-    const store = new SqliteStore(db, resolvedPath);
-    return store;
+    return new SqliteStore(db);
+  }
+
+  private stmt(sql: string): BetterSqlite3.Statement {
+    if (!this._stmts[sql]) {
+      this._stmts[sql] = this.db.prepare(sql);
+    }
+    return this._stmts[sql];
   }
 
   // ── Nodes ─────────────────────────────────────────────────
 
   getNode(id: string): MemoryNode | undefined {
-    const row = queryOne(this.db, 'SELECT * FROM nodes WHERE id = ?', [id]);
+    const row = this.stmt('SELECT * FROM nodes WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     return row ? rowToNode(row) : undefined;
   }
 
@@ -265,11 +221,11 @@ export class SqliteStore implements GraphStore {
     const normalized = label.toLowerCase().trim();
     
     // Try exact label match first
-    const exact = queryOne(this.db, 'SELECT * FROM nodes WHERE LOWER(label) = ?', [normalized]);
+    const exact = this.stmt('SELECT * FROM nodes WHERE LOWER(label) = ?').get(normalized) as Record<string, unknown> | undefined;
     if (exact) return rowToNode(exact);
 
-    // Try alias match
-    const all = queryAll(this.db, 'SELECT * FROM nodes');
+    // Try alias match — scan all nodes
+    const all = this.stmt('SELECT * FROM nodes').all() as Record<string, unknown>[];
     for (const row of all) {
       const aliases: string[] = JSON.parse(row.aliases as string);
       if (aliases.some(a => a.toLowerCase() === normalized)) {
@@ -303,37 +259,38 @@ export class SqliteStore implements GraphStore {
     }
 
     sql += ' ORDER BY mention_count DESC';
-    return queryAll(this.db, sql, params).map(rowToNode);
+    
+    const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
+    return rows.map(rowToNode);
   }
 
   putNode(node: MemoryNode): void {
-    const row = nodeToRow(node);
-    execute(this.db,
+    this.stmt(
       `INSERT OR REPLACE INTO nodes 
        (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [row.id, row.label, row.type, row.aliases, row.first_seen, row.last_reinforced,
-       row.mention_count, row.reinforcement_count, row.source_files, row.excerpts]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      node.id, node.label, node.type, JSON.stringify(node.aliases),
+      node.firstSeen, node.lastReinforced, node.mentionCount,
+      node.reinforcementCount, JSON.stringify(node.sourceFiles),
+      JSON.stringify(node.excerpts)
     );
-    this.dirty = true;
   }
 
   deleteNode(id: string): void {
-    execute(this.db, 'DELETE FROM nodes WHERE id = ?', [id]);
-    // Also clean up edges referencing this node
-    execute(this.db, 'DELETE FROM edges WHERE source = ? OR target = ?', [id, id]);
-    this.dirty = true;
+    this.stmt('DELETE FROM nodes WHERE id = ?').run(id);
+    this.stmt('DELETE FROM edges WHERE source = ? OR target = ?').run(id, id);
   }
 
   nodeCount(): number {
-    const row = queryOne(this.db, 'SELECT COUNT(*) as count FROM nodes');
-    return (row?.count as number) ?? 0;
+    const row = this.stmt('SELECT COUNT(*) as count FROM nodes').get() as { count: number };
+    return row.count;
   }
 
   // ── Edges ─────────────────────────────────────────────────
 
   getEdge(id: string): MemoryEdge | undefined {
-    const row = queryOne(this.db, 'SELECT * FROM edges WHERE id = ?', [id]);
+    const row = this.stmt('SELECT * FROM edges WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     return row ? rowToEdge(row) : undefined;
   }
 
@@ -364,35 +321,37 @@ export class SqliteStore implements GraphStore {
     }
 
     sql += ' ORDER BY weight DESC';
-    return queryAll(this.db, sql, params).map(rowToEdge);
+    
+    const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
+    return rows.map(rowToEdge);
   }
 
   putEdge(edge: MemoryEdge): void {
-    const row = edgeToRow(edge);
-    execute(this.db,
+    this.stmt(
       `INSERT OR REPLACE INTO edges
        (id, source, target, type, directed, weight, base_weight, reinforcement_count, first_formed, last_reinforced, stability, evidence)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [row.id, row.source, row.target, row.type, row.directed, row.weight, row.base_weight,
-       row.reinforcement_count, row.first_formed, row.last_reinforced, row.stability, row.evidence]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      edge.id, edge.source, edge.target, edge.type,
+      edge.directed ? 1 : 0, edge.weight, edge.baseWeight,
+      edge.reinforcementCount, edge.firstFormed, edge.lastReinforced,
+      edge.stability, JSON.stringify(edge.evidence)
     );
-    this.dirty = true;
   }
 
   deleteEdge(id: string): void {
-    execute(this.db, 'DELETE FROM edges WHERE id = ?', [id]);
-    this.dirty = true;
+    this.stmt('DELETE FROM edges WHERE id = ?').run(id);
   }
 
   edgeCount(): number {
-    const row = queryOne(this.db, 'SELECT COUNT(*) as count FROM edges');
-    return (row?.count as number) ?? 0;
+    const row = this.stmt('SELECT COUNT(*) as count FROM edges').get() as { count: number };
+    return row.count;
   }
 
   // ── File Tracking ─────────────────────────────────────────
 
   getFileHash(path: string): FileHash | undefined {
-    const row = queryOne(this.db, 'SELECT * FROM processed_files WHERE path = ?', [path]);
+    const row = this.stmt('SELECT * FROM processed_files WHERE path = ?').get(path) as Record<string, unknown> | undefined;
     if (!row) return undefined;
     return {
       path: row.path as string,
@@ -402,7 +361,8 @@ export class SqliteStore implements GraphStore {
   }
 
   listFileHashes(): FileHash[] {
-    return queryAll(this.db, 'SELECT * FROM processed_files').map(row => ({
+    const rows = this.stmt('SELECT * FROM processed_files').all() as Record<string, unknown>[];
+    return rows.map(row => ({
       path: row.path as string,
       hash: row.hash as string,
       lastProcessed: row.last_processed as string,
@@ -410,18 +370,15 @@ export class SqliteStore implements GraphStore {
   }
 
   putFileHash(hash: FileHash): void {
-    execute(this.db,
-      'INSERT OR REPLACE INTO processed_files (path, hash, last_processed) VALUES (?, ?, ?)',
-      [hash.path, hash.hash, hash.lastProcessed]
-    );
-    this.dirty = true;
+    this.stmt(
+      'INSERT OR REPLACE INTO processed_files (path, hash, last_processed) VALUES (?, ?, ?)'
+    ).run(hash.path, hash.hash, hash.lastProcessed);
   }
 
   // ── Bulk Operations ───────────────────────────────────────
 
   /**
    * Export the entire graph as a NacreGraph object.
-   * Useful for backwards compatibility, viz export, and migration.
    */
   getFullGraph(): NacreGraph {
     const nodes: Record<string, MemoryNode> = {};
@@ -452,83 +409,69 @@ export class SqliteStore implements GraphStore {
    * Clears existing data and replaces with the imported graph.
    */
   importGraph(graph: NacreGraph): void {
-    // Clear existing data
-    execute(this.db, 'DELETE FROM nodes');
-    execute(this.db, 'DELETE FROM edges');
-    execute(this.db, 'DELETE FROM processed_files');
+    const importAll = this.db.transaction(() => {
+      // Clear existing data
+      this.db.exec('DELETE FROM nodes');
+      this.db.exec('DELETE FROM edges');
+      this.db.exec('DELETE FROM processed_files');
 
-    // Import nodes
-    for (const node of Object.values(graph.nodes)) {
-      this.putNode(node);
-    }
+      // Import nodes
+      for (const node of Object.values(graph.nodes)) {
+        this.putNode(node);
+      }
 
-    // Import edges
-    for (const edge of Object.values(graph.edges)) {
-      this.putEdge(edge);
-    }
+      // Import edges
+      for (const edge of Object.values(graph.edges)) {
+        this.putEdge(edge);
+      }
 
-    // Import file hashes
-    for (const fh of graph.processedFiles) {
-      this.putFileHash(fh);
-    }
+      // Import file hashes
+      for (const fh of graph.processedFiles) {
+        this.putFileHash(fh);
+      }
 
-    // Store config and metadata
-    this.setMeta('config', JSON.stringify(graph.config));
-    this.setMeta('last_consolidated', graph.lastConsolidated);
-    this.setMeta('graph_version', String(graph.version));
+      // Store config and metadata
+      this.setMeta('config', JSON.stringify(graph.config));
+      this.setMeta('last_consolidated', graph.lastConsolidated);
+      this.setMeta('graph_version', String(graph.version));
+    });
 
-    this.dirty = true;
+    importAll();
   }
 
   // ── Metadata ──────────────────────────────────────────────
 
   getMeta(key: string): string | undefined {
-    const row = queryOne(this.db, 'SELECT value FROM meta WHERE key = ?', [key]);
-    return row?.value as string | undefined;
+    const row = this.stmt('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
+    return row?.value;
   }
 
   setMeta(key: string, value: string): void {
-    execute(this.db, 'INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [key, value]);
-    this.dirty = true;
+    this.stmt('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
   }
 
   // ── Lifecycle ─────────────────────────────────────────────
 
   /**
-   * Persist the database to disk.
-   * For sql.js, this exports the WASM memory to a file.
-   * For better-sqlite3, this would be a no-op (writes are immediate).
+   * No-op for better-sqlite3 (writes are immediate in WAL mode).
+   * Kept for interface compatibility.
    */
   save(): void {
-    if (!this.dbPath) return;
-    if (!this.dirty) return;
-    
-    const dir = dirname(this.dbPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    
-    const data = this.db.export();
-    writeFileSync(this.dbPath, Buffer.from(data));
-    this.dirty = false;
+    // better-sqlite3 writes are immediate — no manual save needed
   }
 
   /**
    * Close the database connection.
-   * Saves if there are unsaved changes.
    */
   close(): void {
-    if (this.dirty) {
-      this.save();
-    }
+    this._stmts = {};
     this.db.close();
   }
 
   /**
-   * Get the raw sql.js Database instance (for advanced queries).
-   * Use with caution — prefer the typed methods above.
+   * Get the raw better-sqlite3 Database instance (for advanced queries).
    */
-  get raw(): Database {
+  get raw(): BetterSqlite3.Database {
     return this.db;
   }
 }

@@ -51,7 +51,7 @@ export const migrateCommand = defineCommand({
     console.log(`   Found ${nodeCount} nodes, ${edgeCount} edges, ${fileCount} tracked files`);
 
     console.log(`💾 Creating SQLite database at ${outputPath}...`);
-    const store = await SqliteStore.open(outputPath);
+    const store = SqliteStore.open(outputPath);
 
     console.log('📥 Importing graph...');
     store.importGraph(graph);

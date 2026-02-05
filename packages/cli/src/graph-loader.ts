@@ -26,7 +26,7 @@ export async function loadGraph(graphPath: string): Promise<LoadedGraph> {
     if (!existsSync(graphPath)) {
       throw new Error(`Database not found: ${graphPath}`);
     }
-    const store = await SqliteStore.open(graphPath);
+    const store = SqliteStore.open(graphPath);
     const graph = store.getFullGraph();
     return { graph, store, format: 'sqlite' };
   }
@@ -42,7 +42,7 @@ export async function loadGraph(graphPath: string): Promise<LoadedGraph> {
 
   // No extension — try .db first, then .json, then directory with graph.json
   if (existsSync(graphPath + '.db')) {
-    const store = await SqliteStore.open(graphPath + '.db');
+    const store = SqliteStore.open(graphPath + '.db');
     const graph = store.getFullGraph();
     return { graph, store, format: 'sqlite' };
   }

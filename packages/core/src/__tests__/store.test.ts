@@ -37,7 +37,7 @@ describe('SqliteStore', () => {
   let store: SqliteStore;
 
   before(async () => {
-    store = await SqliteStore.open(null); // in-memory
+    store = SqliteStore.open(); // in-memory
   });
 
   after(() => {
@@ -205,7 +205,7 @@ describe('SqliteStore', () => {
     });
 
     it('imports a graph', async () => {
-      const fresh = await SqliteStore.open(null);
+      const fresh = SqliteStore.open();
       
       const graph: NacreGraph = {
         version: 2,

@@ -75,7 +75,7 @@ export async function consolidate(
   let store: SqliteStore | null = null;
 
   if (useSqlite) {
-    store = await SqliteStore.open(outDir);
+    store = SqliteStore.open(outDir);
     graph = store.getFullGraph();
     // Pending edges stored in SQLite meta
     const pendingStr = store.getMeta('pending_edges');

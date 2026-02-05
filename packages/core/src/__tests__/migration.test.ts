@@ -20,7 +20,7 @@ describe('JSON → SQLite migration', () => {
     if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
     
     graph = JSON.parse(readFileSync(GRAPH_PATH, 'utf-8'));
-    store = await SqliteStore.open(DB_PATH);
+    store = SqliteStore.open(DB_PATH);
     store.importGraph(graph);
     store.save();
   });
