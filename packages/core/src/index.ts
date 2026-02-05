@@ -4,4 +4,5 @@ export * from './decay.js';
 export * from './resolve.js';
 export * from './query.js';
 export * from './intelligence.js';
-export * from "./store.js";
+export * from './store.js';
+export * from './embeddings.js';

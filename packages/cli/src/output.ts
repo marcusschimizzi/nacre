@@ -57,6 +57,10 @@ export function formatConsolidationSummary(
     `  Pending: ${result.pendingEdges.length} sub-threshold edges`,
   ];
 
+  if (result.newEmbeddings > 0) {
+    lines.push(`  Embeddings: ${result.newEmbeddings} new`);
+  }
+
   if (result.failures.length > 0) {
     lines.push(`  Failures: ${result.failures.length} file(s) skipped`);
     for (const f of result.failures) {

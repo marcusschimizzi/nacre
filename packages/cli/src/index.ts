@@ -6,6 +6,8 @@ import alertsCmd from './commands/alerts.js';
 import suggestCmd from './commands/suggest.js';
 import insightsCmd from './commands/insights.js';
 import serveCmd from './commands/serve.js';
+import embedCmd from './commands/embed.js';
+import similarCmd from './commands/similar.js';
 import { migrateCommand } from './commands/migrate.js';
 
 const main = defineCommand({
@@ -24,6 +26,8 @@ const main = defineCommand({
     insights: insightsCmd,
     serve: serveCmd,
     migrate: migrateCommand,
+    embed: embedCmd,
+    similar: similarCmd,
   },
 });
 

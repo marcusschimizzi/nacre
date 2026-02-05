@@ -21,6 +21,7 @@ import type {
   EdgeType,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
+import { cosineSimilarity, bufferToVector, vectorToBuffer } from './embeddings.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
@@ -66,11 +67,22 @@ CREATE TABLE IF NOT EXISTS processed_files (
   last_processed TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS embeddings (
+  id         TEXT PRIMARY KEY,
+  type       TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  vector     BLOB NOT NULL,
+  dimensions INTEGER NOT NULL,
+  provider   TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
 CREATE INDEX IF NOT EXISTS idx_nodes_label ON nodes(label);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
+CREATE INDEX IF NOT EXISTS idx_embeddings_type ON embeddings(type);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -122,6 +134,27 @@ export interface EdgeFilter {
   minWeight?: number;
 }
 
+export interface EmbeddingRecord {
+  id: string;
+  type: string;
+  content: string;
+  vector: Float32Array;
+  provider: string;
+}
+
+export interface SimilarityResult {
+  id: string;
+  type: string;
+  content: string;
+  similarity: number;
+}
+
+export interface SimilaritySearchOptions {
+  type?: string;
+  limit?: number;
+  minSimilarity?: number;
+}
+
 export interface GraphStore {
   // Node operations
   getNode(id: string): MemoryNode | undefined;
@@ -142,6 +175,13 @@ export interface GraphStore {
   getFileHash(path: string): FileHash | undefined;
   listFileHashes(): FileHash[];
   putFileHash(hash: FileHash): void;
+
+  // Embedding operations
+  putEmbedding(id: string, type: string, content: string, vector: Float32Array, provider: string): void;
+  getEmbedding(id: string): EmbeddingRecord | undefined;
+  searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[];
+  deleteEmbedding(id: string): void;
+  embeddingCount(): number;
 
   // Bulk operations
   getFullGraph(): NacreGraph;
@@ -345,6 +385,70 @@ export class SqliteStore implements GraphStore {
 
   edgeCount(): number {
     const row = this.stmt('SELECT COUNT(*) as count FROM edges').get() as { count: number };
+    return row.count;
+  }
+
+  // ── Embeddings ──────────────────────────────────────────
+
+  putEmbedding(id: string, type: string, content: string, vector: Float32Array, provider: string): void {
+    this.stmt(
+      `INSERT OR REPLACE INTO embeddings
+       (id, type, content, vector, dimensions, provider, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, type, content, vectorToBuffer(vector), vector.length, provider, new Date().toISOString());
+  }
+
+  getEmbedding(id: string): EmbeddingRecord | undefined {
+    const row = this.stmt('SELECT * FROM embeddings WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    return {
+      id: row.id as string,
+      type: row.type as string,
+      content: row.content as string,
+      vector: bufferToVector(row.vector as Buffer),
+      provider: row.provider as string,
+    };
+  }
+
+  searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[] {
+    const limit = opts?.limit ?? 10;
+    const minSimilarity = opts?.minSimilarity ?? 0;
+
+    let sql = 'SELECT id, type, content, vector FROM embeddings';
+    const params: unknown[] = [];
+
+    if (opts?.type) {
+      sql += ' WHERE type = ?';
+      params.push(opts.type);
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+
+    const scored: SimilarityResult[] = [];
+    for (const row of rows) {
+      const vec = bufferToVector(row.vector as Buffer);
+      if (vec.length !== query.length) continue;
+      const sim = cosineSimilarity(query, vec);
+      if (sim >= minSimilarity) {
+        scored.push({
+          id: row.id as string,
+          type: row.type as string,
+          content: row.content as string,
+          similarity: sim,
+        });
+      }
+    }
+
+    scored.sort((a, b) => b.similarity - a.similarity);
+    return scored.slice(0, limit);
+  }
+
+  deleteEmbedding(id: string): void {
+    this.stmt('DELETE FROM embeddings WHERE id = ?').run(id);
+  }
+
+  embeddingCount(): number {
+    const row = this.stmt('SELECT COUNT(*) as count FROM embeddings').get() as { count: number };
     return row.count;
   }
 

@@ -5,6 +5,7 @@ import {
   loadEntityMap,
   decayAllEdges,
   SqliteStore,
+  type EmbeddingProvider,
   type NacreGraph,
   type PendingEdge,
   type ConsolidationResult,
@@ -22,6 +23,7 @@ export interface ConsolidateOptions {
   ignore?: string[];
   outDir: string;
   entityMapPath?: string;
+  embeddingProvider?: EmbeddingProvider;
   now?: Date;
 }
 
@@ -167,7 +169,24 @@ export async function consolidate(
   const { decayed } = decayAllEdges(graph, now);
   graph.lastConsolidated = now.toISOString();
 
-  // Save output
+  let newEmbeddings = 0;
+  if (opts.embeddingProvider && useSqlite && store) {
+    const provider = opts.embeddingProvider;
+    for (const node of Object.values(graph.nodes)) {
+      const text = node.label + ' — ' + node.excerpts.map(e => e.text).join('. ');
+      const existing = store.getEmbedding(node.id);
+      if (existing && existing.content === text) continue;
+
+      try {
+        const vector = await provider.embed(text);
+        store.putEmbedding(node.id, 'node', text, vector, provider.name);
+        newEmbeddings++;
+      } catch {
+        // Embedding failure is non-fatal — node still exists in graph
+      }
+    }
+  }
+
   if (useSqlite && store) {
     store.importGraph(graph);
     store.setMeta('pending_edges', JSON.stringify(pendingEdges));
@@ -194,6 +213,7 @@ export async function consolidate(
     reinforcedNodes,
     reinforcedEdges,
     decayedEdges: decayed,
+    newEmbeddings,
     pendingEdges,
     failures,
   };

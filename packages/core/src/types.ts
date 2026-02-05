@@ -138,6 +138,7 @@ export interface ConsolidationResult {
   reinforcedNodes: number;
   reinforcedEdges: number;
   decayedEdges: number;
+  newEmbeddings: number;
   pendingEdges: PendingEdge[];
   failures: FileFailure[];
 }
