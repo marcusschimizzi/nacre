@@ -89,7 +89,7 @@ export function searchRoutes(store: SqliteStore): Hono {
         ? getProvider(providerName)
         : null;
 
-    const results = await recall(store, provider, {
+    const response = await recall(store, provider, {
       query: q,
       limit,
       types,
@@ -98,7 +98,7 @@ export function searchRoutes(store: SqliteStore): Hono {
       hops,
     });
 
-    return c.json({ data: results });
+    return c.json({ data: response.results, procedures: response.procedures });
   });
 
   return app;

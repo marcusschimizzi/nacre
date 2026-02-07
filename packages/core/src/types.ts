@@ -376,5 +376,9 @@ export interface RecallResult {
   excerpts: string[];
   connections: RecallConnection[];
   episodes?: Episode[];
-  procedures?: RecallProcedureMatch[];
+}
+
+export interface RecallResponse {
+  results: RecallResult[];
+  procedures: RecallProcedureMatch[];
 }

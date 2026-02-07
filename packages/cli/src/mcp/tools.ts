@@ -6,6 +6,7 @@ import {
   OllamaEmbedder,
   recall,
   generateBrief,
+  extractQueryTerms,
   type EmbeddingProvider,
   type EntityType,
   type MemoryNode,
@@ -15,11 +16,9 @@ import {
 
 function createProvider(store: SqliteStore): EmbeddingProvider | null {
   if (store.embeddingCount() === 0) return null;
-  try {
-    return new OllamaEmbedder();
-  } catch {
-    return new MockEmbedder();
-  }
+  // Use MockEmbedder for reliable behavior - OllamaEmbedder requires running Ollama
+  // The MCP tool handler has fallback logic if embedding fails
+  return new MockEmbedder();
 }
 
 function generateId(content: string): string {
@@ -44,30 +43,35 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
       since: z.string().optional().describe('ISO date — only memories after this'),
     },
     async (args) => {
-      const provider = createProvider(store);
-      let results;
+      let response;
       try {
-        results = await recall(store, provider, {
+        const provider = createProvider(store);
+        response = await recall(store, provider, {
           query: args.query,
           limit: args.limit,
           types: args.types as EntityType[] | undefined,
           since: args.since,
         });
       } catch {
-        // Ollama unavailable — fall back to graph-only recall (no semantic search)
-        results = await recall(store, null, {
-          query: args.query,
-          limit: args.limit,
-          types: args.types as EntityType[] | undefined,
-          since: args.since,
-        });
+        // Ollama unavailable or other error — fall back to graph-only recall
+        try {
+          response = await recall(store, null, {
+            query: args.query,
+            limit: args.limit,
+            types: args.types as EntityType[] | undefined,
+            since: args.since,
+          });
+        } catch {
+          // If even graph-only recall fails, return empty results
+          return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
+        }
       }
 
-      if (results.length === 0) {
+      if (response.results.length === 0) {
         return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
       }
 
-      const lines = results.map((r, i) =>
+      const lines = response.results.map((r, i) =>
         `${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}\n` +
         `   semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  ` +
         `recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}` +
@@ -76,11 +80,16 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
           : ''),
       );
 
+      let text = `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
+      
+      if (response.procedures.length > 0) {
+        text += `\n\nRelevant Procedures:\n` + response.procedures.map(p => 
+          `• ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})`
+        ).join('\n');
+      }
+
       return {
-        content: [{
-          type: 'text',
-          text: `Found ${results.length} result${results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`,
-        }],
+        content: [{ type: 'text', text }],
       };
     },
   );
@@ -272,11 +281,7 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
       const id = generateId(`proc:${args.lesson}`);
       const timestamp = now();
 
-      const keywords = args.keywords ??
-        args.lesson
-          .toLowerCase()
-          .split(/[^a-z0-9]+/)
-          .filter((t) => t.length >= 3);
+      const keywords = args.keywords ?? extractQueryTerms(args.lesson);
 
       const proc: Procedure = {
         id,

@@ -378,27 +378,26 @@ describe('recall integration with procedures', () => {
     store.close();
   });
 
-  it('recall includes procedures in first result when procedures match', async () => {
-    const results = await recall(store, embedder, { query: 'deploy rollback' });
-    assert.ok(results.length > 0);
-    assert.ok(results[0].procedures);
-    assert.ok(results[0].procedures!.length > 0);
-    assert.equal(results[0].procedures![0].id, 'r-proc-1');
+  it('recall includes procedures when procedures match', async () => {
+    const response = await recall(store, embedder, { query: 'deploy rollback' });
+    assert.ok(response.results.length > 0);
+    assert.ok(response.procedures.length > 0);
+    assert.equal(response.procedures[0].id, 'r-proc-1');
   });
 
   it('recall with includeProcedures false omits procedures', async () => {
-    const results = await recall(store, embedder, {
+    const response = await recall(store, embedder, {
       query: 'deploy rollback',
       includeProcedures: false,
     });
 
-    assert.ok(results.length > 0);
-    assert.equal(results[0].procedures, undefined);
+    assert.ok(response.results.length > 0);
+    assert.equal(response.procedures.length, 0);
   });
 
   it('recall procedure matches contain score and matchedKeywords', async () => {
-    const results = await recall(store, embedder, { query: 'deploy rollback' });
-    const proc = results[0].procedures?.[0];
+    const response = await recall(store, embedder, { query: 'deploy rollback' });
+    const proc = response.procedures[0];
 
     assert.ok(proc);
     assert.ok(typeof proc.score === 'number');

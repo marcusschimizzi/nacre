@@ -4,6 +4,7 @@ import {
   MockEmbedder,
   recall as coreRecall,
   generateBrief,
+  extractQueryTerms,
   type EmbeddingProvider,
   type EntityType,
   type MemoryNode,
@@ -132,14 +133,14 @@ export class LocalBackend implements Backend {
 
   async recall(query: string, opts?: RecallOptions): Promise<Memory[]> {
     try {
-      const results = await coreRecall(this.store, this.embedder, {
+      const response = await coreRecall(this.store, this.embedder, {
         query,
         limit: opts?.limit,
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
       });
-      return results.map((r) => ({
+      return response.results.map((r) => ({
         id: r.id,
         label: r.label,
         type: r.type,
@@ -159,14 +160,14 @@ export class LocalBackend implements Backend {
       }));
     } catch {
       // Ollama unavailable — fall back to graph-only recall
-      const results = await coreRecall(this.store, null, {
+      const response = await coreRecall(this.store, null, {
         query,
         limit: opts?.limit,
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
       });
-      return results.map((r) => ({
+      return response.results.map((r) => ({
         id: r.id,
         label: r.label,
         type: r.type,
@@ -202,8 +203,7 @@ export class LocalBackend implements Backend {
     const id = generateId(`proc:${lesson}`);
     const timestamp = new Date().toISOString();
 
-    const keywords = opts?.keywords ??
-      lesson.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3);
+    const keywords = opts?.keywords ?? extractQueryTerms(lesson);
 
     const proc: Procedure = {
       id,

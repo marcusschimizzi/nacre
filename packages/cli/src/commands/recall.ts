@@ -88,7 +88,7 @@ export default defineCommand({
         ? (args.types as string).split(',').map((t) => t.trim()) as EntityType[]
         : undefined;
 
-      const results = await recall(store, provider, {
+      const response = await recall(store, provider, {
         query: args.query as string,
         limit: parseInt(args.limit as string, 10),
         types,
@@ -98,20 +98,20 @@ export default defineCommand({
       });
 
       if ((args.format as string) === 'json') {
-        console.log(formatJSON(results));
+        console.log(formatJSON(response));
         return;
       }
 
-      if (results.length === 0) {
+      if (response.results.length === 0) {
         console.log('No results found.');
         return;
       }
 
       console.log(`Query: "${args.query}"`);
-      console.log(`Found ${results.length} result${results.length === 1 ? '' : 's'}:\n`);
+      console.log(`Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n`);
 
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i];
+      for (let i = 0; i < response.results.length; i++) {
+        const r = response.results[i];
         console.log(`  ${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}`);
         console.log(`     semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}`);
 
@@ -124,6 +124,13 @@ export default defineCommand({
 
         if (r.episodes && r.episodes.length > 0) {
           console.log(`     Episodes: ${r.episodes.length} linked`);
+        }
+      }
+
+      if (response.procedures.length > 0) {
+        console.log(`\nRelevant Procedures (${response.procedures.length}):`);
+        for (const p of response.procedures) {
+          console.log(`  • ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})`);
         }
       }
     } finally {

@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, type Procedure, type ProcedureType } from '@nacre/core';
+import { SqliteStore, extractQueryTerms, type Procedure, type ProcedureType } from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 const PROCEDURE_TYPES: ProcedureType[] = [
@@ -29,12 +29,7 @@ function parseCommaSeparated(value?: string): string[] {
 }
 
 function extractKeywords(statement: string): string[] {
-  const terms = statement
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .map((term) => term.trim())
-    .filter((term) => term.length >= 3);
-  return [...new Set(terms)];
+  return extractQueryTerms(statement);
 }
 
 function generateId(content: string): string {

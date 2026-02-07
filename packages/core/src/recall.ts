@@ -2,6 +2,7 @@ import type {
   NacreGraph,
   RecallOptions,
   RecallResult,
+  RecallResponse,
   RecallWeights,
   RecallConnection,
   RecallProcedureMatch,
@@ -98,7 +99,7 @@ export async function recall(
   store: SqliteStore,
   provider: EmbeddingProvider | null,
   opts: RecallOptions,
-): Promise<RecallResult[]> {
+): Promise<RecallResponse> {
   const weights: RecallWeights = { ...DEFAULT_RECALL_WEIGHTS, ...opts.weights };
   const limit = opts.limit ?? 10;
   const hops = opts.hops ?? 2;
@@ -275,22 +276,21 @@ export async function recall(
     });
   }
 
+  let procedures: RecallProcedureMatch[] = [];
   if (opts.includeProcedures !== false) {
     const procMatches = findRelevantProcedures(store, opts.query, [], {
       limit: opts.procedureLimit ?? 3,
       minScore: 0.1,
     });
-    if (procMatches.length > 0 && results.length > 0) {
-      results[0].procedures = procMatches.map((m): RecallProcedureMatch => ({
-        id: m.procedure.id,
-        statement: m.procedure.statement,
-        type: m.procedure.type,
-        confidence: m.procedure.confidence,
-        score: m.score,
-        matchedKeywords: m.matchedKeywords,
-      }));
-    }
+    procedures = procMatches.map((m): RecallProcedureMatch => ({
+      id: m.procedure.id,
+      statement: m.procedure.statement,
+      type: m.procedure.type,
+      confidence: m.procedure.confidence,
+      score: m.score,
+      matchedKeywords: m.matchedKeywords,
+    }));
   }
 
-  return results;
+  return { results, procedures };
 }

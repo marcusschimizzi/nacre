@@ -188,9 +188,9 @@ describe('recall — integration', () => {
   });
 
   it('returns results with all score components', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre' });
-    assert.ok(results.length > 0);
-    const first = results[0];
+    const response = await recall(store, embedder, { query: 'Nacre' });
+    assert.ok(response.results.length > 0);
+    const first = response.results[0];
     assert.ok('semantic' in first.scores);
     assert.ok('graph' in first.scores);
     assert.ok('recency' in first.scores);
@@ -199,37 +199,37 @@ describe('recall — integration', () => {
   });
 
   it('finds nodes via graph traversal (graph score > 0)', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre' });
-    const nacre = results.find((r) => r.id === 'n-nacre');
+    const response = await recall(store, embedder, { query: 'Nacre' });
+    const nacre = response.results.find((r) => r.id === 'n-nacre');
     assert.ok(nacre);
     assert.ok(nacre.scores.graph > 0);
   });
 
   it('includes semantic matches when provider is given', async () => {
-    const results = await recall(store, embedder, { query: 'TypeScript' });
-    const hasAnySemantic = results.some((r) => r.scores.semantic > 0);
-    assert.ok(results.length > 0);
-    assert.ok(hasAnySemantic || results.some((r) => r.scores.graph > 0));
+    const response = await recall(store, embedder, { query: 'TypeScript' });
+    const hasAnySemantic = response.results.some((r) => r.scores.semantic > 0);
+    assert.ok(response.results.length > 0);
+    assert.ok(hasAnySemantic || response.results.some((r) => r.scores.graph > 0));
   });
 
   it('works without embedding provider (graph-only)', async () => {
-    const results = await recall(store, null, { query: 'Nacre' });
-    assert.ok(results.length > 0);
-    for (const r of results) {
+    const response = await recall(store, null, { query: 'Nacre' });
+    assert.ok(response.results.length > 0);
+    for (const r of response.results) {
       assert.strictEqual(r.scores.semantic, 0);
     }
   });
 
   it('includes both semantic and graph-connected nodes', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre', limit: 10 });
-    const ids = results.map((r) => r.id);
+    const response = await recall(store, embedder, { query: 'Nacre', limit: 10 });
+    const ids = response.results.map((r) => r.id);
     assert.ok(ids.includes('n-nacre'));
-    assert.ok(results.length > 1);
+    assert.ok(response.results.length > 1);
   });
 
   it('includes connections in results', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre' });
-    const nacre = results.find((r) => r.id === 'n-nacre');
+    const response = await recall(store, embedder, { query: 'Nacre' });
+    const nacre = response.results.find((r) => r.id === 'n-nacre');
     assert.ok(nacre);
     assert.ok(nacre.connections.length > 0);
     const conn = nacre.connections[0];
@@ -240,8 +240,8 @@ describe('recall — integration', () => {
   });
 
   it('includes episodes for linked nodes', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre' });
-    const nacre = results.find((r) => r.id === 'n-nacre');
+    const response = await recall(store, embedder, { query: 'Nacre' });
+    const nacre = response.results.find((r) => r.id === 'n-nacre');
     assert.ok(nacre);
     assert.ok(nacre.episodes);
     assert.ok(nacre.episodes.length > 0);
@@ -249,51 +249,51 @@ describe('recall — integration', () => {
   });
 
   it('filters by entity type', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre', types: ['person'] });
-    for (const r of results) {
+    const response = await recall(store, embedder, { query: 'Nacre', types: ['person'] });
+    for (const r of response.results) {
       assert.strictEqual(r.type, 'person');
     }
   });
 
   it('filters by time range (since)', async () => {
-    const results = await recall(store, embedder, {
+    const response = await recall(store, embedder, {
       query: 'knowledge graph',
       since: '2025-12-01',
     });
-    for (const r of results) {
+    for (const r of response.results) {
       assert.ok(r.id !== 'n-old');
     }
   });
 
   it('respects limit', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre', limit: 2 });
-    assert.ok(results.length <= 2);
+    const response = await recall(store, embedder, { query: 'Nacre', limit: 2 });
+    assert.ok(response.results.length <= 2);
   });
 
   it('returns fewer results for unmatched query', async () => {
     const matched = await recall(store, embedder, { query: 'Nacre' });
     const unmatched = await recall(store, embedder, { query: 'xyzzynonexistent99' });
-    assert.ok(unmatched.length <= matched.length);
+    assert.ok(unmatched.results.length <= matched.results.length);
   });
 
   it('includes excerpts', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre' });
-    const nacre = results.find((r) => r.id === 'n-nacre');
+    const response = await recall(store, embedder, { query: 'Nacre' });
+    const nacre = response.results.find((r) => r.id === 'n-nacre');
     assert.ok(nacre);
     assert.ok(nacre.excerpts.length > 0);
   });
 
   it('respects minScore threshold', async () => {
-    const results = await recall(store, embedder, { query: 'Nacre', minScore: 0.99 });
-    for (const r of results) {
+    const response = await recall(store, embedder, { query: 'Nacre', minScore: 0.99 });
+    for (const r of response.results) {
       assert.ok(r.score >= 0.99);
     }
   });
 
   it('scores recency higher for recent nodes', async () => {
-    const results = await recall(store, null, { query: 'knowledge graph' });
-    const graph = results.find((r) => r.id === 'n-graph');
-    const old = results.find((r) => r.id === 'n-old');
+    const response = await recall(store, null, { query: 'knowledge graph' });
+    const graph = response.results.find((r) => r.id === 'n-graph');
+    const old = response.results.find((r) => r.id === 'n-old');
     if (graph && old) {
       assert.ok(graph.scores.recency > old.scores.recency);
     }
