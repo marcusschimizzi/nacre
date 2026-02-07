@@ -282,6 +282,7 @@ export interface GraphStore {
   getEmbedding(id: string): EmbeddingRecord | undefined;
   searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[];
   deleteEmbedding(id: string): void;
+  clearAllEmbeddings(): number;
   embeddingCount(): number;
 
   // Episode operations
@@ -623,6 +624,11 @@ export class SqliteStore implements GraphStore {
 
   deleteEmbedding(id: string): void {
     this.stmt('DELETE FROM embeddings WHERE id = ?').run(id);
+  }
+
+  clearAllEmbeddings(): number {
+    const result = this.db.prepare('DELETE FROM embeddings').run();
+    return result.changes;
   }
 
   embeddingCount(): number {

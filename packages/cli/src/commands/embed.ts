@@ -43,6 +43,24 @@ export default defineCommand({
         return;
       }
 
+      const storedProvider = store.getMeta('embedding_provider');
+      const storedDims = store.getMeta('embedding_dimensions');
+      if (storedProvider && storedDims && store.embeddingCount() > 0) {
+        const existingDims = parseInt(storedDims, 10);
+        if (existingDims !== provider.dimensions) {
+          console.warn(`Provider changed (${storedProvider} → ${provider.name})`);
+          console.warn(`Dimensions: ${existingDims} → ${provider.dimensions}`);
+          if (!args.force) {
+            console.warn('Run with --force to clear existing embeddings and re-embed.');
+            process.exit(1);
+          }
+          const cleared = store.clearAllEmbeddings();
+          console.log(`Cleared ${cleared} existing embeddings for re-embedding.`);
+        } else if (storedProvider !== provider.name) {
+          console.log(`Provider name changed (${storedProvider} → ${provider.name}), dimensions match.`);
+        }
+      }
+
       console.log(`Provider: ${provider.name} (${provider.dimensions} dims)`);
       console.log(`Nodes: ${nodes.length}`);
       console.log('');
@@ -78,6 +96,11 @@ export default defineCommand({
 
       console.log('');
       console.log(`Done. Embedded: ${embedded}, Skipped: ${skipped}, Total stored: ${store.embeddingCount()}`);
+
+      if (embedded > 0) {
+        store.setMeta('embedding_provider', provider.name);
+        store.setMeta('embedding_dimensions', String(provider.dimensions));
+      }
     } finally {
       store.close();
     }
