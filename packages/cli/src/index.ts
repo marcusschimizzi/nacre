@@ -13,6 +13,8 @@ import recallCmd from './commands/recall.js';
 import proceduresCmd from './commands/procedures.js';
 import apiCmd from './commands/api.js';
 import mcpCmd from './commands/mcp.js';
+import snapshotsCmd from './commands/snapshots.js';
+import historyCmd from './commands/history.js';
 import { migrateCommand } from './commands/migrate.js';
 
 const main = defineCommand({
@@ -38,6 +40,8 @@ const main = defineCommand({
     procedures: proceduresCmd,
     api: apiCmd,
     mcp: mcpCmd,
+    snapshots: snapshotsCmd,
+    history: historyCmd,
   },
 });
 

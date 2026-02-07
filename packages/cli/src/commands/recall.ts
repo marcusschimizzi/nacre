@@ -49,6 +49,10 @@ export default defineCommand({
       description: 'Graph walk depth',
       default: '2',
     },
+    'as-of': {
+      type: 'string',
+      description: 'Recall as of this ISO date (uses nearest snapshot)',
+    },
     format: {
       type: 'string',
       description: 'Output format: text or json',
@@ -82,6 +86,7 @@ export default defineCommand({
         since: args.since as string | undefined,
         until: args.until as string | undefined,
         hops: parseInt(args.hops as string, 10),
+        asOf: args['as-of'] as string | undefined,
       });
 
       if ((args.format as string) === 'json') {
