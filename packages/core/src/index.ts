@@ -8,4 +8,5 @@ export * from './store.js';
 export * from './embeddings.js';
 export * from './recall.js';
 export * from './procedures.js';
+export * from './temporal.js';
 export * from './config.js';
