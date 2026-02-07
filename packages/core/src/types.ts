@@ -315,6 +315,36 @@ export interface ProcedureFilter {
   hasContext?: string;
 }
 
+// === Temporal / Snapshot Types (M10) ===
+
+export type SnapshotTrigger = 'consolidation' | 'manual' | 'scheduled';
+
+export interface Snapshot {
+  id: string;
+  createdAt: string;
+  trigger: SnapshotTrigger;
+  nodeCount: number;
+  edgeCount: number;
+  episodeCount: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SnapshotFilter {
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
+export interface EntityHistory {
+  entityId: string;
+  type: 'node' | 'edge';
+  snapshots: Array<{
+    snapshotId: string;
+    timestamp: string;
+    state: MemoryNode | MemoryEdge;
+  }>;
+}
+
 // === Hybrid Recall Types (M5) ===
 
 export interface RecallWeights {

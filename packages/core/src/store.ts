@@ -26,13 +26,17 @@ import type {
   Procedure,
   ProcedureType,
   ProcedureFilter,
+  Snapshot,
+  SnapshotTrigger,
+  SnapshotFilter,
+  EntityHistory,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { cosineSimilarity, bufferToVector, vectorToBuffer } from './embeddings.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -142,6 +146,39 @@ CREATE TABLE IF NOT EXISTS procedures (
 
 CREATE INDEX IF NOT EXISTS idx_procedures_type ON procedures(type);
 CREATE INDEX IF NOT EXISTS idx_procedures_confidence ON procedures(confidence DESC);
+
+CREATE TABLE IF NOT EXISTS snapshots (
+  id            TEXT PRIMARY KEY,
+  created_at    TEXT NOT NULL,
+  trigger       TEXT NOT NULL,
+  node_count    INTEGER NOT NULL,
+  edge_count    INTEGER NOT NULL,
+  episode_count INTEGER NOT NULL,
+  metadata      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_nodes (
+  snapshot_id   TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+  node_id       TEXT NOT NULL,
+  label         TEXT NOT NULL,
+  type          TEXT NOT NULL,
+  mention_count INTEGER NOT NULL,
+  data          TEXT NOT NULL,
+  PRIMARY KEY (snapshot_id, node_id)
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_edges (
+  snapshot_id   TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+  edge_id       TEXT NOT NULL,
+  source        TEXT NOT NULL,
+  target        TEXT NOT NULL,
+  weight        REAL NOT NULL,
+  stability     REAL NOT NULL,
+  data          TEXT NOT NULL,
+  PRIMARY KEY (snapshot_id, edge_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -305,6 +342,15 @@ export interface GraphStore {
   deleteProcedure(id: string): void;
   procedureCount(): number;
 
+  // Snapshot operations
+  createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot;
+  getSnapshot(id: string): Snapshot | undefined;
+  listSnapshots(opts?: SnapshotFilter): Snapshot[];
+  getSnapshotGraph(id: string): NacreGraph;
+  deleteSnapshot(id: string): void;
+  getNodeHistory(nodeId: string): EntityHistory;
+  getEdgeHistory(edgeId: string): EntityHistory;
+
   // Bulk operations
   getFullGraph(): NacreGraph;
   importGraph(graph: NacreGraph): void;
@@ -415,6 +461,39 @@ export class SqliteStore implements GraphStore {
           );
           CREATE INDEX IF NOT EXISTS idx_procedures_type ON procedures(type);
           CREATE INDEX IF NOT EXISTS idx_procedures_confidence ON procedures(confidence DESC);
+        `);
+      }
+      if (ver < 4) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS snapshots (
+            id            TEXT PRIMARY KEY,
+            created_at    TEXT NOT NULL,
+            trigger       TEXT NOT NULL,
+            node_count    INTEGER NOT NULL,
+            edge_count    INTEGER NOT NULL,
+            episode_count INTEGER NOT NULL,
+            metadata      TEXT
+          );
+          CREATE TABLE IF NOT EXISTS snapshot_nodes (
+            snapshot_id   TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+            node_id       TEXT NOT NULL,
+            label         TEXT NOT NULL,
+            type          TEXT NOT NULL,
+            mention_count INTEGER NOT NULL,
+            data          TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, node_id)
+          );
+          CREATE TABLE IF NOT EXISTS snapshot_edges (
+            snapshot_id   TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+            edge_id       TEXT NOT NULL,
+            source        TEXT NOT NULL,
+            target        TEXT NOT NULL,
+            weight        REAL NOT NULL,
+            stability     REAL NOT NULL,
+            data          TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, edge_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
         `);
       }
       db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
@@ -873,6 +952,177 @@ export class SqliteStore implements GraphStore {
   procedureCount(): number {
     const row = this.stmt('SELECT COUNT(*) as count FROM procedures').get() as { count: number };
     return row.count;
+  }
+
+  // ── Snapshots ────────────────────────────────────────────
+
+  createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot {
+    const now = new Date().toISOString();
+    const id = now;
+    const nodes = this.listNodes();
+    const edges = this.listEdges();
+    const epCount = this.episodeCount();
+
+    const snapshot: Snapshot = {
+      id,
+      createdAt: now,
+      trigger,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      episodeCount: epCount,
+      metadata,
+    };
+
+    const insertAll = this.db.transaction(() => {
+      this.stmt(
+        `INSERT INTO snapshots (id, created_at, trigger, node_count, edge_count, episode_count, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(id, now, trigger, nodes.length, edges.length, epCount, metadata ? JSON.stringify(metadata) : null);
+
+      for (const node of nodes) {
+        this.stmt(
+          `INSERT INTO snapshot_nodes (snapshot_id, node_id, label, type, mention_count, data)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(id, node.id, node.label, node.type, node.mentionCount, JSON.stringify(node));
+      }
+
+      for (const edge of edges) {
+        this.stmt(
+          `INSERT INTO snapshot_edges (snapshot_id, edge_id, source, target, weight, stability, data)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(id, edge.id, edge.source, edge.target, edge.weight, edge.stability, JSON.stringify(edge));
+      }
+    });
+
+    insertAll();
+    return snapshot;
+  }
+
+  getSnapshot(id: string): Snapshot | undefined {
+    const row = this.stmt('SELECT * FROM snapshots WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    return {
+      id: row.id as string,
+      createdAt: row.created_at as string,
+      trigger: row.trigger as SnapshotTrigger,
+      nodeCount: row.node_count as number,
+      edgeCount: row.edge_count as number,
+      episodeCount: row.episode_count as number,
+      metadata: row.metadata ? JSON.parse(row.metadata as string) : undefined,
+    };
+  }
+
+  listSnapshots(opts?: SnapshotFilter): Snapshot[] {
+    let sql = 'SELECT * FROM snapshots';
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (opts?.since) {
+      conditions.push('created_at >= ?');
+      params.push(opts.since);
+    }
+    if (opts?.until) {
+      conditions.push('created_at <= ?');
+      params.push(opts.until);
+    }
+
+    if (conditions.length) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    sql += ' ORDER BY created_at DESC';
+
+    if (opts?.limit) {
+      sql += ' LIMIT ?';
+      params.push(opts.limit);
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
+    return rows.map(row => ({
+      id: row.id as string,
+      createdAt: row.created_at as string,
+      trigger: row.trigger as SnapshotTrigger,
+      nodeCount: row.node_count as number,
+      edgeCount: row.edge_count as number,
+      episodeCount: row.episode_count as number,
+      metadata: row.metadata ? JSON.parse(row.metadata as string) : undefined,
+    }));
+  }
+
+  getSnapshotGraph(id: string): NacreGraph {
+    const snapshot = this.getSnapshot(id);
+    if (!snapshot) throw new Error(`Snapshot not found: ${id}`);
+
+    const nodeRows = this.stmt('SELECT data FROM snapshot_nodes WHERE snapshot_id = ?').all(id) as Array<{ data: string }>;
+    const edgeRows = this.stmt('SELECT data FROM snapshot_edges WHERE snapshot_id = ?').all(id) as Array<{ data: string }>;
+
+    const nodes: Record<string, MemoryNode> = {};
+    for (const row of nodeRows) {
+      const node = JSON.parse(row.data) as MemoryNode;
+      nodes[node.id] = node;
+    }
+
+    const edges: Record<string, MemoryEdge> = {};
+    for (const row of edgeRows) {
+      const edge = JSON.parse(row.data) as MemoryEdge;
+      edges[edge.id] = edge;
+    }
+
+    const configStr = this.getMeta('config');
+    const config: GraphConfig = configStr ? JSON.parse(configStr) : DEFAULT_CONFIG;
+
+    return {
+      version: 2,
+      lastConsolidated: snapshot.createdAt,
+      processedFiles: [],
+      nodes,
+      edges,
+      config,
+    };
+  }
+
+  deleteSnapshot(id: string): void {
+    this.stmt('DELETE FROM snapshots WHERE id = ?').run(id);
+  }
+
+  getNodeHistory(nodeId: string): EntityHistory {
+    const rows = this.db.prepare(
+      `SELECT s.id AS snapshot_id, s.created_at, sn.data
+       FROM snapshot_nodes sn
+       JOIN snapshots s ON s.id = sn.snapshot_id
+       WHERE sn.node_id = ?
+       ORDER BY s.created_at ASC`
+    ).all(nodeId) as Array<{ snapshot_id: string; created_at: string; data: string }>;
+
+    return {
+      entityId: nodeId,
+      type: 'node',
+      snapshots: rows.map(row => ({
+        snapshotId: row.snapshot_id,
+        timestamp: row.created_at,
+        state: JSON.parse(row.data) as MemoryNode,
+      })),
+    };
+  }
+
+  getEdgeHistory(edgeId: string): EntityHistory {
+    const rows = this.db.prepare(
+      `SELECT s.id AS snapshot_id, s.created_at, se.data
+       FROM snapshot_edges se
+       JOIN snapshots s ON s.id = se.snapshot_id
+       WHERE se.edge_id = ?
+       ORDER BY s.created_at ASC`
+    ).all(edgeId) as Array<{ snapshot_id: string; created_at: string; data: string }>;
+
+    return {
+      entityId: edgeId,
+      type: 'edge',
+      snapshots: rows.map(row => ({
+        snapshotId: row.snapshot_id,
+        timestamp: row.created_at,
+        state: JSON.parse(row.data) as MemoryEdge,
+      })),
+    };
   }
 
   // ── Bulk Operations ───────────────────────────────────────
