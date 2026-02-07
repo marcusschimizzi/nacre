@@ -67,6 +67,10 @@ export default defineCommand({
     try {
       const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string, allowNull: true });
 
+      if (!provider && store.embeddingCount() > 0) {
+        console.warn('Embeddings exist but no provider available for query embedding. Falling back to graph-only recall.');
+      }
+
       const types = args.types
         ? (args.types as string).split(',').map((t) => t.trim()) as EntityType[]
         : undefined;
