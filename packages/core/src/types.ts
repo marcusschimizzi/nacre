@@ -284,3 +284,55 @@ export interface EpisodeFilter {
   source?: string;
   hasEntity?: string;
 }
+
+// === Hybrid Recall Types (M5) ===
+
+export interface RecallWeights {
+  semantic: number;
+  graph: number;
+  recency: number;
+  importance: number;
+}
+
+export const DEFAULT_RECALL_WEIGHTS: RecallWeights = {
+  semantic: 0.4,
+  graph: 0.3,
+  recency: 0.2,
+  importance: 0.1,
+};
+
+export interface RecallOptions {
+  query: string;
+  limit?: number;
+  minScore?: number;
+  types?: EntityType[];
+  since?: string;
+  until?: string;
+  weights?: Partial<RecallWeights>;
+  hops?: number;
+}
+
+export interface RecallScores {
+  semantic: number;
+  graph: number;
+  recency: number;
+  importance: number;
+}
+
+export interface RecallConnection {
+  label: string;
+  type: string;
+  relationship: string;
+  weight: number;
+}
+
+export interface RecallResult {
+  id: string;
+  label: string;
+  type: string;
+  score: number;
+  scores: RecallScores;
+  excerpts: string[];
+  connections: RecallConnection[];
+  episodes?: Episode[];
+}

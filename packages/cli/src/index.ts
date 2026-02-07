@@ -9,6 +9,7 @@ import vizCmd from './commands/viz.js';
 import embedCmd from './commands/embed.js';
 import similarCmd from './commands/similar.js';
 import episodesCmd from './commands/episodes.js';
+import recallCmd from './commands/recall.js';
 import apiCmd from './commands/api.js';
 import { migrateCommand } from './commands/migrate.js';
 
@@ -31,6 +32,7 @@ const main = defineCommand({
     embed: embedCmd,
     similar: similarCmd,
     episodes: episodesCmd,
+    recall: recallCmd,
     api: apiCmd,
   },
 });
