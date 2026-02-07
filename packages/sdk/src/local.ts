@@ -1,7 +1,6 @@
 import {
   SqliteStore,
-  OllamaEmbedder,
-  MockEmbedder,
+  resolveProvider,
   recall as coreRecall,
   generateBrief,
   extractQueryTerms,
@@ -64,19 +63,7 @@ export class LocalBackend implements Backend {
   constructor(opts: NacreOptions) {
     if (!opts.path) throw new Error('Local mode requires path');
     this.store = SqliteStore.open(opts.path);
-    this.embedder = this.createEmbedder(opts.embedder);
-  }
-
-  private createEmbedder(name?: string): EmbeddingProvider | null {
-    if (this.store.embeddingCount() === 0 && name !== 'mock') return null;
-    switch (name) {
-      case 'ollama':
-        return new OllamaEmbedder();
-      case 'mock':
-        return new MockEmbedder();
-      default:
-        return null;
-    }
+    this.embedder = resolveProvider({ provider: opts.embedder, graphPath: opts.path, allowNull: true });
   }
 
   async remember(content: string, opts?: RememberOptions): Promise<Memory> {

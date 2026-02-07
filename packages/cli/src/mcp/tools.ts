@@ -2,24 +2,15 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   SqliteStore,
-  MockEmbedder,
-  OllamaEmbedder,
+  resolveProvider,
   recall,
   generateBrief,
   extractQueryTerms,
-  type EmbeddingProvider,
   type EntityType,
   type MemoryNode,
   type Procedure,
   type ProcedureType,
 } from '@nacre/core';
-
-function createProvider(store: SqliteStore): EmbeddingProvider | null {
-  if (store.embeddingCount() === 0) return null;
-  // Use MockEmbedder for reliable behavior - OllamaEmbedder requires running Ollama
-  // The MCP tool handler has fallback logic if embedding fails
-  return new MockEmbedder();
-}
 
 function generateId(content: string): string {
   let hash = 0;
@@ -45,7 +36,7 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
     async (args) => {
       let response;
       try {
-        const provider = createProvider(store);
+        const provider = store.embeddingCount() > 0 ? resolveProvider({ provider: 'mock', allowNull: true }) : null;
         response = await recall(store, provider, {
           query: args.query,
           limit: args.limit,

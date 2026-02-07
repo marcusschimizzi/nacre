@@ -1,24 +1,11 @@
 import { defineCommand } from 'citty';
 import {
   SqliteStore,
-  OllamaEmbedder,
-  MockEmbedder,
   recall,
-  type EmbeddingProvider,
+  resolveProvider,
   type EntityType,
 } from '@nacre/core';
 import { formatJSON } from '../output.js';
-
-function createProvider(name: string): EmbeddingProvider {
-  switch (name) {
-    case 'ollama':
-      return new OllamaEmbedder();
-    case 'mock':
-      return new MockEmbedder();
-    default:
-      throw new Error(`Unknown provider: ${name}. Available: ollama, mock`);
-  }
-}
 
 export default defineCommand({
   meta: {
@@ -38,8 +25,7 @@ export default defineCommand({
     },
     provider: {
       type: 'string',
-      description: 'Embedding provider: ollama, mock',
-      default: 'ollama',
+      description: 'Embedding provider: onnx, ollama, openai, mock',
     },
     limit: {
       type: 'string',
@@ -79,10 +65,7 @@ export default defineCommand({
     const store = SqliteStore.open(graphPath);
 
     try {
-      const provider: EmbeddingProvider | null =
-        store.embeddingCount() > 0
-          ? createProvider(args.provider as string)
-          : null;
+      const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string, allowNull: true });
 
       const types = args.types
         ? (args.types as string).split(',').map((t) => t.trim()) as EntityType[]

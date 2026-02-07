@@ -1,21 +1,8 @@
 import { defineCommand } from 'citty';
 import {
   SqliteStore,
-  OllamaEmbedder,
-  MockEmbedder,
-  type EmbeddingProvider,
+  resolveProvider,
 } from '@nacre/core';
-
-function createProvider(name: string): EmbeddingProvider {
-  switch (name) {
-    case 'ollama':
-      return new OllamaEmbedder();
-    case 'mock':
-      return new MockEmbedder();
-    default:
-      throw new Error(`Unknown provider: ${name}. Available: ollama, mock`);
-  }
-}
 
 export default defineCommand({
   meta: {
@@ -30,8 +17,7 @@ export default defineCommand({
     },
     provider: {
       type: 'string',
-      description: 'Embedding provider: ollama, mock',
-      default: 'ollama',
+      description: 'Embedding provider: onnx, ollama, openai, mock',
     },
     force: {
       type: 'boolean',
@@ -45,7 +31,7 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const provider = createProvider(args.provider as string);
+    const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string });
     const store = SqliteStore.open(graphPath);
 
     try {

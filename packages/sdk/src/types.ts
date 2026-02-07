@@ -1,6 +1,6 @@
 export interface NacreOptions {
   path?: string;
-  embedder?: 'ollama' | 'mock';
+  embedder?: string;
 
   url?: string;
   apiKey?: string;

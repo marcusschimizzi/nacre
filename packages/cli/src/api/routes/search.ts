@@ -2,20 +2,10 @@ import { Hono } from 'hono';
 import {
   searchNodes,
   recall,
-  MockEmbedder,
-  OllamaEmbedder,
+  resolveProvider,
   type SqliteStore,
   type EntityType,
-  type EmbeddingProvider,
 } from '@nacre/core';
-
-function getProvider(name: string): EmbeddingProvider {
-  switch (name) {
-    case 'ollama': return new OllamaEmbedder();
-    case 'mock': return new MockEmbedder();
-    default: return new OllamaEmbedder();
-  }
-}
 
 export function searchRoutes(store: SqliteStore): Hono {
   const app = new Hono();
@@ -57,8 +47,8 @@ export function searchRoutes(store: SqliteStore): Hono {
     const threshold = parseFloat(c.req.query('threshold') ?? '0');
     const type = c.req.query('type');
 
-    const provider = getProvider(providerName);
-    const queryVec = await provider.embed(q);
+    const provider = resolveProvider({ provider: providerName, allowNull: false });
+    const queryVec = await provider!.embed(q);
     const results = store.searchSimilar(queryVec, {
       limit,
       minSimilarity: threshold,
@@ -84,10 +74,7 @@ export function searchRoutes(store: SqliteStore): Hono {
       ? typesRaw.split(',').map((t) => t.trim()) as EntityType[]
       : undefined;
 
-    const provider: EmbeddingProvider | null =
-      store.embeddingCount() > 0
-        ? getProvider(providerName)
-        : null;
+    const provider = resolveProvider({ provider: providerName, allowNull: true });
 
     const response = await recall(store, provider, {
       query: q,
