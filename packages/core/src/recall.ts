@@ -4,6 +4,7 @@ import type {
   RecallResult,
   RecallWeights,
   RecallConnection,
+  RecallProcedureMatch,
   Episode,
 } from './types.js';
 import { DEFAULT_RECALL_WEIGHTS } from './types.js';
@@ -13,6 +14,7 @@ import { buildAdjacencyMap } from './graph.js';
 import { computeCurrentWeight, daysBetween } from './decay.js';
 import { normalize } from './resolve.js';
 import { findNode, searchNodes } from './query.js';
+import { findRelevantProcedures } from './procedures.js';
 
 /**
  * Discount factor for episode→node semantic score propagation.
@@ -271,6 +273,23 @@ export async function recall(
       connections,
       episodes,
     });
+  }
+
+  if (opts.includeProcedures !== false) {
+    const procMatches = findRelevantProcedures(store, opts.query, [], {
+      limit: opts.procedureLimit ?? 3,
+      minScore: 0.1,
+    });
+    if (procMatches.length > 0 && results.length > 0) {
+      results[0].procedures = procMatches.map((m): RecallProcedureMatch => ({
+        id: m.procedure.id,
+        statement: m.procedure.statement,
+        type: m.procedure.type,
+        confidence: m.procedure.confidence,
+        score: m.score,
+        matchedKeywords: m.matchedKeywords,
+      }));
+    }
   }
 
   return results;

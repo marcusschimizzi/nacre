@@ -340,6 +340,8 @@ export interface RecallOptions {
   until?: string;
   weights?: Partial<RecallWeights>;
   hops?: number;
+  includeProcedures?: boolean;
+  procedureLimit?: number;
 }
 
 export interface RecallScores {
@@ -356,6 +358,15 @@ export interface RecallConnection {
   weight: number;
 }
 
+export interface RecallProcedureMatch {
+  id: string;
+  statement: string;
+  type: string;
+  confidence: number;
+  score: number;
+  matchedKeywords: string[];
+}
+
 export interface RecallResult {
   id: string;
   label: string;
@@ -365,4 +376,5 @@ export interface RecallResult {
   excerpts: string[];
   connections: RecallConnection[];
   episodes?: Episode[];
+  procedures?: RecallProcedureMatch[];
 }
