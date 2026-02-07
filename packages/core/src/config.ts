@@ -10,8 +10,15 @@ export interface EmbeddingConfig {
   options?: Record<string, unknown>;
 }
 
+export interface SnapshotConfig {
+  enabled: boolean;
+  retention?: string;
+  triggers?: Array<'consolidation' | 'manual' | 'scheduled'>;
+}
+
 export interface NacreConfig {
   embeddings?: EmbeddingConfig;
+  snapshots?: SnapshotConfig;
 }
 
 export interface ResolveProviderOptions {

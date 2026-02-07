@@ -5,6 +5,7 @@ import {
   loadEntityMap,
   decayAllEdges,
   SqliteStore,
+  loadConfig,
   type EmbeddingProvider,
   type NacreGraph,
   type PendingEdge,
@@ -27,6 +28,14 @@ export interface ConsolidateOptions {
   entityMapPath?: string;
   embeddingProvider?: EmbeddingProvider;
   now?: Date;
+}
+
+function parseRetention(retention: string): number {
+  const match = retention.match(/^(\d+)([dhm])$/);
+  if (!match) return 0;
+  const [, num, unit] = match;
+  const multiplier = unit === 'd' ? 86400000 : unit === 'h' ? 3600000 : 60000;
+  return parseInt(num, 10) * multiplier;
 }
 
 function extractDateFromFilename(filePath: string): string | null {
@@ -241,6 +250,26 @@ export async function consolidate(
     store.importGraph(graph);
     store.setMeta('pending_edges', JSON.stringify(pendingEdges));
     store.save();
+
+    const snapshotConfig = loadConfig(outDir).snapshots;
+    const snapshotsEnabled = snapshotConfig?.enabled !== false;
+    const triggers = snapshotConfig?.triggers ?? ['consolidation'];
+
+    if (snapshotsEnabled && triggers.includes('consolidation')) {
+      store.createSnapshot('consolidation');
+
+      if (snapshotConfig?.retention) {
+        const retentionMs = parseRetention(snapshotConfig.retention);
+        if (retentionMs > 0) {
+          const cutoff = new Date(Date.now() - retentionMs).toISOString();
+          const old = store.listSnapshots({ until: cutoff });
+          for (const snap of old) {
+            store.deleteSnapshot(snap.id);
+          }
+        }
+      }
+    }
+
     store.close();
   } else {
     mkdirSync(outDir, { recursive: true });
