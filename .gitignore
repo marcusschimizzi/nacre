@@ -33,3 +33,4 @@ coverage/
 tmp/
 *.tmp
 packages/viz/public/
+.sisyphus/
