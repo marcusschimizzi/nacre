@@ -11,6 +11,7 @@ import similarCmd from './commands/similar.js';
 import episodesCmd from './commands/episodes.js';
 import recallCmd from './commands/recall.js';
 import apiCmd from './commands/api.js';
+import mcpCmd from './commands/mcp.js';
 import { migrateCommand } from './commands/migrate.js';
 
 const main = defineCommand({
@@ -34,6 +35,7 @@ const main = defineCommand({
     episodes: episodesCmd,
     recall: recallCmd,
     api: apiCmd,
+    mcp: mcpCmd,
   },
 });
 

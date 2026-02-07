@@ -5,9 +5,12 @@
   "bin": {
     "nacre": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@hono/node-server": "^1.13.8",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@nacre/core": "file:../core",
     "@nacre/parser": "file:../parser",
     "citty": "^0.1.0",
