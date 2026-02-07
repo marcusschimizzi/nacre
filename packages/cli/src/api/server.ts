@@ -9,6 +9,7 @@ import { systemRoutes } from './routes/system.js';
 import { episodeRoutes } from './routes/episodes.js';
 import { procedureRoutes } from './routes/procedures.js';
 import { temporalRoutes } from './routes/temporal.js';
+import { ingestRoutes } from './routes/ingest.js';
 
 export interface CreateAppOptions {
   store: SqliteStore;
@@ -41,6 +42,7 @@ export function createApp(opts: CreateAppOptions): Hono {
   app.route('/api/v1', episodeRoutes(store));
   app.route('/api/v1', procedureRoutes(store));
   app.route('/api/v1', temporalRoutes(store));
+  app.route('/api/v1', ingestRoutes(store, graphPath));
 
   return app;
 }
