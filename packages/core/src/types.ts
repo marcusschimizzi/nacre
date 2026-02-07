@@ -345,6 +345,35 @@ export interface EntityHistory {
   }>;
 }
 
+// === Conversation Ingestion Types (M11) ===
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp?: string;       // ISO date
+  name?: string;            // participant name (for multi-party)
+  toolName?: string;        // for tool messages
+  toolCallId?: string;
+}
+
+export interface ConversationInput {
+  messages: ConversationMessage[];
+  metadata?: {
+    sessionId?: string;
+    platform?: string;      // 'slack', 'discord', 'cli', 'openai', etc.
+    topic?: string;
+    source?: string;        // file path or URL
+  };
+}
+
+export interface ConversationChunk {
+  messages: ConversationMessage[];
+  startTime?: string;
+  endTime?: string;
+  topic?: string;           // inferred or from metadata
+  summary?: string;
+}
+
 // === Hybrid Recall Types (M5) ===
 
 export interface RecallWeights {
