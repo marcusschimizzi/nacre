@@ -155,6 +155,9 @@ export async function recall(
     if (snapshots.length > 0) {
       graph = store.getSnapshotGraph(snapshots[0].id);
     } else {
+      console.warn(
+        `No snapshot found before ${opts.asOf}. Using live graph instead. Run 'nacre snapshots create' to create one.`
+      );
       graph = store.getFullGraph();
     }
   } else {
