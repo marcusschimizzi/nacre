@@ -19,13 +19,17 @@ import type {
   NacreGraph,
   EntityType,
   EdgeType,
+  Episode,
+  EpisodeType,
+  EpisodeFilter,
+  EpisodeEntityLink,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { cosineSimilarity, bufferToVector, vectorToBuffer } from './embeddings.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -83,6 +87,37 @@ CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
 CREATE INDEX IF NOT EXISTS idx_embeddings_type ON embeddings(type);
+
+CREATE TABLE IF NOT EXISTS episodes (
+  id              TEXT PRIMARY KEY,
+  timestamp       TEXT NOT NULL,
+  end_timestamp   TEXT,
+  type            TEXT NOT NULL,
+  title           TEXT NOT NULL,
+  summary         TEXT,
+  content         TEXT NOT NULL,
+  sequence        INTEGER NOT NULL DEFAULT 0,
+  parent_id       TEXT,
+  importance      REAL NOT NULL DEFAULT 0.5,
+  access_count    INTEGER NOT NULL DEFAULT 0,
+  last_accessed   TEXT,
+  source          TEXT NOT NULL,
+  source_type     TEXT NOT NULL,
+  created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS episode_entities (
+  episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+  node_id    TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL,
+  PRIMARY KEY (episode_id, node_id, role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_episodes_timestamp ON episodes(timestamp);
+CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
+CREATE INDEX IF NOT EXISTS idx_episodes_source ON episodes(source);
+CREATE INDEX IF NOT EXISTS idx_episode_entities_episode ON episode_entities(episode_id);
+CREATE INDEX IF NOT EXISTS idx_episode_entities_node ON episode_entities(node_id);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -116,6 +151,28 @@ function rowToEdge(row: Record<string, unknown>): MemoryEdge {
     lastReinforced: row.last_reinforced as string,
     stability: row.stability as number,
     evidence: JSON.parse(row.evidence as string),
+  };
+}
+
+function rowToEpisode(row: Record<string, unknown>): Episode {
+  return {
+    id: row.id as string,
+    timestamp: row.timestamp as string,
+    endTimestamp: (row.end_timestamp as string) ?? undefined,
+    type: row.type as EpisodeType,
+    title: row.title as string,
+    summary: (row.summary as string) ?? undefined,
+    content: row.content as string,
+    sequence: row.sequence as number,
+    parentId: (row.parent_id as string) ?? undefined,
+    participants: [],
+    topics: [],
+    outcomes: [],
+    importance: row.importance as number,
+    accessCount: row.access_count as number,
+    lastAccessed: row.last_accessed as string,
+    source: row.source as string,
+    sourceType: row.source_type as Episode['sourceType'],
   };
 }
 
@@ -183,6 +240,18 @@ export interface GraphStore {
   deleteEmbedding(id: string): void;
   embeddingCount(): number;
 
+  // Episode operations
+  putEpisode(episode: Episode): void;
+  getEpisode(id: string): Episode | undefined;
+  listEpisodes(filter?: EpisodeFilter): Episode[];
+  deleteEpisode(id: string): void;
+  episodeCount(): number;
+  linkEpisodeEntity(episodeId: string, nodeId: string, role: EpisodeEntityLink['role']): void;
+  unlinkEpisodeEntity(episodeId: string, nodeId: string, role: EpisodeEntityLink['role']): void;
+  getEpisodeEntities(episodeId: string): EpisodeEntityLink[];
+  getEntityEpisodes(nodeId: string): Episode[];
+  touchEpisode(id: string): void;
+
   // Bulk operations
   getFullGraph(): NacreGraph;
   importGraph(graph: NacreGraph): void;
@@ -234,10 +303,42 @@ export class SqliteStore implements GraphStore {
     db.exec(SCHEMA_SQL);
 
     // Set schema version if new
-    const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
+    const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
     if (!version) {
       db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
       db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('created_at', new Date().toISOString());
+    } else if (parseInt(version.value, 10) < 2) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS episodes (
+          id              TEXT PRIMARY KEY,
+          timestamp       TEXT NOT NULL,
+          end_timestamp   TEXT,
+          type            TEXT NOT NULL,
+          title           TEXT NOT NULL,
+          summary         TEXT,
+          content         TEXT NOT NULL,
+          sequence        INTEGER NOT NULL DEFAULT 0,
+          parent_id       TEXT,
+          importance      REAL NOT NULL DEFAULT 0.5,
+          access_count    INTEGER NOT NULL DEFAULT 0,
+          last_accessed   TEXT,
+          source          TEXT NOT NULL,
+          source_type     TEXT NOT NULL,
+          created_at      TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS episode_entities (
+          episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+          node_id    TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+          role       TEXT NOT NULL,
+          PRIMARY KEY (episode_id, node_id, role)
+        );
+        CREATE INDEX IF NOT EXISTS idx_episodes_timestamp ON episodes(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
+        CREATE INDEX IF NOT EXISTS idx_episodes_source ON episodes(source);
+        CREATE INDEX IF NOT EXISTS idx_episode_entities_episode ON episode_entities(episode_id);
+        CREATE INDEX IF NOT EXISTS idx_episode_entities_node ON episode_entities(node_id);
+      `);
+      db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run('schema_version', '2');
     }
 
     return new SqliteStore(db);
@@ -477,6 +578,137 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       'INSERT OR REPLACE INTO processed_files (path, hash, last_processed) VALUES (?, ?, ?)'
     ).run(hash.path, hash.hash, hash.lastProcessed);
+  }
+
+  // ── Episodes ──────────────────────────────────────────────
+
+  putEpisode(episode: Episode): void {
+    this.stmt(
+      `INSERT OR REPLACE INTO episodes
+       (id, timestamp, end_timestamp, type, title, summary, content, sequence, parent_id,
+        importance, access_count, last_accessed, source, source_type, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      episode.id, episode.timestamp, episode.endTimestamp ?? null,
+      episode.type, episode.title, episode.summary ?? null,
+      episode.content, episode.sequence, episode.parentId ?? null,
+      episode.importance, episode.accessCount, episode.lastAccessed,
+      episode.source, episode.sourceType, new Date().toISOString()
+    );
+  }
+
+  getEpisode(id: string): Episode | undefined {
+    const row = this.stmt('SELECT * FROM episodes WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    const episode = rowToEpisode(row);
+    this.populateEpisodeEntities(episode);
+    return episode;
+  }
+
+  listEpisodes(filter?: EpisodeFilter): Episode[] {
+    let sql = 'SELECT DISTINCT e.* FROM episodes e';
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filter?.hasEntity) {
+      sql += ' JOIN episode_entities ee ON e.id = ee.episode_id';
+      conditions.push('ee.node_id = ?');
+      params.push(filter.hasEntity);
+    }
+
+    if (filter?.type) {
+      conditions.push('e.type = ?');
+      params.push(filter.type);
+    }
+    if (filter?.since) {
+      conditions.push('e.timestamp >= ?');
+      params.push(filter.since);
+    }
+    if (filter?.until) {
+      conditions.push('e.timestamp <= ?');
+      params.push(filter.until);
+    }
+    if (filter?.source) {
+      conditions.push('e.source = ?');
+      params.push(filter.source);
+    }
+
+    if (conditions.length) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    sql += ' ORDER BY e.timestamp DESC';
+
+    const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
+    return rows.map(row => {
+      const episode = rowToEpisode(row);
+      this.populateEpisodeEntities(episode);
+      return episode;
+    });
+  }
+
+  deleteEpisode(id: string): void {
+    this.stmt('DELETE FROM episodes WHERE id = ?').run(id);
+  }
+
+  episodeCount(): number {
+    const row = this.stmt('SELECT COUNT(*) as count FROM episodes').get() as { count: number };
+    return row.count;
+  }
+
+  linkEpisodeEntity(episodeId: string, nodeId: string, role: EpisodeEntityLink['role']): void {
+    this.stmt(
+      'INSERT OR REPLACE INTO episode_entities (episode_id, node_id, role) VALUES (?, ?, ?)'
+    ).run(episodeId, nodeId, role);
+  }
+
+  unlinkEpisodeEntity(episodeId: string, nodeId: string, role: EpisodeEntityLink['role']): void {
+    this.stmt(
+      'DELETE FROM episode_entities WHERE episode_id = ? AND node_id = ? AND role = ?'
+    ).run(episodeId, nodeId, role);
+  }
+
+  getEpisodeEntities(episodeId: string): EpisodeEntityLink[] {
+    const rows = this.stmt(
+      'SELECT episode_id, node_id, role FROM episode_entities WHERE episode_id = ?'
+    ).all(episodeId) as Array<Record<string, unknown>>;
+    return rows.map(row => ({
+      episodeId: row.episode_id as string,
+      nodeId: row.node_id as string,
+      role: row.role as EpisodeEntityLink['role'],
+    }));
+  }
+
+  getEntityEpisodes(nodeId: string): Episode[] {
+    const rows = this.db.prepare(
+      `SELECT DISTINCT e.* FROM episodes e
+       JOIN episode_entities ee ON e.id = ee.episode_id
+       WHERE ee.node_id = ?
+       ORDER BY e.timestamp DESC`
+    ).all(nodeId) as Record<string, unknown>[];
+    return rows.map(row => {
+      const episode = rowToEpisode(row);
+      this.populateEpisodeEntities(episode);
+      return episode;
+    });
+  }
+
+  touchEpisode(id: string): void {
+    this.stmt(
+      'UPDATE episodes SET access_count = access_count + 1, last_accessed = ? WHERE id = ?'
+    ).run(new Date().toISOString(), id);
+  }
+
+  private populateEpisodeEntities(episode: Episode): void {
+    const links = this.getEpisodeEntities(episode.id);
+    for (const link of links) {
+      if (link.role === 'participant') episode.participants.push(link.nodeId);
+      else if (link.role === 'topic') episode.topics.push(link.nodeId);
+      else if (link.role === 'outcome') {
+        if (!episode.outcomes) episode.outcomes = [];
+        episode.outcomes.push(link.nodeId);
+      }
+    }
   }
 
   // ── Bulk Operations ───────────────────────────────────────
