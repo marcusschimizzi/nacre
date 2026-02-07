@@ -7,6 +7,7 @@ import { intelligenceRoutes } from './routes/intelligence.js';
 import { searchRoutes } from './routes/search.js';
 import { systemRoutes } from './routes/system.js';
 import { episodeRoutes } from './routes/episodes.js';
+import { procedureRoutes } from './routes/procedures.js';
 
 export interface CreateAppOptions {
   store: SqliteStore;
@@ -37,6 +38,7 @@ export function createApp(opts: CreateAppOptions): Hono {
   app.route('/api/v1', intelligenceRoutes(store, graphPath));
   app.route('/api/v1', searchRoutes(store));
   app.route('/api/v1', episodeRoutes(store));
+  app.route('/api/v1', procedureRoutes(store));
 
   return app;
 }

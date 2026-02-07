@@ -81,7 +81,7 @@ describe('MCP Server', () => {
   });
 
   describe('tool listing', () => {
-    it('lists all 6 tools', async () => {
+    it('lists all 7 tools', async () => {
       const result = await client.listTools();
       const toolNames = result.tools.map((t) => t.name).sort();
       assert.deepStrictEqual(toolNames, [
@@ -89,6 +89,7 @@ describe('MCP Server', () => {
         'nacre_feedback',
         'nacre_forget',
         'nacre_lesson',
+        'nacre_procedures',
         'nacre_recall',
         'nacre_remember',
       ]);
@@ -203,22 +204,22 @@ describe('MCP Server', () => {
     it('records a lesson with category', async () => {
       const result = await client.callTool({
         name: 'nacre_lesson',
-        arguments: { lesson: 'Always use strict mode in TypeScript', category: 'preference' },
+        arguments: { lesson: 'Always use strict mode in TypeScript', type: 'preference' },
       });
       assert.ok(!result.isError);
       const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-      assert.ok(text.includes('Lesson recorded'));
+      assert.ok(text.includes('Procedure recorded'));
       assert.ok(text.includes('preference'));
     });
 
     it('records a lesson with context', async () => {
       const result = await client.callTool({
         name: 'nacre_lesson',
-        arguments: { lesson: 'Use pnpm over npm in monorepos', context: 'Build performance' },
+        arguments: { lesson: 'Use pnpm over npm in monorepos' },
       });
       assert.ok(!result.isError);
       const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-      assert.ok(text.includes('Lesson recorded'));
+      assert.ok(text.includes('Procedure recorded'));
     });
   });
 

@@ -7,3 +7,4 @@ export * from './intelligence.js';
 export * from './store.js';
 export * from './embeddings.js';
 export * from './recall.js';
+export * from './procedures.js';

@@ -83,7 +83,8 @@ describe('Nacre — local mode', () => {
     it('records a lesson', async () => {
       const mem = await nacre.lesson('Always validate input before processing');
       assert.ok(mem.id);
-      assert.strictEqual(mem.type, 'lesson');
+      assert.strictEqual(mem.type, 'insight');
+      assert.strictEqual(mem.statement, 'Always validate input before processing');
     });
 
     it('records a lesson with context and category', async () => {
