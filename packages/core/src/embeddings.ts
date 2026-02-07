@@ -228,3 +228,73 @@ export class OllamaEmbedder implements EmbeddingProvider {
     return data.embeddings.map(e => new Float32Array(e));
   }
 }
+
+// ── OpenAI Provider ──────────────────────────────────────────────
+
+const OPENAI_DIMENSIONS: Record<string, number> = {
+  'text-embedding-3-small': 1536,
+  'text-embedding-3-large': 3072,
+};
+
+export interface OpenAIEmbedderOptions {
+  apiKey?: string;
+  model?: 'text-embedding-3-small' | 'text-embedding-3-large';
+  baseUrl?: string;
+}
+
+export class OpenAIEmbedder implements EmbeddingProvider {
+  readonly dimensions: number;
+  readonly name: string;
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly baseUrl: string;
+
+  constructor(opts?: OpenAIEmbedderOptions) {
+    const key = opts?.apiKey ?? process.env.OPENAI_API_KEY;
+    if (!key) {
+      throw new Error(
+        'OpenAI provider requires an API key. Set OPENAI_API_KEY env var or pass apiKey option.'
+      );
+    }
+    this.apiKey = key;
+    this.model = opts?.model ?? 'text-embedding-3-small';
+    this.baseUrl = (opts?.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+    this.dimensions = OPENAI_DIMENSIONS[this.model] ?? 1536;
+    this.name = `openai/${this.model}`;
+  }
+
+  async embed(text: string): Promise<Float32Array> {
+    const results = await this.embedBatch([text]);
+    return results[0];
+  }
+
+  async embedBatch(texts: string[]): Promise<Float32Array[]> {
+    const res = await fetch(`${this.baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model: this.model, input: texts }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      if (res.status === 401) {
+        throw new Error('OpenAI API key is invalid or expired');
+      }
+      if (res.status === 429) {
+        throw new Error('OpenAI rate limit exceeded. Wait and retry.');
+      }
+      throw new Error(`OpenAI embed failed (${res.status}): ${body}`);
+    }
+
+    const data = (await res.json()) as {
+      data: Array<{ embedding: number[]; index: number }>;
+    };
+
+    return data.data
+      .sort((a, b) => a.index - b.index)
+      .map((item) => new Float32Array(item.embedding));
+  }
+}
