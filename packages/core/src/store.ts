@@ -11,6 +11,7 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type {
   MemoryNode,
   MemoryEdge,
@@ -958,7 +959,7 @@ export class SqliteStore implements GraphStore {
 
   createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot {
     const now = new Date().toISOString();
-    const id = now;
+    const id = `snap_${now}_${randomUUID().slice(0, 8)}`;
     const nodes = this.listNodes();
     const edges = this.listEdges();
     const epCount = this.episodeCount();
