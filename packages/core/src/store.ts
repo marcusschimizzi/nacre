@@ -284,6 +284,7 @@ export interface GraphStore {
   deleteEmbedding(id: string): void;
   clearAllEmbeddings(): number;
   embeddingCount(): number;
+  embeddingCountByType(type: string): number;
 
   // Episode operations
   putEpisode(episode: Episode): void;
@@ -633,6 +634,11 @@ export class SqliteStore implements GraphStore {
 
   embeddingCount(): number {
     const row = this.stmt('SELECT COUNT(*) as count FROM embeddings').get() as { count: number };
+    return row.count;
+  }
+
+  embeddingCountByType(type: string): number {
+    const row = this.stmt('SELECT COUNT(*) as count FROM embeddings WHERE type = ?').get(type) as { count: number };
     return row.count;
   }
 

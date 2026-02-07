@@ -23,12 +23,60 @@ export default defineCommand({
       type: 'boolean',
       description: 'Regenerate all embeddings even if they already exist',
     },
+    status: {
+      type: 'boolean',
+      description: 'Show embedding status for the graph',
+    },
   },
   async run({ args }) {
     const graphPath = args.graph as string;
     if (!graphPath.endsWith('.db')) {
       console.error('Embedding storage requires a SQLite graph (.db file)');
       process.exit(1);
+    }
+
+    if (args.status) {
+      const store = SqliteStore.open(graphPath);
+      try {
+        const providerName = store.getMeta('embedding_provider') ?? 'none';
+        const dims = store.getMeta('embedding_dimensions') ?? '—';
+        const totalEmbeddings = store.embeddingCount();
+        const nodeCount = store.nodeCount();
+        const episodeCount = store.episodeCount();
+
+        const nodeEmbeddings = store.embeddingCountByType('node');
+        const episodeEmbeddings = store.embeddingCountByType('episode');
+
+        console.log('Embedding Status:');
+        console.log(`  Provider:  ${providerName} (${dims} dims)`);
+        console.log(`  Nodes:     ${nodeEmbeddings}/${nodeCount} embedded (${nodeCount > 0 ? Math.round(nodeEmbeddings / nodeCount * 100) : 0}%)`);
+        console.log(`  Episodes:  ${episodeEmbeddings}/${episodeCount} embedded (${episodeCount > 0 ? Math.round(episodeEmbeddings / episodeCount * 100) : 0}%)`);
+        console.log(`  Total:     ${totalEmbeddings}`);
+
+        if (totalEmbeddings === 0) {
+          console.log('\nNo embeddings yet. Run `nacre embed --graph <path>` to generate.');
+          return;
+        }
+
+        if (nodeEmbeddings < nodeCount) {
+          const allNodes = store.listNodes();
+          const missing = allNodes.filter((n) => !store.getEmbedding(n.id));
+          if (missing.length > 0) {
+            console.log(`\n  Missing embeddings (${missing.length}):`);
+            for (const node of missing.slice(0, 10)) {
+              console.log(`    - ${node.id} "${node.label}"`);
+            }
+            if (missing.length > 10) {
+              console.log(`    ... and ${missing.length - 10} more`);
+            }
+          }
+        }
+
+        console.log(`\nRun 'nacre embed --graph ${graphPath}' to update.`);
+      } finally {
+        store.close();
+      }
+      return;
     }
 
     const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string });
