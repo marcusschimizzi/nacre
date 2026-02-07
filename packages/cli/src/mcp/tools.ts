@@ -9,6 +9,8 @@ import {
   type EmbeddingProvider,
   type EntityType,
   type MemoryNode,
+  type Procedure,
+  type ProcedureType,
 } from '@nacre/core';
 
 function createProvider(store: SqliteStore): EmbeddingProvider | null {
@@ -254,47 +256,90 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
 
   server.tool(
     'nacre_lesson',
-    'Record a learned lesson, preference, or behavioral pattern',
+    'Record a learned lesson, preference, or behavioral pattern as a procedure',
     {
       lesson: z.string().describe('What was learned'),
-      context: z.string().optional().describe('When/where this applies'),
-      category: z
-        .enum(['preference', 'skill', 'antipattern', 'insight'])
+      type: z
+        .enum(['preference', 'skill', 'antipattern', 'insight', 'heuristic'])
         .optional()
         .default('insight')
-        .describe('Lesson category'),
+        .describe('Procedure type'),
+      context: z.string().optional().describe('When/where this applies'),
+      keywords: z.array(z.string()).optional().describe('Trigger keywords'),
+      contexts: z.array(z.string()).optional().describe('Domain contexts'),
     },
     (args) => {
-      const id = generateId(`lesson:${args.lesson}`);
+      const id = generateId(`proc:${args.lesson}`);
       const timestamp = now();
 
-      const node: MemoryNode = {
+      const keywords = args.keywords ??
+        args.lesson
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter((t) => t.length >= 3);
+
+      const proc: Procedure = {
         id,
-        label: args.lesson.slice(0, 100),
-        type: 'lesson',
-        aliases: [],
-        firstSeen: timestamp,
-        lastReinforced: timestamp,
-        mentionCount: 1,
-        reinforcementCount: 2,
-        sourceFiles: ['mcp'],
-        excerpts: [
-          {
-            file: 'mcp',
-            text: args.context
-              ? `${args.lesson} (context: ${args.context})`
-              : args.lesson,
-            date: timestamp,
-          },
-        ],
+        statement: args.lesson,
+        type: args.type as ProcedureType,
+        triggerKeywords: [...new Set(keywords)],
+        triggerContexts: args.contexts ?? [],
+        sourceEpisodes: [],
+        sourceNodes: [],
+        confidence: 0.5,
+        applications: 0,
+        contradictions: 0,
+        stability: 1.0,
+        lastApplied: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        flaggedForReview: false,
       };
 
-      store.putNode(node);
+      store.putProcedure(proc);
 
       return {
         content: [{
           type: 'text',
-          text: `Lesson recorded: "${node.label}" (${args.category}, id: ${id}).`,
+          text: `Procedure recorded: "${proc.statement}" (${proc.type}, id: ${id}, triggers: ${proc.triggerKeywords.join(', ')})`,
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'nacre_procedures',
+    'List procedures — learned behavioral patterns, preferences, and skills',
+    {
+      type: z
+        .enum(['preference', 'skill', 'antipattern', 'insight', 'heuristic'])
+        .optional()
+        .describe('Filter by procedure type'),
+      flagged: z.boolean().optional().default(false).describe('Show only flagged procedures'),
+      limit: z.number().optional().default(20).describe('Max results'),
+    },
+    (args) => {
+      const procedures = store.listProcedures({
+        type: args.type as ProcedureType | undefined,
+        flaggedOnly: args.flagged,
+      });
+
+      const limited = procedures.slice(0, args.limit);
+
+      if (limited.length === 0) {
+        return { content: [{ type: 'text', text: 'No procedures found.' }] };
+      }
+
+      const lines = limited.map((p, i) => {
+        const flagged = p.flaggedForReview ? ' [FLAGGED]' : '';
+        return `${i + 1}. ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})${flagged}\n` +
+          `   id: ${p.id}, applied: ${p.applications}x, contradictions: ${p.contradictions}`;
+      });
+
+      return {
+        content: [{
+          type: 'text',
+          text: `${limited.length} procedure${limited.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`,
         }],
       };
     },
