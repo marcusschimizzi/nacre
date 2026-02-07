@@ -1,0 +1,30 @@
+{
+  "name": "@nacre/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@nacre/core": "file:../core"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.13.8",
+    "@nacre/cli": "file:../cli",
+    "hono": "^4.7.6"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npx tsx --test src/__tests__/*.test.ts",
+    "lint": "echo 'no lint yet'"
+  }
+}
