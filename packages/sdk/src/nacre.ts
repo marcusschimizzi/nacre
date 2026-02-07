@@ -10,6 +10,7 @@ import type {
   FeedbackOptions,
   LessonOptions,
   GraphStats,
+  SdkProcedure,
 } from './types.js';
 
 export class Nacre {
@@ -37,7 +38,7 @@ export class Nacre {
     return this.backend.brief(opts);
   }
 
-  lesson(lesson: string, opts?: LessonOptions): Promise<Memory> {
+  lesson(lesson: string, opts?: LessonOptions): Promise<SdkProcedure> {
     return this.backend.lesson(lesson, opts);
   }
 
@@ -55,6 +56,14 @@ export class Nacre {
 
   stats(): Promise<GraphStats> {
     return this.backend.stats();
+  }
+
+  procedures(filter?: { type?: string; flagged?: boolean }): Promise<SdkProcedure[]> {
+    return this.backend.procedures(filter);
+  }
+
+  applyProcedure(id: string, feedback: 'positive' | 'negative' | 'neutral'): Promise<void> {
+    return this.backend.applyProcedure(id, feedback);
   }
 
   close(): Promise<void> {

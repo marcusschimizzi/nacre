@@ -8,6 +8,7 @@ import type {
   FeedbackOptions,
   LessonOptions,
   GraphStats,
+  SdkProcedure,
 } from './types.js';
 
 export class RemoteBackend implements Backend {
@@ -67,13 +68,15 @@ export class RemoteBackend implements Backend {
     return data.summary;
   }
 
-  async lesson(lesson: string, opts?: LessonOptions): Promise<Memory> {
-    const { data } = await this.request<{ data: Memory }>('/api/v1/memories', {
+  async lesson(lesson: string, opts?: LessonOptions): Promise<SdkProcedure> {
+    const { data } = await this.request<{ data: SdkProcedure }>('/api/v1/procedures', {
       method: 'POST',
       body: JSON.stringify({
-        content: opts?.context ? `${lesson} (context: ${opts.context})` : lesson,
-        type: 'lesson',
-        label: lesson.slice(0, 100),
+        statement: lesson,
+        type: opts?.category ?? 'insight',
+        keywords: opts?.keywords,
+        contexts: opts?.contexts,
+        context: opts?.context,
       }),
     });
     return data;
@@ -114,6 +117,24 @@ export class RemoteBackend implements Backend {
       edgeCount: data.edgeCount,
       embeddingCount: data.embeddingCount,
     };
+  }
+
+  async procedures(filter?: { type?: string; flagged?: boolean }): Promise<SdkProcedure[]> {
+    const params = new URLSearchParams();
+    if (filter?.type) params.set('type', filter.type);
+    if (filter?.flagged) params.set('flagged', 'true');
+
+    const { data } = await this.request<{ data: SdkProcedure[] }>(
+      `/api/v1/procedures?${params}`,
+    );
+    return data;
+  }
+
+  async applyProcedure(id: string, feedback: 'positive' | 'negative' | 'neutral'): Promise<void> {
+    await this.request(`/api/v1/procedures/${encodeURIComponent(id)}/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ feedback }),
+    });
   }
 
   async close(): Promise<void> {

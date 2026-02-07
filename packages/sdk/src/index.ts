@@ -11,4 +11,5 @@ export type {
   FeedbackOptions,
   LessonOptions,
   GraphStats,
+  SdkProcedure,
 } from './types.js';

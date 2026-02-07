@@ -7,6 +7,8 @@ import {
   type EmbeddingProvider,
   type EntityType,
   type MemoryNode,
+  type Procedure,
+  type ProcedureType,
 } from '@nacre/core';
 import type {
   Backend,
@@ -18,6 +20,7 @@ import type {
   FeedbackOptions,
   LessonOptions,
   GraphStats,
+  SdkProcedure,
 } from './types.js';
 
 function generateId(content: string): string {
@@ -27,6 +30,20 @@ function generateId(content: string): string {
     hash = ((hash << 5) - hash + ch) | 0;
   }
   return `n-${Math.abs(hash).toString(36)}`;
+}
+
+function toProcedure(proc: Procedure): SdkProcedure {
+  return {
+    id: proc.id,
+    statement: proc.statement,
+    type: proc.type,
+    triggerKeywords: proc.triggerKeywords,
+    triggerContexts: proc.triggerContexts,
+    confidence: proc.confidence,
+    applications: proc.applications,
+    contradictions: proc.contradictions,
+    flaggedForReview: proc.flaggedForReview,
+  };
 }
 
 function toMemory(node: MemoryNode, score?: number): Memory {
@@ -181,29 +198,33 @@ export class LocalBackend implements Backend {
     return text;
   }
 
-  async lesson(lesson: string, opts?: LessonOptions): Promise<Memory> {
-    const id = generateId(`lesson:${lesson}`);
+  async lesson(lesson: string, opts?: LessonOptions): Promise<SdkProcedure> {
+    const id = generateId(`proc:${lesson}`);
     const timestamp = new Date().toISOString();
 
-    const node: MemoryNode = {
+    const keywords = opts?.keywords ??
+      lesson.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3);
+
+    const proc: Procedure = {
       id,
-      label: lesson.slice(0, 100),
-      type: 'lesson',
-      aliases: [],
-      firstSeen: timestamp,
-      lastReinforced: timestamp,
-      mentionCount: 1,
-      reinforcementCount: 2,
-      sourceFiles: ['sdk'],
-      excerpts: [{
-        file: 'sdk',
-        text: opts?.context ? `${lesson} (context: ${opts.context})` : lesson,
-        date: timestamp,
-      }],
+      statement: lesson,
+      type: (opts?.category ?? 'insight') as ProcedureType,
+      triggerKeywords: [...new Set(keywords)],
+      triggerContexts: opts?.contexts ?? [],
+      sourceEpisodes: [],
+      sourceNodes: [],
+      confidence: 0.5,
+      applications: 0,
+      contradictions: 0,
+      stability: 1.0,
+      lastApplied: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      flaggedForReview: false,
     };
 
-    this.store.putNode(node);
-    return toMemory(node);
+    this.store.putProcedure(proc);
+    return toProcedure(proc);
   }
 
   async feedback(memoryId: string, opts: FeedbackOptions): Promise<void> {
@@ -239,6 +260,36 @@ export class LocalBackend implements Backend {
       edgeCount: this.store.edgeCount(),
       embeddingCount: this.store.embeddingCount(),
     };
+  }
+
+  async procedures(filter?: { type?: string; flagged?: boolean }): Promise<SdkProcedure[]> {
+    const procs = this.store.listProcedures({
+      type: filter?.type as ProcedureType | undefined,
+      flaggedOnly: filter?.flagged,
+    });
+    return procs.map(toProcedure);
+  }
+
+  async applyProcedure(id: string, feedback: 'positive' | 'negative' | 'neutral'): Promise<void> {
+    const proc = this.store.getProcedure(id);
+    if (!proc) throw new Error(`Procedure not found: ${id}`);
+
+    const now = new Date().toISOString();
+    const updated: Procedure = { ...proc, lastApplied: now, updatedAt: now };
+
+    if (feedback === 'positive') {
+      updated.applications += 1;
+      updated.confidence = Math.min(0.99, proc.confidence + 0.1 * (1 - proc.confidence));
+      updated.stability = Math.min(2, proc.stability + 0.1);
+    } else if (feedback === 'negative') {
+      updated.contradictions += 1;
+      updated.confidence = Math.max(0.01, proc.confidence * 0.8);
+      if (updated.contradictions >= 3 && updated.confidence < 0.3) {
+        updated.flaggedForReview = true;
+      }
+    }
+
+    this.store.putProcedure(updated);
   }
 
   async close(): Promise<void> {

@@ -32,6 +32,8 @@ export interface FeedbackOptions {
 export interface LessonOptions {
   context?: string;
   category?: 'preference' | 'skill' | 'antipattern' | 'insight';
+  keywords?: string[];
+  contexts?: string[];
 }
 
 export interface Memory {
@@ -50,14 +52,28 @@ export interface GraphStats {
   embeddingCount: number;
 }
 
+export interface SdkProcedure {
+  id: string;
+  statement: string;
+  type: string;
+  triggerKeywords: string[];
+  triggerContexts: string[];
+  confidence: number;
+  applications: number;
+  contradictions: number;
+  flaggedForReview: boolean;
+}
+
 export interface Backend {
   remember(content: string, opts?: RememberOptions): Promise<Memory>;
   recall(query: string, opts?: RecallOptions): Promise<Memory[]>;
   brief(opts?: BriefOptions): Promise<string>;
-  lesson(lesson: string, opts?: LessonOptions): Promise<Memory>;
+  lesson(lesson: string, opts?: LessonOptions): Promise<SdkProcedure>;
   feedback(memoryId: string, opts: FeedbackOptions): Promise<void>;
   forget(memoryId: string): Promise<void>;
   nodes(filter?: { type?: string }): Promise<Memory[]>;
   stats(): Promise<GraphStats>;
+  procedures(filter?: { type?: string; flagged?: boolean }): Promise<SdkProcedure[]>;
+  applyProcedure(id: string, feedback: 'positive' | 'negative' | 'neutral'): Promise<void>;
   close(): Promise<void>;
 }
