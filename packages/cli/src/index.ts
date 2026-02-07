@@ -8,6 +8,7 @@ import insightsCmd from './commands/insights.js';
 import vizCmd from './commands/viz.js';
 import embedCmd from './commands/embed.js';
 import similarCmd from './commands/similar.js';
+import episodesCmd from './commands/episodes.js';
 import apiCmd from './commands/api.js';
 import { migrateCommand } from './commands/migrate.js';
 
@@ -29,6 +30,7 @@ const main = defineCommand({
     migrate: migrateCommand,
     embed: embedCmd,
     similar: similarCmd,
+    episodes: episodesCmd,
     api: apiCmd,
   },
 });
