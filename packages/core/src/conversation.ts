@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import type {
   ConversationInput,
   ConversationChunk,
   ConversationMessage,
+  Episode,
 } from './types.js';
 
 export interface ChunkOptions {
@@ -106,4 +108,71 @@ export function chunkConversation(
 
   flushChunk();
   return chunks;
+}
+
+function formatMessagesAsContent(messages: ConversationMessage[]): string {
+  return messages
+    .map(m => {
+      const speaker = m.name ?? m.role;
+      return `[${speaker}]: ${m.content}`;
+    })
+    .join('\n\n');
+}
+
+function generateChunkSummary(messages: ConversationMessage[]): string {
+  const userMessages = messages.filter(m => m.role === 'user');
+  const assistantMessages = messages.filter(m => m.role === 'assistant');
+  const parts: string[] = [];
+
+  if (userMessages.length > 0) {
+    parts.push(`${userMessages.length} user message${userMessages.length > 1 ? 's' : ''}`);
+  }
+  if (assistantMessages.length > 0) {
+    parts.push(`${assistantMessages.length} assistant response${assistantMessages.length > 1 ? 's' : ''}`);
+  }
+
+  const toolMessages = messages.filter(m => m.role === 'tool');
+  if (toolMessages.length > 0) {
+    const toolNames = [...new Set(toolMessages.map(m => m.toolName).filter(Boolean))];
+    parts.push(`tools: ${toolNames.join(', ') || 'unnamed'}`);
+  }
+
+  return `Conversation chunk with ${parts.join(', ')}`;
+}
+
+export function chunkToEpisode(
+  chunk: ConversationChunk,
+  metadata?: ConversationInput['metadata'],
+): Episode {
+  const now = new Date().toISOString();
+  const participants = [
+    ...new Set(
+      chunk.messages
+        .filter(m => m.name && m.role === 'user')
+        .map(m => m.name!)
+    ),
+  ];
+
+  const title = chunk.topic
+    ?? metadata?.topic
+    ?? chunk.messages.find(m => m.role === 'user')?.content.slice(0, 80)
+    ?? 'Untitled conversation';
+
+  return {
+    id: `ep_conv_${randomUUID().slice(0, 12)}`,
+    timestamp: chunk.startTime ?? now,
+    endTimestamp: chunk.endTime,
+    type: 'conversation',
+    title,
+    summary: generateChunkSummary(chunk.messages),
+    content: formatMessagesAsContent(chunk.messages),
+    sequence: 0,
+    participants,
+    topics: [],
+    importance: 0.5,
+    accessCount: 0,
+    lastAccessed: now,
+    source: metadata?.source ?? metadata?.sessionId ?? 'conversation',
+    sourceType: 'conversation',
+  };
 }
