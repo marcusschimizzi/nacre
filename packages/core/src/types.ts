@@ -139,6 +139,7 @@ export interface ConsolidationResult {
   reinforcedEdges: number;
   decayedEdges: number;
   newEmbeddings: number;
+  newEpisodes: number;
   pendingEdges: PendingEdge[];
   failures: FileFailure[];
 }
@@ -244,4 +245,94 @@ export interface InsightResult {
   fadingImportant: ScoredNode[];
   clusters: LabeledCluster[];
   summary: string;
+}
+
+// === Episodic Memory Types (M4) ===
+
+export type EpisodeType = 'conversation' | 'event' | 'decision' | 'observation';
+
+export interface Episode {
+  id: string;
+  timestamp: string;
+  endTimestamp?: string;
+  type: EpisodeType;
+  title: string;
+  summary?: string;
+  content: string;
+  sequence: number;
+  parentId?: string;
+  participants: string[];
+  topics: string[];
+  outcomes?: string[];
+  importance: number;
+  accessCount: number;
+  lastAccessed: string;
+  source: string;
+  sourceType: 'markdown' | 'conversation' | 'api';
+}
+
+export interface EpisodeEntityLink {
+  episodeId: string;
+  nodeId: string;
+  role: 'participant' | 'topic' | 'outcome' | 'mentioned';
+}
+
+export interface EpisodeFilter {
+  type?: EpisodeType;
+  since?: string;
+  until?: string;
+  source?: string;
+  hasEntity?: string;
+}
+
+// === Hybrid Recall Types (M5) ===
+
+export interface RecallWeights {
+  semantic: number;
+  graph: number;
+  recency: number;
+  importance: number;
+}
+
+export const DEFAULT_RECALL_WEIGHTS: RecallWeights = {
+  semantic: 0.4,
+  graph: 0.3,
+  recency: 0.2,
+  importance: 0.1,
+};
+
+export interface RecallOptions {
+  query: string;
+  limit?: number;
+  minScore?: number;
+  types?: EntityType[];
+  since?: string;
+  until?: string;
+  weights?: Partial<RecallWeights>;
+  hops?: number;
+}
+
+export interface RecallScores {
+  semantic: number;
+  graph: number;
+  recency: number;
+  importance: number;
+}
+
+export interface RecallConnection {
+  label: string;
+  type: string;
+  relationship: string;
+  weight: number;
+}
+
+export interface RecallResult {
+  id: string;
+  label: string;
+  type: string;
+  score: number;
+  scores: RecallScores;
+  excerpts: string[];
+  connections: RecallConnection[];
+  episodes?: Episode[];
 }

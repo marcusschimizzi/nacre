@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   searchNodes,
+  recall,
   MockEmbedder,
   OllamaEmbedder,
   type SqliteStore,
@@ -62,6 +63,39 @@ export function searchRoutes(store: SqliteStore): Hono {
       limit,
       minSimilarity: threshold,
       type: type || undefined,
+    });
+
+    return c.json({ data: results });
+  });
+
+  app.get('/recall', async (c) => {
+    const q = c.req.query('q');
+    if (!q) {
+      return c.json({ error: { message: 'Missing query parameter q', code: 'BAD_REQUEST' } }, 400);
+    }
+
+    const providerName = c.req.query('provider') ?? 'mock';
+    const limit = parseInt(c.req.query('limit') ?? '10', 10);
+    const hops = parseInt(c.req.query('hops') ?? '2', 10);
+    const since = c.req.query('since') || undefined;
+    const until = c.req.query('until') || undefined;
+    const typesRaw = c.req.query('types');
+    const types = typesRaw
+      ? typesRaw.split(',').map((t) => t.trim()) as EntityType[]
+      : undefined;
+
+    const provider: EmbeddingProvider | null =
+      store.embeddingCount() > 0
+        ? getProvider(providerName)
+        : null;
+
+    const results = await recall(store, provider, {
+      query: q,
+      limit,
+      types,
+      since,
+      until,
+      hops,
     });
 
     return c.json({ data: results });
