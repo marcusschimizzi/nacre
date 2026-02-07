@@ -11,3 +11,5 @@ export {
   processFileExtractions,
   deduplicateRawEntities,
 } from './merge.js';
+export { extractFromConversation } from './conversation-extractor.js';
+export type { ConversationEntities } from './conversation-extractor.js';
