@@ -98,6 +98,83 @@ export class MockEmbedder implements EmbeddingProvider {
   }
 }
 
+// ── ONNX Provider (local, zero-service) ──────────────────────────
+
+export interface OnnxEmbedderOptions {
+  modelId?: string;
+  cacheDir?: string;
+}
+
+/** Local embedding provider using @huggingface/transformers + ONNX Runtime. */
+export class OnnxEmbedder implements EmbeddingProvider {
+  readonly dimensions = 384;
+  readonly name = 'onnx/all-MiniLM-L6-v2';
+
+  private pipeline: unknown = null;
+  private readonly modelId: string;
+  private readonly cacheDir: string;
+  private readonly _pipelineFactory?: (modelId: string, cacheDir: string) => Promise<unknown>;
+
+  constructor(opts?: OnnxEmbedderOptions & { _pipelineFactory?: (modelId: string, cacheDir: string) => Promise<unknown> }) {
+    this.modelId = opts?.modelId ?? 'Xenova/all-MiniLM-L6-v2';
+    this.cacheDir = opts?.cacheDir ?? OnnxEmbedder.defaultCacheDir();
+    this._pipelineFactory = opts?._pipelineFactory;
+  }
+
+  private static defaultCacheDir(): string {
+    try {
+      const home = process.env.HOME ?? process.env.USERPROFILE ?? '.';
+      return `${home}/.nacre/models`;
+    } catch {
+      return '.nacre/models';
+    }
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.pipeline) return;
+
+    if (this._pipelineFactory) {
+      this.pipeline = await this._pipelineFactory(this.modelId, this.cacheDir);
+      return;
+    }
+
+    try {
+      // Dynamic import — module is an optional dependency
+      const modName = '@huggingface/transformers';
+      const mod = await (Function('m', 'return import(m)')(modName) as Promise<Record<string, unknown>>);
+      const createPipeline = mod.pipeline as (task: string, model: string) => Promise<unknown>;
+      const env = mod.env as { cacheDir: string };
+      env.cacheDir = this.cacheDir;
+      this.pipeline = await createPipeline('feature-extraction', this.modelId);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'MODULE_NOT_FOUND' || code === 'ERR_MODULE_NOT_FOUND' ||
+          (err instanceof Error && (err.message.includes('Cannot find') || err.message.includes('Failed to fetch')))) {
+        throw new Error(
+          'ONNX provider requires @huggingface/transformers. Install it with: npm install @huggingface/transformers'
+        );
+      }
+      throw err;
+    }
+  }
+
+  async embed(text: string): Promise<Float32Array> {
+    await this.ensureInitialized();
+    const extractor = this.pipeline as (text: string, opts: { pooling: string; normalize: boolean }) => Promise<{ data: Float32Array }>;
+    const output = await extractor(text, { pooling: 'mean', normalize: true });
+    return new Float32Array(output.data);
+  }
+
+  async embedBatch(texts: string[]): Promise<Float32Array[]> {
+    await this.ensureInitialized();
+    const results: Float32Array[] = [];
+    for (const text of texts) {
+      results.push(await this.embed(text));
+    }
+    return results;
+  }
+}
+
 // ── Ollama Provider ──────────────────────────────────────────────
 
 export interface OllamaEmbedderOptions {

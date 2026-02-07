@@ -166,7 +166,7 @@ export async function recall(
     ...graphMap.keys(),
   ]);
 
-  if (candidateIds.size === 0) return [];
+  if (candidateIds.size === 0) return { results: [], procedures: [] };
 
   let maxMentions = 1;
   for (const id of candidateIds) {
