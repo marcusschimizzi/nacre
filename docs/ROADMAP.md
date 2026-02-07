@@ -30,6 +30,121 @@ Last updated: 2026-02-03
 
 ---
 
+## Completed Milestones
+
+✅ M5: Hybrid Recall
+✅ M6: MCP Server
+✅ M7: TypeScript SDK
+✅ M8: Procedural Memory
+✅ M9: Embedding Providers
+✅ M10: Temporal Queries
+✅ M11: Conversation Ingester
+
+---
+
+## Remaining Milestones
+
+### M12: Visualization Dashboard
+*Polish the secret weapon — UI improvements*
+
+**Depends on:** M3 (API, for live data), M5 (recall, for search)
+**Scope:** medium-large (5-7 days)
+
+The viz exists and looks great. This milestone turns it from a developer tool into a product feature.
+
+### Enhancements
+
+- [ ] **Live data**: Fetch from API instead of static JSON files
+- [ ] **Memory health dashboard**: Decay rates, reinforcement frequency, graph density, memory age distribution
+- [ ] **Search integration**: Type a query, see matching nodes highlighted in the graph
+- [ ] **Episodic timeline**: Scrollable timeline of episodes alongside the graph
+- [ ] **Procedural memory panel**: View lessons, preferences, skills in a sidebar
+- [ ] **Consolidation visualization**: Animate the sleep cycle — watch nodes strengthen, edges decay, new connections form
+- [ ] **Diff view**: Compare graph state at two points in time
+- [ ] **Responsive layout**: Work on desktop and tablet
+- [ ] **Embeddable mode**: `<iframe>` snippet for docs, blog posts, demos
+- [ ] **Fallback for no-WebGL**: 2D force graph using d3-force for environments without GPU
+
+**Demo:** Open the nacre dashboard, see your agent's memory as a living, breathing 3D graph. Search for a concept and watch related memories light up. Scrub through time and see how knowledge evolved. Show health metrics. This is the screenshot/GIF that sells nacre on the README.
+
+### M13: Integrations
+*Bridge Nacre to coding agents*
+
+**Depends on:** M6 (MCP), M7 (SDK), M11 (Conversation Ingester)
+**Scope:** small (1-2 days each)
+
+Create lightweight integration packages for popular agent frameworks:
+
+- [ ] **nacre-opencode** — Wrapper for OpenCode
+- [ ] **nacre-claude** — Wrapper for Claude Code
+- [ ] **nacre-openclaw** — Wrapper for OpenClaw agents
+- [ ] **nacre-langchain** — LangChain integration
+
+Each provides:
+- CLI commands (e.g., `opencode-nacre remember "X"`, `opencode-nacre recall "Y"`)
+- Programmatic API wrapping SDK or CLI calls
+- Memory hooks for automatic persistence during coding sessions
+
+### M14+: Post-Launch Items
+
+#### M14: Documentation & Launch
+*Make it real for other people*
+
+- [ ] Landing page (positioning, key features, demo GIF/video)
+- [ ] Quick start guide (install → first memory → recall in <5 min)
+- [ ] Guides: "Add memory to Claude Desktop" (MCP setup), "Add memory to your LangChain agent" (SDK)
+- [ ] API reference (auto-generated from OpenAPI spec)
+- [ ] SDK reference (auto-generated from TypeScript types)
+- [ ] Architecture overview (adapted from VISION.md)
+- [ ] Configuration reference
+
+#### M15: Python SDK
+- Python wrapper around REST API
+- PyPI publish
+- Examples for LangChain, CrewAI, AutoGen
+
+#### M16: Inference Engine
+- Pattern discovery in graph structure
+- Higher-order concept generation during consolidation
+- Automated procedure extraction from episodic patterns
+
+#### M17: Multi-Graph
+- Multiple named graphs in one nacre instance
+- Per-graph config (decay rates, embedding providers)
+- Graph federation (cross-graph queries)
+
+#### M18: Cloud Option
+- Hosted nacre-as-a-service
+- User auth, billing, usage limits
+- Managed consolidation (scheduled, not heartbeat-dependent)
+
+
+---
+
+## Where We Are Today
+
+**What exists and works:**
+- Core graph engine — CRUD, typed nodes/edges, Ebbinghaus decay math, entity resolution (Levenshtein fuzzy matching), query engine
+- Parser pipeline — file discovery (SHA-256 hashing), markdown→AST (unified/remark), triple extraction (structural + NLP + custom rules), merge pipeline with co-occurrence thresholds
+- Intelligence layer — connection suggestions, labeled clusters, significance analysis (emerging/anchors/fading), structural hole detection
+- CLI — consolidate, query, brief, alerts, insights, suggest, serve
+- Visualization — 3D force graph, Three.js, custom nacre iridescent GLSL shader, time scrub, search, cluster zoom, node details
+- 85 passing tests
+- Clawdbot skill integration (consolidate runs during heartbeats)
+
+**What it can't do yet:**
+- No semantic/vector search (embeddings)
+- No API (CLI only)
+- No MCP server
+- No SDK
+- Graph stored as JSON (won't scale)
+- No episodic or procedural memory types (only semantic graph)
+- No conversation ingestion (markdown files only)
+- No multi-graph / multi-tenant
+- Viz requires WebGL (doesn't work in headless/sandbox environments)
+
+---
+
 ## Milestone Map
 
 Each milestone has a clear deliverable, a demo moment, and estimated scope. Dependencies are explicit.
