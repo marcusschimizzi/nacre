@@ -12,3 +12,4 @@ export * from './temporal.js';
 export * from './config.js';
 export * from './conversation.js';
 export * from './ingest.js';
+export * from './adapters.js';
