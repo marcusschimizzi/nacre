@@ -23,13 +23,16 @@ import type {
   EpisodeType,
   EpisodeFilter,
   EpisodeEntityLink,
+  Procedure,
+  ProcedureType,
+  ProcedureFilter,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { cosineSimilarity, bufferToVector, vectorToBuffer } from './embeddings.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -118,6 +121,27 @@ CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
 CREATE INDEX IF NOT EXISTS idx_episodes_source ON episodes(source);
 CREATE INDEX IF NOT EXISTS idx_episode_entities_episode ON episode_entities(episode_id);
 CREATE INDEX IF NOT EXISTS idx_episode_entities_node ON episode_entities(node_id);
+
+CREATE TABLE IF NOT EXISTS procedures (
+  id TEXT PRIMARY KEY,
+  statement TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('preference','skill','antipattern','insight','heuristic')),
+  trigger_keywords TEXT NOT NULL DEFAULT '[]',
+  trigger_contexts TEXT NOT NULL DEFAULT '[]',
+  source_episodes TEXT NOT NULL DEFAULT '[]',
+  source_nodes TEXT NOT NULL DEFAULT '[]',
+  confidence REAL NOT NULL DEFAULT 0.5,
+  applications INTEGER NOT NULL DEFAULT 0,
+  contradictions INTEGER NOT NULL DEFAULT 0,
+  stability REAL NOT NULL DEFAULT 1.0,
+  last_applied TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  flagged_for_review INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_procedures_type ON procedures(type);
+CREATE INDEX IF NOT EXISTS idx_procedures_confidence ON procedures(confidence DESC);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -151,6 +175,26 @@ function rowToEdge(row: Record<string, unknown>): MemoryEdge {
     lastReinforced: row.last_reinforced as string,
     stability: row.stability as number,
     evidence: JSON.parse(row.evidence as string),
+  };
+}
+
+function rowToProcedure(row: Record<string, unknown>): Procedure {
+  return {
+    id: row.id as string,
+    statement: row.statement as string,
+    type: row.type as ProcedureType,
+    triggerKeywords: JSON.parse(row.trigger_keywords as string),
+    triggerContexts: JSON.parse(row.trigger_contexts as string),
+    sourceEpisodes: JSON.parse(row.source_episodes as string),
+    sourceNodes: JSON.parse(row.source_nodes as string),
+    confidence: row.confidence as number,
+    applications: row.applications as number,
+    contradictions: row.contradictions as number,
+    stability: row.stability as number,
+    lastApplied: (row.last_applied as string) ?? null,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    flaggedForReview: (row.flagged_for_review as number) === 1,
   };
 }
 
@@ -252,6 +296,13 @@ export interface GraphStore {
   getEntityEpisodes(nodeId: string): Episode[];
   touchEpisode(id: string): void;
 
+  // Procedure operations
+  putProcedure(procedure: Procedure): void;
+  getProcedure(id: string): Procedure | undefined;
+  listProcedures(filter?: ProcedureFilter): Procedure[];
+  deleteProcedure(id: string): void;
+  procedureCount(): number;
+
   // Bulk operations
   getFullGraph(): NacreGraph;
   importGraph(graph: NacreGraph): void;
@@ -307,38 +358,64 @@ export class SqliteStore implements GraphStore {
     if (!version) {
       db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
       db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('created_at', new Date().toISOString());
-    } else if (parseInt(version.value, 10) < 2) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS episodes (
-          id              TEXT PRIMARY KEY,
-          timestamp       TEXT NOT NULL,
-          end_timestamp   TEXT,
-          type            TEXT NOT NULL,
-          title           TEXT NOT NULL,
-          summary         TEXT,
-          content         TEXT NOT NULL,
-          sequence        INTEGER NOT NULL DEFAULT 0,
-          parent_id       TEXT,
-          importance      REAL NOT NULL DEFAULT 0.5,
-          access_count    INTEGER NOT NULL DEFAULT 0,
-          last_accessed   TEXT,
-          source          TEXT NOT NULL,
-          source_type     TEXT NOT NULL,
-          created_at      TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS episode_entities (
-          episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
-          node_id    TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-          role       TEXT NOT NULL,
-          PRIMARY KEY (episode_id, node_id, role)
-        );
-        CREATE INDEX IF NOT EXISTS idx_episodes_timestamp ON episodes(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
-        CREATE INDEX IF NOT EXISTS idx_episodes_source ON episodes(source);
-        CREATE INDEX IF NOT EXISTS idx_episode_entities_episode ON episode_entities(episode_id);
-        CREATE INDEX IF NOT EXISTS idx_episode_entities_node ON episode_entities(node_id);
-      `);
-      db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run('schema_version', '2');
+    } else {
+      const ver = parseInt(version.value, 10);
+      if (ver < 2) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS episodes (
+            id              TEXT PRIMARY KEY,
+            timestamp       TEXT NOT NULL,
+            end_timestamp   TEXT,
+            type            TEXT NOT NULL,
+            title           TEXT NOT NULL,
+            summary         TEXT,
+            content         TEXT NOT NULL,
+            sequence        INTEGER NOT NULL DEFAULT 0,
+            parent_id       TEXT,
+            importance      REAL NOT NULL DEFAULT 0.5,
+            access_count    INTEGER NOT NULL DEFAULT 0,
+            last_accessed   TEXT,
+            source          TEXT NOT NULL,
+            source_type     TEXT NOT NULL,
+            created_at      TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS episode_entities (
+            episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+            node_id    TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+            role       TEXT NOT NULL,
+            PRIMARY KEY (episode_id, node_id, role)
+          );
+          CREATE INDEX IF NOT EXISTS idx_episodes_timestamp ON episodes(timestamp);
+          CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
+          CREATE INDEX IF NOT EXISTS idx_episodes_source ON episodes(source);
+          CREATE INDEX IF NOT EXISTS idx_episode_entities_episode ON episode_entities(episode_id);
+          CREATE INDEX IF NOT EXISTS idx_episode_entities_node ON episode_entities(node_id);
+        `);
+      }
+      if (ver < 3) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS procedures (
+            id TEXT PRIMARY KEY,
+            statement TEXT NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('preference','skill','antipattern','insight','heuristic')),
+            trigger_keywords TEXT NOT NULL DEFAULT '[]',
+            trigger_contexts TEXT NOT NULL DEFAULT '[]',
+            source_episodes TEXT NOT NULL DEFAULT '[]',
+            source_nodes TEXT NOT NULL DEFAULT '[]',
+            confidence REAL NOT NULL DEFAULT 0.5,
+            applications INTEGER NOT NULL DEFAULT 0,
+            contradictions INTEGER NOT NULL DEFAULT 0,
+            stability REAL NOT NULL DEFAULT 1.0,
+            last_applied TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            flagged_for_review INTEGER NOT NULL DEFAULT 0
+          );
+          CREATE INDEX IF NOT EXISTS idx_procedures_type ON procedures(type);
+          CREATE INDEX IF NOT EXISTS idx_procedures_confidence ON procedures(confidence DESC);
+        `);
+      }
+      db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
     }
 
     return new SqliteStore(db);
@@ -709,6 +786,81 @@ export class SqliteStore implements GraphStore {
         episode.outcomes.push(link.nodeId);
       }
     }
+  }
+
+  // ── Procedures ──────────────────────────────────────────
+
+  putProcedure(procedure: Procedure): void {
+    this.stmt(
+      `INSERT OR REPLACE INTO procedures
+       (id, statement, type, trigger_keywords, trigger_contexts, source_episodes, source_nodes,
+        confidence, applications, contradictions, stability, last_applied, created_at, updated_at, flagged_for_review)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      procedure.id, procedure.statement, procedure.type,
+      JSON.stringify(procedure.triggerKeywords), JSON.stringify(procedure.triggerContexts),
+      JSON.stringify(procedure.sourceEpisodes), JSON.stringify(procedure.sourceNodes),
+      procedure.confidence, procedure.applications, procedure.contradictions,
+      procedure.stability, procedure.lastApplied,
+      procedure.createdAt, procedure.updatedAt,
+      procedure.flaggedForReview ? 1 : 0
+    );
+  }
+
+  getProcedure(id: string): Procedure | undefined {
+    const row = this.stmt('SELECT * FROM procedures WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    return row ? rowToProcedure(row) : undefined;
+  }
+
+  listProcedures(filter?: ProcedureFilter): Procedure[] {
+    let sql = 'SELECT * FROM procedures';
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filter?.type) {
+      conditions.push('type = ?');
+      params.push(filter.type);
+    }
+    if (filter?.minConfidence !== undefined) {
+      conditions.push('confidence >= ?');
+      params.push(filter.minConfidence);
+    }
+    if (filter?.flaggedOnly) {
+      conditions.push('flagged_for_review = 1');
+    }
+
+    if (conditions.length) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    sql += ' ORDER BY confidence DESC';
+
+    const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
+    const procedures = rows.map(rowToProcedure);
+
+    if (filter?.hasKeyword) {
+      const kw = filter.hasKeyword.toLowerCase();
+      return procedures.filter(p =>
+        p.triggerKeywords.some(k => k.toLowerCase().includes(kw))
+      );
+    }
+    if (filter?.hasContext) {
+      const ctx = filter.hasContext.toLowerCase();
+      return procedures.filter(p =>
+        p.triggerContexts.some(c => c.toLowerCase() === ctx)
+      );
+    }
+
+    return procedures;
+  }
+
+  deleteProcedure(id: string): void {
+    this.stmt('DELETE FROM procedures WHERE id = ?').run(id);
+  }
+
+  procedureCount(): number {
+    const row = this.stmt('SELECT COUNT(*) as count FROM procedures').get() as { count: number };
+    return row.count;
   }
 
   // ── Bulk Operations ───────────────────────────────────────

@@ -285,6 +285,36 @@ export interface EpisodeFilter {
   hasEntity?: string;
 }
 
+// === Procedural Memory Types (M8) ===
+
+export type ProcedureType = 'preference' | 'skill' | 'antipattern' | 'insight' | 'heuristic';
+
+export interface Procedure {
+  id: string;
+  statement: string;
+  type: ProcedureType;
+  triggerKeywords: string[];
+  triggerContexts: string[];
+  sourceEpisodes: string[];
+  sourceNodes: string[];
+  confidence: number;
+  applications: number;
+  contradictions: number;
+  stability: number;
+  lastApplied: string | null;
+  createdAt: string;
+  updatedAt: string;
+  flaggedForReview: boolean;
+}
+
+export interface ProcedureFilter {
+  type?: ProcedureType;
+  minConfidence?: number;
+  flaggedOnly?: boolean;
+  hasKeyword?: string;
+  hasContext?: string;
+}
+
 // === Hybrid Recall Types (M5) ===
 
 export interface RecallWeights {
