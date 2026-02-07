@@ -144,6 +144,44 @@ Default configuration (tunable per graph):
 }
 ```
 
+### Embedding Providers
+
+Nacre supports multiple embedding providers for semantic similarity search:
+
+| Provider | Dimensions | Requirements | Best For |
+|----------|-----------|--------------|----------|
+| `onnx` | 384 | `npm install @huggingface/transformers` | Local, zero-service, privacy-first |
+| `ollama` | 768 | [Ollama](https://ollama.ai) running locally | Local with GPU acceleration |
+| `openai` | 1536/3072 | `OPENAI_API_KEY` env var | Highest quality, cloud-based |
+| `mock` | 64 | None | Testing and development |
+
+Configure via CLI flag, config file, or environment variable:
+
+```bash
+# CLI flag
+nacre embed --graph ./data/my-graph --provider ollama
+
+# Check embedding status
+nacre embed --graph ./data/my-graph --status
+
+# Force re-embed with a new provider (clears existing embeddings)
+nacre embed --graph ./data/my-graph --provider onnx --force
+```
+
+Or create a `nacre.config.json` in your graph directory:
+
+```json
+{
+  "embeddings": {
+    "provider": "ollama"
+  }
+}
+```
+
+Environment variable fallback: `NACRE_EMBEDDING_PROVIDER=onnx`
+
+Resolution order: CLI flag → config file → environment variable → auto-detect.
+
 ## Development
 
 ```bash

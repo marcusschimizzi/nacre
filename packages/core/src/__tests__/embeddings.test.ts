@@ -1,8 +1,10 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { SqliteStore } from '../store.js';
 import {
   MockEmbedder,
+  OnnxEmbedder,
+  OpenAIEmbedder,
   cosineSimilarity,
   vectorToBuffer,
   bufferToVector,
@@ -209,5 +211,259 @@ describe('SqliteStore embedding operations', () => {
   it('embeddingCount returns correct count', () => {
     const count = store.embeddingCount();
     assert.ok(count > 0);
+  });
+});
+
+describe('clearAllEmbeddings', () => {
+  let store: SqliteStore;
+
+  before(() => {
+    store = SqliteStore.open();
+  });
+
+  after(() => {
+    store.close();
+  });
+
+  it('clears all embeddings and returns count deleted', async () => {
+    const embedder = new MockEmbedder(64);
+    const v1 = await embedder.embed('text one');
+    const v2 = await embedder.embed('text two');
+    const v3 = await embedder.embed('text three');
+    store.putEmbedding('clear-1', 'node', 'text one', v1, 'mock');
+    store.putEmbedding('clear-2', 'node', 'text two', v2, 'mock');
+    store.putEmbedding('clear-3', 'episode', 'text three', v3, 'mock');
+
+    const deleted = store.clearAllEmbeddings();
+    assert.equal(deleted, 3);
+    assert.equal(store.embeddingCount(), 0);
+  });
+});
+
+describe('embeddingCountByType', () => {
+  let store: SqliteStore;
+
+  before(async () => {
+    store = SqliteStore.open();
+    const embedder = new MockEmbedder(64);
+    const v1 = await embedder.embed('node one');
+    const v2 = await embedder.embed('node two');
+    const v3 = await embedder.embed('episode one');
+    store.putEmbedding('bytype-n1', 'node', 'node one', v1, 'mock');
+    store.putEmbedding('bytype-n2', 'node', 'node two', v2, 'mock');
+    store.putEmbedding('bytype-e1', 'episode', 'episode one', v3, 'mock');
+  });
+
+  after(() => {
+    store.close();
+  });
+
+  it('returns correct count for node type', () => {
+    assert.equal(store.embeddingCountByType('node'), 2);
+  });
+
+  it('returns correct count for episode type', () => {
+    assert.equal(store.embeddingCountByType('episode'), 1);
+  });
+});
+
+describe('OnnxEmbedder', () => {
+  it('embed() returns Float32Array of 384 dimensions', async () => {
+    const mockFactory = async (_modelId: string, _cacheDir: string) => {
+      return (text: string, opts: { pooling: string; normalize: boolean }) => ({
+        data: new Float32Array(384).fill(0.1),
+      });
+    };
+    const embedder = new OnnxEmbedder({ _pipelineFactory: mockFactory });
+    const result = await embedder.embed('hello world');
+    assert.equal(result.length, 384);
+    assert.ok(result instanceof Float32Array);
+  });
+
+  it('embedBatch() returns one vector per input', async () => {
+    const mockFactory = async (_modelId: string, _cacheDir: string) => {
+      return (text: string, opts: { pooling: string; normalize: boolean }) => ({
+        data: new Float32Array(384).fill(0.1),
+      });
+    };
+    const embedder = new OnnxEmbedder({ _pipelineFactory: mockFactory });
+    const results = await embedder.embedBatch(['a', 'b', 'c']);
+    assert.equal(results.length, 3);
+    for (const vec of results) {
+      assert.equal(vec.length, 384);
+    }
+  });
+
+  it('name property is correct', () => {
+    const embedder = new OnnxEmbedder({
+      _pipelineFactory: async () => () => ({ data: new Float32Array(384) }),
+    });
+    assert.equal(embedder.name, 'onnx/all-MiniLM-L6-v2');
+  });
+
+  it('dimensions property is 384', () => {
+    const embedder = new OnnxEmbedder({
+      _pipelineFactory: async () => () => ({ data: new Float32Array(384) }),
+    });
+    assert.equal(embedder.dimensions, 384);
+  });
+
+  it('lazy initialization — pipeline not created until first embed()', async () => {
+    let factoryCalled = 0;
+    const mockFactory = async (_modelId: string, _cacheDir: string) => {
+      factoryCalled++;
+      return (text: string, opts: { pooling: string; normalize: boolean }) => ({
+        data: new Float32Array(384).fill(0.1),
+      });
+    };
+    const embedder = new OnnxEmbedder({ _pipelineFactory: mockFactory });
+
+    assert.equal(factoryCalled, 0, 'factory should not be called at construction');
+
+    await embedder.embed('test');
+    assert.equal(factoryCalled, 1, 'factory should be called once after first embed');
+
+    // Second embed should not call factory again
+    await embedder.embed('test2');
+    assert.equal(factoryCalled, 1, 'factory should still be called only once');
+  });
+
+  it('throws helpful error when module not found', async () => {
+    const embedder = new OnnxEmbedder();
+    await assert.rejects(
+      () => embedder.embed('test'),
+      (err: Error) => {
+        assert.match(err.message, /requires @huggingface\/transformers/);
+        return true;
+      }
+    );
+  });
+});
+
+describe('OpenAIEmbedder', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('embed() returns Float32Array of 1536 dimensions', async () => {
+    global.fetch = async (_url: string | URL | Request, _init?: RequestInit) => {
+      return {
+        ok: true,
+        json: async () => ({
+          data: [{ embedding: Array(1536).fill(0.1), index: 0 }],
+        }),
+      } as Response;
+    };
+
+    const embedder = new OpenAIEmbedder({ apiKey: 'test-key' });
+    const result = await embedder.embed('hello');
+    assert.equal(result.length, 1536);
+    assert.ok(result instanceof Float32Array);
+  });
+
+  it('embedBatch() returns results sorted by index', async () => {
+    global.fetch = async (_url: string | URL | Request, _init?: RequestInit) => {
+      return {
+        ok: true,
+        json: async () => ({
+          data: [
+            { embedding: Array(1536).fill(0.2), index: 1 },
+            { embedding: Array(1536).fill(0.1), index: 0 },
+          ],
+        }),
+      } as Response;
+    };
+
+    const embedder = new OpenAIEmbedder({ apiKey: 'test-key' });
+    const results = await embedder.embedBatch(['first', 'second']);
+    assert.equal(results.length, 2);
+    // index 0 → fill(0.1) should be first
+    assert.ok(Math.abs(results[0][0] - 0.1) < 1e-6, `expected 0.1 but got ${results[0][0]}`);
+    // index 1 → fill(0.2) should be second
+    assert.ok(Math.abs(results[1][0] - 0.2) < 1e-6, `expected 0.2 but got ${results[1][0]}`);
+  });
+
+  it('constructor throws without API key', () => {
+    const savedKey = process.env.OPENAI_API_KEY;
+    try {
+      delete process.env.OPENAI_API_KEY;
+      assert.throws(
+        () => new OpenAIEmbedder(),
+        (err: Error) => {
+          assert.match(err.message, /requires an API key/);
+          return true;
+        }
+      );
+    } finally {
+      if (savedKey !== undefined) process.env.OPENAI_API_KEY = savedKey;
+      else delete process.env.OPENAI_API_KEY;
+    }
+  });
+
+  it('uses custom baseUrl in fetch call', async () => {
+    let calledUrl = '';
+    global.fetch = async (url: string | URL | Request, _init?: RequestInit) => {
+      calledUrl = String(url);
+      return {
+        ok: true,
+        json: async () => ({
+          data: [{ embedding: Array(1536).fill(0.1), index: 0 }],
+        }),
+      } as Response;
+    };
+
+    const embedder = new OpenAIEmbedder({ apiKey: 'k', baseUrl: 'https://custom.api/v1' });
+    await embedder.embed('test');
+    assert.ok(calledUrl.startsWith('https://custom.api/v1'), `URL was ${calledUrl}`);
+  });
+
+  it('401 response throws invalid key error', async () => {
+    global.fetch = async (_url: string | URL | Request, _init?: RequestInit) => {
+      return {
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized',
+      } as Response;
+    };
+
+    const embedder = new OpenAIEmbedder({ apiKey: 'bad-key' });
+    await assert.rejects(
+      () => embedder.embed('test'),
+      (err: Error) => {
+        assert.match(err.message, /invalid/i);
+        return true;
+      }
+    );
+  });
+
+  it('429 response throws rate limit error', async () => {
+    global.fetch = async (_url: string | URL | Request, _init?: RequestInit) => {
+      return {
+        ok: false,
+        status: 429,
+        text: async () => 'Too Many Requests',
+      } as Response;
+    };
+
+    const embedder = new OpenAIEmbedder({ apiKey: 'some-key' });
+    await assert.rejects(
+      () => embedder.embed('test'),
+      (err: Error) => {
+        assert.match(err.message, /rate limit/i);
+        return true;
+      }
+    );
+  });
+
+  it('text-embedding-3-large has 3072 dimensions', () => {
+    const embedder = new OpenAIEmbedder({ apiKey: 'k', model: 'text-embedding-3-large' });
+    assert.equal(embedder.dimensions, 3072);
+  });
+
+  it('name property includes model name', () => {
+    const embedder = new OpenAIEmbedder({ apiKey: 'k' });
+    assert.equal(embedder.name, 'openai/text-embedding-3-small');
   });
 });
