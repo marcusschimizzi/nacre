@@ -139,6 +139,7 @@ export interface ConsolidationResult {
   reinforcedEdges: number;
   decayedEdges: number;
   newEmbeddings: number;
+  newEpisodes: number;
   pendingEdges: PendingEdge[];
   failures: FileFailure[];
 }
@@ -244,4 +245,42 @@ export interface InsightResult {
   fadingImportant: ScoredNode[];
   clusters: LabeledCluster[];
   summary: string;
+}
+
+// === Episodic Memory Types (M4) ===
+
+export type EpisodeType = 'conversation' | 'event' | 'decision' | 'observation';
+
+export interface Episode {
+  id: string;
+  timestamp: string;
+  endTimestamp?: string;
+  type: EpisodeType;
+  title: string;
+  summary?: string;
+  content: string;
+  sequence: number;
+  parentId?: string;
+  participants: string[];
+  topics: string[];
+  outcomes?: string[];
+  importance: number;
+  accessCount: number;
+  lastAccessed: string;
+  source: string;
+  sourceType: 'markdown' | 'conversation' | 'api';
+}
+
+export interface EpisodeEntityLink {
+  episodeId: string;
+  nodeId: string;
+  role: 'participant' | 'topic' | 'outcome' | 'mentioned';
+}
+
+export interface EpisodeFilter {
+  type?: EpisodeType;
+  since?: string;
+  until?: string;
+  source?: string;
+  hasEntity?: string;
 }
