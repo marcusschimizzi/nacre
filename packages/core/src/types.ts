@@ -372,6 +372,7 @@ export interface RecallOptions {
   hops?: number;
   includeProcedures?: boolean;
   procedureLimit?: number;
+  asOf?: string;
 }
 
 export interface RecallScores {

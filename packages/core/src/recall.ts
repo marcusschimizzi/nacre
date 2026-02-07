@@ -148,7 +148,19 @@ export async function recall(
     }
   }
 
-  const graph = store.getFullGraph();
+  let graph: NacreGraph;
+
+  if (opts.asOf) {
+    const snapshots = store.listSnapshots({ until: opts.asOf, limit: 1 });
+    if (snapshots.length > 0) {
+      graph = store.getSnapshotGraph(snapshots[0].id);
+    } else {
+      graph = store.getFullGraph();
+    }
+  } else {
+    graph = store.getFullGraph();
+  }
+
   const terms = extractQueryTerms(opts.query);
 
   const seedIds: string[] = [];
