@@ -15,6 +15,7 @@ import apiCmd from './commands/api.js';
 import mcpCmd from './commands/mcp.js';
 import snapshotsCmd from './commands/snapshots.js';
 import historyCmd from './commands/history.js';
+import ingestCmd from './commands/ingest.js';
 import { migrateCommand } from './commands/migrate.js';
 
 const main = defineCommand({
@@ -42,6 +43,7 @@ const main = defineCommand({
     mcp: mcpCmd,
     snapshots: snapshotsCmd,
     history: historyCmd,
+    ingest: ingestCmd,
   },
 });
 
