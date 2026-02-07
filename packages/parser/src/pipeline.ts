@@ -16,7 +16,9 @@ import { parseMarkdown, extractSections } from './parse.js';
 import { extractStructural } from './extract/structural.js';
 import { extractNLP } from './extract/nlp.js';
 import { extractCustom } from './extract/custom.js';
+import { extractEpisodes } from './extract/episode-extractor.js';
 import { processFileExtractions } from './merge.js';
+import type { Episode } from '@nacre/core';
 
 export interface ConsolidateOptions {
   inputs: string[];
@@ -101,6 +103,8 @@ export async function consolidate(
   const edgesBefore = Object.keys(graph.edges).length;
   let reinforcedNodes = 0;
   let reinforcedEdges = 0;
+  let newEpisodes = 0;
+  const storedEpisodes: Episode[] = [];
   const failures: FileFailure[] = [];
 
   for (const filePath of toProcess) {
@@ -160,6 +164,38 @@ export async function consolidate(
           lastProcessed: now.toISOString(),
         });
       }
+
+      if (useSqlite && store) {
+        try {
+          const episodes = extractEpisodes(sections, filePath);
+          for (const episode of episodes) {
+            store.putEpisode(episode);
+            storedEpisodes.push(episode);
+            newEpisodes++;
+
+            const sectionEntities = allEntities.filter(e => {
+              const matchingSection = sections.find(s => s.headingPath === e.position.section);
+              return matchingSection?.heading === episode.title;
+            });
+
+            for (const entity of sectionEntities) {
+              const resolved = store.findNode(entity.text);
+              if (!resolved) continue;
+              const role: 'participant' | 'topic' | 'mentioned' =
+                entity.type === 'person' ? 'participant' :
+                ['concept', 'project', 'tool', 'tag'].includes(entity.type) ? 'topic' :
+                'mentioned';
+              try {
+                store.linkEpisodeEntity(episode.id, resolved.id, role);
+              } catch {
+                // FK constraint — node may not be persisted yet in graph
+              }
+            }
+          }
+        } catch {
+          // Non-fatal — episode extraction should not block consolidation
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       failures.push({ path: filePath, error: message });
@@ -183,6 +219,20 @@ export async function consolidate(
         newEmbeddings++;
       } catch {
         // Embedding failure is non-fatal — node still exists in graph
+      }
+    }
+
+    for (const episode of storedEpisodes) {
+      const text = episode.title + ' — ' + episode.content;
+      const existing = store.getEmbedding(episode.id);
+      if (existing && existing.content === text) continue;
+
+      try {
+        const vector = await provider.embed(text);
+        store.putEmbedding(episode.id, 'episode', text, vector, provider.name);
+        newEmbeddings++;
+      } catch {
+        // Embedding failure is non-fatal
       }
     }
   }
@@ -214,6 +264,7 @@ export async function consolidate(
     reinforcedEdges,
     decayedEdges: decayed,
     newEmbeddings,
+    newEpisodes,
     pendingEdges,
     failures,
   };
