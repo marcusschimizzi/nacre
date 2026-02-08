@@ -1,24 +1,35 @@
 import ForceGraph3D from '3d-force-graph';
+import type { ForceGraph3DInstance } from '3d-force-graph';
 import * as THREE from 'three';
-import type { ForceNode, ForceLink, AppState, GraphConfig } from './types.ts';
+import type { AppState, ForceLink, ForceNode, GraphConfig, LoadResult } from './types.ts';
 import {
   createNodeObject,
-  edgeWidth,
-  edgeColor,
-  edgeOpacity,
   createNacreMaterial,
+  edgeColor,
+  edgeWidth,
 } from './materials.ts';
 import { createTemporalForce } from './forces.ts';
-import { showNodeDetails, hideDetails } from './details.ts';
 import { BG_COLOR, NACRE_THRESHOLD, VISIBILITY_THRESHOLD } from './theme.ts';
-import {
-  computeWeightAtDate,
-  isNodeVisibleAtDate,
-  isEdgeVisibleAtDate,
-} from './time-scrub.ts';
+import { computeWeightAtDate, isEdgeVisibleAtDate, isNodeVisibleAtDate } from './time-scrub.ts';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Graph = any;
+export type Graph = ForceGraph3DInstance<ForceNode, ForceLink>;
+
+export type GraphViewCallbacks = {
+  onNodeClick?: (node: ForceNode) => void;
+  onBackgroundClick?: () => void;
+  onHoverChange?: (node: ForceNode | null) => void;
+};
+
+export type GraphViewController = {
+  graph: Graph;
+  nodeMap: Map<string, ForceNode>;
+  nodes: ForceNode[];
+  links: ForceLink[];
+  refresh: () => void;
+  focusNode: (id: string) => ForceNode | null;
+  setPinned: (nodeIds: Set<string>, linkIds?: Set<string>) => void;
+  setData: (data: LoadResult) => void;
+};
 
 export function createGraphView(
   container: HTMLElement,
@@ -26,7 +37,8 @@ export function createGraphView(
   links: ForceLink[],
   state: AppState,
   config: GraphConfig,
-): Graph {
+  callbacks: GraphViewCallbacks = {},
+): GraphViewController {
   const nodeMap = new Map<string, ForceNode>();
   for (const n of nodes) nodeMap.set(n.id, n);
 
@@ -37,7 +49,7 @@ export function createGraphView(
     return computeWeightAtDate(link, state.scrubDate, config);
   }
 
-  const graph: Graph = new ForceGraph3D(container);
+  const graph = new ForceGraph3D(container) as unknown as Graph;
 
   graph
     .graphData({ nodes, links })
@@ -62,7 +74,7 @@ export function createGraphView(
       if (w < VISIBILITY_THRESHOLD) return false;
       return true;
     })
-    .linkDirectionalArrowLength((link: ForceLink) => link.directed ? 4 : 0)
+    .linkDirectionalArrowLength((link: ForceLink) => (link.directed ? 4 : 0))
     .linkDirectionalArrowRelPos(0.85)
     .linkDirectionalArrowColor((link: ForceLink) => edgeColor(link))
     .linkDirectionalParticles((link: ForceLink) => {
@@ -76,11 +88,11 @@ export function createGraphView(
     .linkThreeObjectExtend(true)
     .linkThreeObject((link: ForceLink) => {
       const w = getEffectiveWeight(link);
-      if (w < NACRE_THRESHOLD) return false;
+      if (w < NACRE_THRESHOLD) return null as unknown as THREE.Object3D;
 
       const radius = edgeWidth(link, w) * 0.6;
       const geometry = new THREE.CylinderGeometry(radius, radius, 1, 8, 1, true);
-      geometry.rotateX(Math.PI / 2); // default Y-axis → Z-axis for lookAt
+      geometry.rotateX(Math.PI / 2);
       const material = createNacreMaterial(w, graph.camera());
       const mesh = new THREE.Mesh(geometry, material);
       mesh.userData.isNacre = true;
@@ -95,14 +107,9 @@ export function createGraphView(
       const dz = end.z - start.z;
       const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-      obj.position.set(
-        (start.x + end.x) / 2,
-        (start.y + end.y) / 2,
-        (start.z + end.z) / 2,
-      );
+      obj.position.set((start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2);
       obj.scale.set(1, 1, length);
       obj.lookAt(end.x, end.y, end.z);
-
       return true;
     });
 
@@ -129,18 +136,45 @@ export function createGraphView(
   graph.cooldownTicks(300);
 
   setupLighting(graph);
-  setupInteraction(graph, state, links, nodeMap);
+  setupInteraction(graph, state, links, nodeMap, callbacks);
   startLabelVisibilityLoop(graph, nodes);
 
-  return graph;
-}
+  function refresh(): void {
+    applyHighlightModes(nodeMap, state);
+    graph
+      .nodeVisibility(graph.nodeVisibility())
+      .linkVisibility(graph.linkVisibility())
+      .linkWidth(graph.linkWidth())
+      .linkDirectionalParticles(graph.linkDirectionalParticles());
+    updateHighlights(graph, state);
+  }
 
-export function refreshGraph(graph: Graph): void {
-  graph
-    .nodeVisibility(graph.nodeVisibility())
-    .linkVisibility(graph.linkVisibility())
-    .linkWidth(graph.linkWidth())
-    .linkDirectionalParticles(graph.linkDirectionalParticles());
+  function focusNode(id: string): ForceNode | null {
+    const node = nodeMap.get(id) ?? null;
+    if (node) flyToNode(graph, node);
+    return node;
+  }
+
+  function setPinned(nodeIds: Set<string>, linkIds?: Set<string>): void {
+    state.pinnedNodes = nodeIds;
+    state.pinnedLinks = linkIds ?? new Set();
+    refresh();
+  }
+
+  function setData(data: LoadResult): void {
+    // Update in-place arrays to preserve object references where possible
+    nodes.length = 0;
+    links.length = 0;
+    for (const n of data.nodes) nodes.push(n);
+    for (const l of data.links) links.push(l);
+    nodeMap.clear();
+    for (const n of nodes) nodeMap.set(n.id, n);
+    graph.graphData({ nodes, links });
+    graph.d3ReheatSimulation();
+    refresh();
+  }
+
+  return { graph, nodeMap, nodes, links, refresh, focusNode, setPinned, setData };
 }
 
 function setupLighting(graph: Graph): void {
@@ -164,7 +198,10 @@ const LABEL_VISIBILITY_DISTANCE = 150;
 function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
   function tick() {
     const cam = graph.camera();
-    if (!cam) { requestAnimationFrame(tick); return; }
+    if (!cam) {
+      requestAnimationFrame(tick);
+      return;
+    }
     const camPos = cam.position;
 
     for (const node of nodes) {
@@ -172,9 +209,7 @@ function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
       if (!obj) continue;
       const dist = camPos.distanceTo(obj.position);
       for (const child of obj.children) {
-        if (child.userData?.isLabel) {
-          child.visible = dist < LABEL_VISIBILITY_DISTANCE;
-        }
+        if (child.userData?.isLabel) child.visible = dist < LABEL_VISIBILITY_DISTANCE;
       }
     }
     requestAnimationFrame(tick);
@@ -187,12 +222,14 @@ function setupInteraction(
   state: AppState,
   links: ForceLink[],
   nodeMap: Map<string, ForceNode>,
+  callbacks: GraphViewCallbacks,
 ): void {
   const tooltip = createTooltip();
 
   graph.onNodeHover((node: ForceNode | null) => {
     document.body.style.cursor = node ? 'pointer' : 'default';
     state.hoveredNode = node;
+    callbacks.onHoverChange?.(node);
 
     state.highlightNodes.clear();
     state.highlightLinks.clear();
@@ -211,43 +248,44 @@ function setupInteraction(
 
       tooltip.style.display = 'block';
       tooltip.innerHTML = `
-        <div class="label">${node.label}</div>
-        <div class="meta">${node.type} &middot; ${node.edgeCount} connections</div>
+        <div class="label">${escapeTooltipHtml(node.label)}</div>
+        <div class="meta">${escapeTooltipHtml(node.type)} &middot; ${node.edgeCount} connections</div>
       `;
     } else {
       tooltip.style.display = 'none';
     }
 
+    applyHighlightModes(nodeMap, state);
     updateHighlights(graph, state);
   });
 
   graph.onLinkHover((link: ForceLink | null) => {
     if (state.hoveredNode) return;
-
-    if (link) {
-      const src = typeof link.source === 'string' ? link.source : link.source.id;
-      const tgt = typeof link.target === 'string' ? link.target : link.target.id;
-      const srcLabel = nodeMap.get(src)?.label ?? src;
-      const tgtLabel = nodeMap.get(tgt)?.label ?? tgt;
-
-      let html = `
-        <div class="label">${escapeTooltipHtml(srcLabel)} → ${escapeTooltipHtml(tgtLabel)}</div>
-        <div class="meta">${link.type} &middot; weight ${link.weight.toFixed(2)}</div>
-      `;
-
-      if (link.evidence?.length) {
-        const items = link.evidence.slice(0, 3).map((e) => {
-          const ctx = e.context.length > 80 ? e.context.slice(0, 77) + '…' : e.context;
-          return `<div class="evidence">${escapeTooltipHtml(ctx)}</div>`;
-        });
-        html += items.join('');
-      }
-
-      tooltip.style.display = 'block';
-      tooltip.innerHTML = html;
-    } else {
+    if (!link) {
       tooltip.style.display = 'none';
+      return;
     }
+
+    const src = typeof link.source === 'string' ? link.source : link.source.id;
+    const tgt = typeof link.target === 'string' ? link.target : link.target.id;
+    const srcLabel = nodeMap.get(src)?.label ?? src;
+    const tgtLabel = nodeMap.get(tgt)?.label ?? tgt;
+
+    let html = `
+      <div class="label">${escapeTooltipHtml(srcLabel)} &rarr; ${escapeTooltipHtml(tgtLabel)}</div>
+      <div class="meta">${escapeTooltipHtml(link.type)} &middot; weight ${link.weight.toFixed(2)}</div>
+    `;
+
+    if (link.evidence?.length) {
+      const items = link.evidence.slice(0, 3).map((e) => {
+        const ctx = e.context.length > 80 ? e.context.slice(0, 77) + '...' : e.context;
+        return `<div class="evidence">${escapeTooltipHtml(ctx)}</div>`;
+      });
+      html += items.join('');
+    }
+
+    tooltip.style.display = 'block';
+    tooltip.innerHTML = html;
   });
 
   let lastClickedNode: ForceNode | null = null;
@@ -266,21 +304,15 @@ function setupInteraction(
 
     state.selectedNode = node;
     flyToNode(graph, node);
-    showNodeDetails(node, links, nodeMap, (neighborId) => {
-      const neighbor = nodeMap.get(neighborId);
-      if (neighbor) {
-        state.selectedNode = neighbor;
-        flyToNode(graph, neighbor);
-        showNodeDetails(neighbor, links, nodeMap, () => {});
-      }
-    });
+    callbacks.onNodeClick?.(node);
   });
 
   graph.onBackgroundClick(() => {
     state.selectedNode = null;
     state.highlightNodes.clear();
     state.highlightLinks.clear();
-    hideDetails();
+    callbacks.onBackgroundClick?.();
+    applyHighlightModes(nodeMap, state);
     updateHighlights(graph, state);
   });
 
@@ -306,11 +338,7 @@ function flyToNode(graph: Graph, node: ForceNode): void {
   const dist = Math.hypot(x, y, z) || 1;
   const ratio = 1 + distance / dist;
 
-  graph.cameraPosition(
-    { x: x * ratio, y: y * ratio, z: z * ratio },
-    { x, y, z },
-    1200,
-  );
+  graph.cameraPosition({ x: x * ratio, y: y * ratio, z: z * ratio }, { x, y, z }, 1200);
 }
 
 function flyToCluster(
@@ -329,7 +357,9 @@ function flyToCluster(
     if (tgt === node.id) neighborIds.add(src);
   }
 
-  let cx = 0, cy = 0, cz = 0;
+  let cx = 0;
+  let cy = 0;
+  let cz = 0;
   let count = 0;
   let maxSpread = 0;
 
@@ -343,81 +373,76 @@ function flyToCluster(
     const nx = n.x ?? 0;
     const ny = n.y ?? 0;
     const nz = n.z ?? 0;
-    cx += nx; cy += ny; cz += nz;
+    cx += nx;
+    cy += ny;
+    cz += nz;
     count++;
     const dist = Math.hypot(nx - centerX, ny - centerY, nz - centerZ);
     if (dist > maxSpread) maxSpread = dist;
   }
 
   if (count === 0) return;
-  cx /= count; cy /= count; cz /= count;
+  cx /= count;
+  cy /= count;
+  cz /= count;
 
   const viewDist = Math.max(maxSpread * 1.5, 80);
   const dist = Math.hypot(cx, cy, cz) || 1;
   const ratio = 1 + viewDist / dist;
 
-  graph.cameraPosition(
-    { x: cx * ratio, y: cy * ratio, z: cz * ratio },
-    { x: cx, y: cy, z: cz },
-    1500,
-  );
+  graph.cameraPosition({ x: cx * ratio, y: cy * ratio, z: cz * ratio }, { x: cx, y: cy, z: cz }, 1500);
 }
 
 function updateHighlights(graph: Graph, state: AppState): void {
   graph
-    .nodeThreeObject((node: ForceNode) => {
-      const obj = createNodeObject(node);
-      if (state.recallHighlightNodes.has(node.id)) {
-        const sphere = obj.geometry as THREE.SphereGeometry;
-        const size = sphere.parameters?.radius ?? 5;
-        const ringGeo = new THREE.RingGeometry(size + 2, size + 3.5, 24);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: '#f59e0b',
-          transparent: true,
-          opacity: 0.8,
-          side: THREE.DoubleSide,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.userData.isRecallHighlight = true;
-        obj.add(ring);
-      }
-      return obj;
-    })
+    .nodeThreeObject(graph.nodeThreeObject())
     .linkWidth((link: ForceLink) => {
-      if (state.highlightLinks.size > 0) {
+      const hasHover = state.highlightLinks.size > 0;
+      const hasPin = state.pinnedLinks.size > 0;
+      if (hasHover) {
         return state.highlightLinks.has(link.id) ? edgeWidth(link) * 2 : edgeWidth(link) * 0.3;
+      }
+      if (hasPin) {
+        return state.pinnedLinks.has(link.id) ? edgeWidth(link) * 2 : edgeWidth(link) * 0.35;
       }
       return edgeWidth(link);
     })
-    .linkOpacity((link: ForceLink) => {
-      if (state.highlightLinks.size > 0) {
-        return state.highlightLinks.has(link.id) ? 0.9 : 0.08;
+    .linkColor((link: ForceLink) => {
+      const hasHover = state.highlightLinks.size > 0;
+      const hasPin = state.pinnedLinks.size > 0;
+      if (hasHover) {
+        return state.highlightLinks.has(link.id) ? edgeColor(link) : 'rgb(40,40,55)';
       }
-      return edgeOpacity(link);
+      if (hasPin) {
+        return state.pinnedLinks.has(link.id) ? edgeColor(link) : 'rgb(45,45,60)';
+      }
+      return edgeColor(link);
     });
+}
+
+function applyHighlightModes(nodeMap: Map<string, ForceNode>, state: AppState): void {
+  for (const node of nodeMap.values()) {
+    node.highlight = null;
+  }
+
+  if (state.highlightNodes.size > 0) {
+    for (const id of state.highlightNodes) {
+      const node = nodeMap.get(id);
+      if (node) node.highlight = 'hover';
+    }
+    return;
+  }
+
+  if (state.pinnedNodes.size > 0) {
+    for (const id of state.pinnedNodes) {
+      const node = nodeMap.get(id);
+      if (node) node.highlight = 'pin';
+    }
+  }
 }
 
 function escapeTooltipHtml(text: string): string {
   const el = document.createElement('span');
   el.textContent = text;
   return el.innerHTML;
-}
-
-export function searchAndFocus(
-  graph: Graph,
-  nodes: ForceNode[],
-  query: string,
-): ForceNode | null {
-  const q = query.toLowerCase().trim();
-  if (!q) return null;
-
-  const match = nodes.find(
-    (n) => n.label.toLowerCase() === q || n.label.toLowerCase().includes(q),
-  );
-
-  if (match) {
-    flyToNode(graph, match);
-  }
-
-  return match ?? null;
 }

@@ -298,3 +298,276 @@ body {
   padding-top: 3px;
   border-top: 1px solid rgba(120, 120, 180, 0.1);
 }
+
+/* Health Dashboard */
+.health-dashboard {
+  background: rgba(10, 10, 26, 0.9);
+  border: 1px solid rgba(120, 120, 180, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+
+.health-dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: rgba(20, 20, 40, 0.6);
+  border-bottom: 1px solid rgba(120, 120, 180, 0.15);
+}
+
+.health-dashboard-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e4e4e8;
+  flex: 1;
+}
+
+.health-dashboard-toggle,
+.health-dashboard-refresh {
+  background: rgba(60, 60, 100, 0.4);
+  border: 1px solid rgba(120, 120, 180, 0.2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: #b4a0ff;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+  margin-left: 6px;
+}
+
+.health-dashboard-toggle:hover,
+.health-dashboard-refresh:hover {
+  background: rgba(120, 100, 200, 0.3);
+}
+
+.health-dashboard-content {
+  padding: 12px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.metric-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(120, 120, 180, 0.08);
+}
+
+.metric-card:last-child {
+  border-bottom: none;
+}
+
+.metric-label {
+  font-size: 11px;
+  color: rgba(180, 180, 220, 0.8);
+}
+
+.metric-value {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #e4e4e8;
+}
+
+.metric-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(120, 120, 180, 0.15);
+}
+
+.metric-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(180, 180, 220, 0.9);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.type-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.type-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.type-label {
+  width: 70px;
+  color: rgba(180, 180, 220, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-bar-container {
+  flex: 1;
+  height: 16px;
+  background: rgba(60, 60, 100, 0.3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.type-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.type-count {
+  width: 32px;
+  text-align: right;
+  color: #d4d4d8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbar styling for dashboard */
+.health-dashboard-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.health-dashboard-content::-webkit-scrollbar-track {
+  background: rgba(20, 20, 40, 0.3);
+}
+
+.health-dashboard-content::-webkit-scrollbar-thumb {
+  background: rgba(80, 80, 120, 0.4);
+  border-radius: 3px;
+}
+
+.health-dashboard-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 100, 140, 0.5);
+}
+
+/* Recall Search Results */
+.recall-results {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 360px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: rgba(10, 10, 26, 0.92);
+  border: 1px solid rgba(120, 120, 180, 0.25);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  z-index: 15;
+  pointer-events: auto;
+  font-size: 12px;
+}
+
+.recall-results::-webkit-scrollbar {
+  width: 5px;
+}
+
+.recall-results::-webkit-scrollbar-thumb {
+  background: rgba(80, 80, 120, 0.4);
+  border-radius: 3px;
+}
+
+.recall-result-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(120, 120, 180, 0.08);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.recall-result-item:hover {
+  background: rgba(60, 60, 100, 0.3);
+}
+
+.recall-result-item:last-child {
+  border-bottom: none;
+}
+
+.recall-result-label {
+  font-weight: 600;
+  color: #e4e4e8;
+  font-size: 13px;
+}
+
+.recall-result-type {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.recall-score-bar {
+  height: 3px;
+  background: rgba(60, 60, 100, 0.3);
+  border-radius: 2px;
+  margin: 4px 0;
+  overflow: hidden;
+}
+
+.recall-score-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #f59e0b);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
+.recall-result-excerpt {
+  color: rgba(180, 180, 220, 0.6);
+  font-size: 11px;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recall-procedures {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(120, 120, 180, 0.15);
+}
+
+.recall-procedures-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(180, 180, 220, 0.6);
+  margin-bottom: 6px;
+}
+
+.recall-procedure-item {
+  padding: 4px 0;
+  font-size: 11px;
+  color: rgba(180, 180, 220, 0.8);
+}
+
+.recall-procedure-item .confidence {
+  color: #f59e0b;
+  font-variant-numeric: tabular-nums;
+}
+
+.recall-empty {
+  padding: 16px;
+  text-align: center;
+  color: rgba(160, 160, 200, 0.4);
+  font-size: 12px;
+}
+
+.recall-loading {
+  padding: 12px;
+  text-align: center;
+  color: rgba(160, 160, 200, 0.5);
+  font-size: 12px;
+}
+
+/* Procedures and Episodes styles are self-injected by their respective modules
+   (procedures-panel.ts and episodes-timeline.ts) via runtime <style> tags. */

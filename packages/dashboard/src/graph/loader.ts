@@ -1,62 +1,13 @@
-import type { NacreGraphData, ForceNode, ForceLink, GraphConfig } from './types.ts';
-import { GraphApiClient, type LoadProgress, type ProgressCallback } from './api-client.ts';
+import type { NacreGraphData, ForceNode, ForceLink, GraphConfig, LoadResult } from './types.ts';
 
-export interface LoadResult {
-  nodes: ForceNode[];
-  links: ForceLink[];
-  config: GraphConfig;
-  dateRange: { earliest: string; latest: string };
-  source: 'api' | 'static';
-}
-
-export interface LoadOptions {
-  apiUrl?: string;
-  onProgress?: ProgressCallback;
-  nodeLimit?: number;
-  edgeLimit?: number;
-}
-
-export async function loadGraph(url: string, options?: LoadOptions): Promise<LoadResult> {
-  const { apiUrl, onProgress, nodeLimit, edgeLimit } = options || {};
-
-  // If API URL is provided, try using API client first
-  if (apiUrl) {
-    const apiClient = new GraphApiClient(apiUrl);
-
-    try {
-      const { data, source } = await apiClient.loadGraphWithFallback(
-        url,
-        onProgress,
-        { nodeLimit, edgeLimit }
-      );
-
-      const result = transformGraph(data);
-      result.source = source;
-      return result;
-    } catch (e) {
-      console.warn('API client failed, falling back to direct fetch:', e);
-    }
-  }
-
-  // Direct fetch fallback (original behavior)
+export async function loadGraph(url: string): Promise<LoadResult> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to load graph: ${res.status}`);
   const data: NacreGraphData = await res.json();
-
-  onProgress?.({
-    totalNodes: Object.keys(data.nodes).length,
-    loadedNodes: Object.keys(data.nodes).length,
-    totalEdges: Object.keys(data.edges).length,
-    loadedEdges: Object.keys(data.edges).length,
-    stage: 'complete',
-  });
-
-  const result = transformGraph(data);
-  result.source = 'static';
-  return result;
+  return transformGraph(data);
 }
 
-export function transformGraph(data: NacreGraphData, source: 'api' | 'static' = 'static'): LoadResult {
+export function transformGraph(data: NacreGraphData): LoadResult {
   const edgeCounts = new Map<string, number>();
   const maxWeights = new Map<string, number>();
 
@@ -83,6 +34,7 @@ export function transformGraph(data: NacreGraphData, source: 'api' | 'static' = 
     excerpts: n.excerpts,
     edgeCount: edgeCounts.get(n.id) ?? 0,
     maxEdgeWeight: maxWeights.get(n.id) ?? 0,
+    highlight: null,
   }));
 
   const links: ForceLink[] = Object.values(data.edges).map((e) => ({
@@ -113,7 +65,7 @@ export function transformGraph(data: NacreGraphData, source: 'api' | 'static' = 
     visibilityThreshold: data.config.visibilityThreshold,
   };
 
-  return { nodes, links, config, dateRange: { earliest, latest }, source };
+  return { nodes, links, config, dateRange: { earliest, latest } };
 }
 
 export function getEntityTypes(nodes: ForceNode[]): string[] {

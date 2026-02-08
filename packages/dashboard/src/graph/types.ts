@@ -8,7 +8,7 @@ export interface GraphNode {
   reinforcementCount: number;
   sourceFiles: string[];
   excerpts: Array<{ file: string; text: string; date: string }>;
-  aliases: string[];
+  aliases?: string[];
 }
 
 export interface GraphEdge {
@@ -23,7 +23,7 @@ export interface GraphEdge {
   firstFormed: string;
   lastReinforced: string;
   stability: number;
-  evidence: Array<{ file: string; date: string; context: string }>;
+  evidence?: Array<{ file: string; date: string; context: string }>;
 }
 
 export interface NacreGraphData {
@@ -35,8 +35,8 @@ export interface NacreGraphData {
     decayRate: number;
     reinforcementBoost: number;
     visibilityThreshold: number;
-    coOccurrenceThreshold: number;
-    baseWeights: Record<string, number>;
+    coOccurrenceThreshold?: number;
+    baseWeights?: Record<string, number>;
   };
 }
 
@@ -52,6 +52,7 @@ export interface ForceNode {
   excerpts: Array<{ file: string; text: string; date: string }>;
   edgeCount: number;
   maxEdgeWeight: number;
+  highlight?: 'hover' | 'pin' | null;
 
   x?: number;
   y?: number;
@@ -90,87 +91,17 @@ export interface AppState {
   hoveredNode: ForceNode | null;
   highlightNodes: Set<string>;
   highlightLinks: Set<string>;
-  recallHighlightNodes: Set<string>;
+  pinnedNodes: Set<string>;
+  pinnedLinks: Set<string>;
   visibleTypes: Set<string>;
   visibleEdgeTypes: Set<string>;
   minWeight: number;
   scrubDate: Date | null;
 }
 
-export type EpisodeType = 'conversation' | 'event' | 'decision' | 'observation';
-
-export interface Episode {
-  id: string;
-  timestamp: string;
-  endTimestamp?: string;
-  type: EpisodeType;
-  title: string;
-  summary?: string;
-  content: string;
-  sequence: number;
-  parentId?: string;
-  participants: string[];
-  topics: string[];
-  outcomes?: string[];
-  importance: number;
-  accessCount: number;
-  lastAccessed: string;
-  source: string;
-  sourceType: 'markdown' | 'conversation' | 'api';
-}
-
-export type ProcedureType = 'preference' | 'skill' | 'antipattern' | 'insight' | 'heuristic';
-
-export interface Procedure {
-  id: string;
-  statement: string;
-  type: ProcedureType;
-  triggerKeywords: string[];
-  triggerContexts: string[];
-  sourceEpisodes: string[];
-  sourceNodes: string[];
-  confidence: number;
-  applications: number;
-  contradictions: number;
-  stability: number;
-  lastApplied: string | null;
-  createdAt: string;
-  updatedAt: string;
-  flaggedForReview: boolean;
-}
-
-export interface RecallScores {
-  keyword: number;
-  semantic: number;
-  graph: number;
-  recency: number;
-  combined: number;
-}
-
-export interface RecallConnection {
-  nodeId: string;
-  label: string;
-  type: string;
-  edgeType: string;
-  weight: number;
-}
-
-export interface RecallResult {
-  id: string;
-  label: string;
-  type: string;
-  score: number;
-  scores: RecallScores;
-  excerpts: string[];
-  connections: RecallConnection[];
-  episodes?: Episode[];
-}
-
-export interface RecallProcedureMatch {
-  id: string;
-  statement: string;
-  type: string;
-  confidence: number;
-  score: number;
-  matchedKeywords: string[];
+export interface LoadResult {
+  nodes: ForceNode[];
+  links: ForceLink[];
+  config: GraphConfig;
+  dateRange: { earliest: string; latest: string };
 }
