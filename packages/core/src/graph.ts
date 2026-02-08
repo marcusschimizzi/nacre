@@ -17,7 +17,13 @@ export function generateNodeId(label: string): string {
     .slice(0, 16);
 }
 
-export function generateEdgeId(source: string, target: string, type: EdgeType): string {
+export function generateEdgeId(source: string, target: string, type: EdgeType, directed: boolean = false): string {
+  // For directed edges (causal), preserve order to maintain directionality
+  if (directed) {
+    return `${source}--${target}--${type}`;
+  }
+
+  // For undirected edges (co-occurrence, temporal, explicit), use sorted endpoints
   const [a, b] = source < target ? [source, target] : [target, source];
   return `${a}--${b}--${type}`;
 }
@@ -47,7 +53,7 @@ export function addEdge(
   graph: NacreGraph,
   edge: Omit<MemoryEdge, 'id'> & { id?: string },
 ): MemoryEdge {
-  const id = edge.id ?? generateEdgeId(edge.source, edge.target, edge.type);
+  const id = edge.id ?? generateEdgeId(edge.source, edge.target, edge.type, edge.directed);
   const full: MemoryEdge = { ...edge, id };
   graph.edges[id] = full;
   return full;

@@ -316,6 +316,8 @@ export interface GraphStore {
   putFileHash(hash: FileHash): void;
 
   // Embedding operations
+  getEmbeddingProvider(): string;
+  setEmbeddingProvider(provider: string): void;
   putEmbedding(id: string, type: string, content: string, vector: Float32Array, provider: string): void;
   getEmbedding(id: string): EmbeddingRecord | undefined;
   searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[];
@@ -650,7 +652,29 @@ export class SqliteStore implements GraphStore {
 
   // ── Embeddings ──────────────────────────────────────────
 
+  getEmbeddingProvider(): string {
+    return this.getMeta('embedding_provider') ?? 'ollama';
+  }
+
+  setEmbeddingProvider(provider: string): void {
+    const current = this.getMeta('embedding_provider');
+    if (current && current !== provider) {
+      // Provider switch: clear existing embeddings to avoid dimension mismatch
+      this.clearAllEmbeddings();
+    }
+    this.setMeta('embedding_provider', provider);
+  }
+
   putEmbedding(id: string, type: string, content: string, vector: Float32Array, provider: string): void {
+    // Only enforce provider check if one has been explicitly set (non-default)
+    const active = this.getEmbeddingProvider();
+    const metaHasProvider = this.stmt('SELECT value FROM meta WHERE key = ?').get('embedding_provider') as { value: string } | undefined;
+    if (metaHasProvider && provider !== active) {
+      throw new Error(
+        `Provider "${provider}" is not active. Active provider: "${active}". ` +
+        `Call setEmbeddingProvider() to switch providers.`
+      );
+    }
     this.stmt(
       `INSERT OR REPLACE INTO embeddings
        (id, type, content, vector, dimensions, provider, created_at)

@@ -36,6 +36,8 @@ export function graphRoutes(store: SqliteStore): Hono {
     const target = c.req.query('target');
     const type = c.req.query('type') as EdgeType | undefined;
     const minWeight = c.req.query('minWeight');
+    const limit = parseInt(c.req.query('limit') ?? '1000', 10);
+    const offset = parseInt(c.req.query('offset') ?? '0', 10);
 
     const edges = store.listEdges({
       source: source || undefined,
@@ -44,14 +46,20 @@ export function graphRoutes(store: SqliteStore): Hono {
       minWeight: minWeight ? parseFloat(minWeight) : undefined,
     });
 
-    return c.json({ data: edges });
+    return c.json({ data: edges.slice(offset, offset + limit) });
   });
 
   app.get('/graph/stats', (c) => {
     const graph = store.getFullGraph();
     const edges = Object.values(graph.edges);
+    const nodes = Object.values(graph.nodes);
     let weightSum = 0;
     for (const e of edges) weightSum += e.weight;
+
+    const nodesByType: Record<string, number> = {};
+    for (const n of nodes) {
+      nodesByType[n.type] = (nodesByType[n.type] ?? 0) + 1;
+    }
 
     return c.json({
       data: {
@@ -60,6 +68,7 @@ export function graphRoutes(store: SqliteStore): Hono {
         embeddingCount: store.embeddingCount(),
         avgWeight: edges.length > 0 ? weightSum / edges.length : 0,
         lastConsolidated: store.getMeta('last_consolidated') ?? null,
+        nodesByType,
       },
     });
   });

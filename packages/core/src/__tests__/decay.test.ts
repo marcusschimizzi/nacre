@@ -28,6 +28,14 @@ describe('daysBetween', () => {
   it('handles cross-month boundaries', () => {
     assert.equal(daysBetween('2026-01-30', '2026-02-02'), 3);
   });
+
+  it('returns 0 for sub-day differences (elapsed-time semantics)', () => {
+    // 23:59 → 00:01 should be 0 days (2 minutes apart)
+    assert.equal(
+      daysBetween('2026-02-07T23:59:00', '2026-02-08T00:01:00'),
+      0,
+    );
+  });
 });
 
 describe('calculateStability', () => {

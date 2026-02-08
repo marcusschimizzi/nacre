@@ -10,9 +10,18 @@ import {
   type EntityMap,
   type PendingEdge,
   type RawEntity,
+  type Excerpt,
+  type Evidence,
 } from '@nacre/core';
 import type { Section } from './parse.js';
 import { detectCausalPhrases } from './extract/structural.js';
+
+export interface ConsolidationStats {
+  newNodes: number;
+  newEdges: number;
+  reinforcedNodes: number;
+  reinforcedEdges: number;
+}
 
 export function deduplicateRawEntities(entities: RawEntity[]): RawEntity[] {
   const map = new Map<string, RawEntity>();
@@ -36,7 +45,13 @@ export function processFileExtractions(
   fileDate: string,
   entityMap: EntityMap,
   pendingEdges: PendingEdge[],
-): { graph: NacreGraph; pendingEdges: PendingEdge[] } {
+): { graph: NacreGraph; pendingEdges: PendingEdge[]; stats: ConsolidationStats } {
+  const stats: ConsolidationStats = {
+    newNodes: 0,
+    newEdges: 0,
+    reinforcedNodes: 0,
+    reinforcedEdges: 0,
+  };
   const sectionEntities = new Map<string, RawEntity[]>();
 
   for (const entity of allEntities) {
@@ -58,6 +73,7 @@ export function processFileExtractions(
       if (!resolved) continue;
 
       if (resolved.isNew) {
+        stats.newNodes++;
         addNode(graph, {
           label: resolved.canonicalLabel,
           aliases: [],
@@ -70,6 +86,7 @@ export function processFileExtractions(
           excerpts: [{ file: filePath, text: raw.text, date: fileDate }],
         });
       } else {
+        stats.reinforcedNodes++;
         reinforceNode(graph, resolved.nodeId, filePath, fileDate, {
           file: filePath,
           text: raw.text,
@@ -94,14 +111,16 @@ export function processFileExtractions(
     for (const wikiId of wikilinkIds) {
       for (const otherId of uniqueIds) {
         if (wikiId === otherId) continue;
-        const edgeId = generateEdgeId(wikiId, otherId, 'explicit');
+        const edgeId = generateEdgeId(wikiId, otherId, 'explicit', false);
         if (graph.edges[edgeId]) {
+          stats.reinforcedEdges++;
           reinforceEdge(graph, edgeId, {
             file: filePath,
             date: fileDate,
             context: 'wikilink reinforcement',
           });
         } else {
+          stats.newEdges++;
           addEdge(graph, {
             source: wikiId,
             target: otherId,
@@ -125,9 +144,10 @@ export function processFileExtractions(
       for (let j = i + 1; j < uniqueIds.length; j++) {
         const src = uniqueIds[i];
         const tgt = uniqueIds[j];
-        const edgeId = generateEdgeId(src, tgt, 'co-occurrence');
+        const edgeId = generateEdgeId(src, tgt, 'co-occurrence', false);
 
         if (graph.edges[edgeId]) {
+          stats.reinforcedEdges++;
           reinforceEdge(graph, edgeId, {
             file: filePath,
             date: fileDate,
@@ -153,6 +173,7 @@ export function processFileExtractions(
           if (
             pendingEdges[pendingIdx].count >= graph.config.coOccurrenceThreshold
           ) {
+            stats.newEdges++;
             addEdge(graph, {
               source: src,
               target: tgt,
@@ -185,8 +206,9 @@ export function processFileExtractions(
 
     const section = sections.find((s) => s.headingPath === sectionKey);
     if (section && detectCausalPhrases(section.content) && uniqueIds.length >= 2) {
-      const causalEdgeId = generateEdgeId(uniqueIds[0], uniqueIds[1], 'causal');
+      const causalEdgeId = generateEdgeId(uniqueIds[0], uniqueIds[1], 'causal', true);
       if (!graph.edges[causalEdgeId]) {
+        stats.newEdges++;
         addEdge(graph, {
           source: uniqueIds[0],
           target: uniqueIds[1],
@@ -227,8 +249,9 @@ export function processFileExtractions(
           if (!nodeA || !nodeB) continue;
           if (nodeA.mentionCount < 2 || nodeB.mentionCount < 2) continue;
 
-          const edgeId = generateEdgeId(a, b, 'temporal');
+          const edgeId = generateEdgeId(a, b, 'temporal', false);
           if (!graph.edges[edgeId]) {
+            stats.newEdges++;
             addEdge(graph, {
               source: a,
               target: b,
@@ -250,6 +273,7 @@ export function processFileExtractions(
             });
             temporalEdgesCreated++;
           } else {
+            stats.reinforcedEdges++;
             reinforceEdge(graph, edgeId, {
               file: filePath,
               date: fileDate,
@@ -261,5 +285,5 @@ export function processFileExtractions(
     }
   }
 
-  return { graph, pendingEdges };
+  return { graph, pendingEdges, stats };
 }

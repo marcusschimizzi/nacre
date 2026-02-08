@@ -34,16 +34,25 @@ export default defineCommand({
   async run({ args }) {
     const loaded = await loadGraph(args.graph as string);
     try {
-      const graphPath = args.graph as string;
-      const pendingPath = (args.pending as string) ??
-        resolve(dirname(graphPath), 'pending-edges.json');
       let pendingEdges: PendingEdge[] = [];
-      try {
-        if (existsSync(pendingPath)) {
-          pendingEdges = JSON.parse(readFileSync(pendingPath, 'utf8')) as PendingEdge[];
+
+      // Load pending edges from SQLite meta if using .db, otherwise from JSON file
+      if (loaded.store) {
+        const pendingStr = loaded.store.getMeta('pending_edges');
+        if (pendingStr) {
+          pendingEdges = JSON.parse(pendingStr) as PendingEdge[];
         }
-      } catch {
-        // pending-edges.json is optional
+      } else {
+        const graphPath = args.graph as string;
+        const pendingPath = (args.pending as string) ??
+          resolve(dirname(graphPath), 'pending-edges.json');
+        try {
+          if (existsSync(pendingPath)) {
+            pendingEdges = JSON.parse(readFileSync(pendingPath, 'utf8')) as PendingEdge[];
+          }
+        } catch {
+          // pending-edges.json is optional
+        }
       }
 
       const maxSuggestions = parseInt(args.max as string, 10) || 10;

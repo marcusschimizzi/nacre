@@ -4,7 +4,8 @@ export function daysBetween(dateA: string, dateB: string): number {
   const msPerDay = 86_400_000;
   const a = new Date(dateA).getTime();
   const b = new Date(dateB).getTime();
-  return Math.abs(Math.floor((a - b) / msPerDay));
+  // Elapsed-time semantics: 23:59 → 00:01 = 0 days
+  return Math.floor(Math.abs(a - b) / msPerDay);
 }
 
 export function calculateStability(

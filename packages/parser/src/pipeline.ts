@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { basename, resolve, relative, dirname } from 'node:path';
 import {
   createGraph,
@@ -18,7 +18,7 @@ import { extractStructural } from './extract/structural.js';
 import { extractNLP } from './extract/nlp.js';
 import { extractCustom } from './extract/custom.js';
 import { extractEpisodes } from './extract/episode-extractor.js';
-import { processFileExtractions } from './merge.js';
+import { processFileExtractions, type ConsolidationStats } from './merge.js';
 import type { Episode } from '@nacre/core';
 
 export interface ConsolidateOptions {
@@ -38,10 +38,31 @@ function parseRetention(retention: string): number {
   return parseInt(num, 10) * multiplier;
 }
 
-function extractDateFromFilename(filePath: string): string | null {
+function extractDateFromContent(filePath: string, content: string): string | null {
+  // 1. Parse frontmatter for explicit date
+  const frontmatterMatch = content.match(/^---\n(?:.*\n)?date:\s*([^\n]+)/im);
+  if (frontmatterMatch) {
+    const date = frontmatterMatch[1].trim();
+    // Validate it's a real ISO date
+    if (!isNaN(new Date(date).getTime())) {
+      return date;
+    }
+  }
+
+  // 2. Fall back to filename prefix (YYYY-MM-DD)
   const name = basename(filePath, '.md');
-  const match = name.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : null;
+  const datePrefixMatch = name.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (datePrefixMatch) {
+    return datePrefixMatch[1];
+  }
+
+  // 3. Fall back to file mtime
+  try {
+    const stats = statSync(filePath);
+    return stats.mtime.toISOString();
+  } catch {
+    return null;
+  }
 }
 
 function loadGraphFromJson(outDir: string): NacreGraph {
@@ -119,7 +140,7 @@ export async function consolidate(
   for (const filePath of toProcess) {
     try {
       const content = readFileSync(filePath, 'utf8');
-      const fileDate = extractDateFromFilename(filePath) ?? now.toISOString().slice(0, 10);
+      const fileDate = extractDateFromContent(filePath, content) ?? now.toISOString().slice(0, 10);
 
       const tree = parseMarkdown(content);
       const sections = extractSections(tree, filePath);
@@ -128,9 +149,6 @@ export async function consolidate(
       const nlpEntities = extractNLP(sections, filePath);
       const custom = extractCustom(sections, filePath);
       const allEntities = [...structural, ...nlpEntities, ...custom];
-
-      const nodesBeforeFile = Object.keys(graph.nodes).length;
-      const edgesBeforeFile = Object.keys(graph.edges).length;
 
       const result = processFileExtractions(
         graph,
@@ -143,17 +161,9 @@ export async function consolidate(
       );
       pendingEdges = result.pendingEdges;
 
-      const nodesAfterFile = Object.keys(graph.nodes).length;
-      const edgesAfterFile = Object.keys(graph.edges).length;
-
-      reinforcedNodes += Math.max(
-        0,
-        allEntities.length - (nodesAfterFile - nodesBeforeFile),
-      );
-      reinforcedEdges += Math.max(
-        0,
-        (edgesAfterFile - edgesBeforeFile),
-      );
+      // Use explicit stats from processFileExtractions
+      reinforcedNodes += result.stats.reinforcedNodes;
+      reinforcedEdges += result.stats.reinforcedEdges;
 
       const hash = hashFileSync(filePath);
       const relPath = relative(basePath, filePath);
