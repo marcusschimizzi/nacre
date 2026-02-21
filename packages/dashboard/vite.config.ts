@@ -12,5 +12,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'es2022',
+    rollupOptions: {
+      output: {
+        manualChunks: false,
+      },
+    },
   },
 });
