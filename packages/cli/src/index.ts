@@ -17,6 +17,7 @@ import snapshotsCmd from './commands/snapshots.js';
 import historyCmd from './commands/history.js';
 import ingestCmd from './commands/ingest.js';
 import { migrateCommand } from './commands/migrate.js';
+import dashboardCmd from './commands/dashboard.js';
 
 const main = defineCommand({
   meta: {
@@ -44,6 +45,7 @@ const main = defineCommand({
     snapshots: snapshotsCmd,
     history: historyCmd,
     ingest: ingestCmd,
+    dashboard: dashboardCmd,
   },
 });
 
