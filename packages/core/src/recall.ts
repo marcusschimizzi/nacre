@@ -343,10 +343,11 @@ export async function recallWithHive(
   }
 
   const privateNodeCount = privateStore.nodeCount();
-  const factor = getHiveOriginFactor(
-    privateNodeCount,
-    opts.hiveOriginFactor ?? 0.6,
-  );
+  // Explicit hive queries (--hive flag) bypass the structural discount entirely.
+  // Passive/default hive supplementation applies the bootstrap-aware origin factor.
+  const factor = opts.hiveExplicit
+    ? 1.0
+    : getHiveOriginFactor(privateNodeCount, opts.hiveOriginFactor ?? 0.6);
 
   const hiveResponse = await recall(hiveStore, provider, opts);
 

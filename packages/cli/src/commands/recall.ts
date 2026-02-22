@@ -91,6 +91,11 @@ export default defineCommand({
       const hivePath = args.hive as string | undefined;
       const hiveOnly = args['hive-only'] as boolean | undefined;
 
+      if (hiveOnly && !hivePath) {
+        console.error('--hive-only requires --hive <path>');
+        process.exit(1);
+      }
+
       let hiveStore: SqliteStore | null = null;
       if (hivePath) {
         if (!hivePath.endsWith('.db')) {
@@ -112,6 +117,9 @@ export default defineCommand({
             hops: parseInt(args.hops as string, 10),
             asOf: args['as-of'] as string | undefined,
             hiveOnly: hiveOnly ?? false,
+            // --hive without --hive-only = explicit tap: full weight, no discount
+            // --hive-only = hive only, also full weight
+            hiveExplicit: !hiveOnly,
           });
         } else {
           response = await recall(store, provider, {

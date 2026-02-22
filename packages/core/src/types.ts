@@ -472,6 +472,12 @@ export interface HiveGraph {
 export interface HiveConsolidationOptions {
   agents: Array<{ name: string; graphPath: string }>;
   outPath: string;
+  /**
+   * Cosine similarity threshold for cross-agent node deduplication.
+   * NOTE: Currently unused — deduplication is handled via node ID hash
+   * (same label → same ID), which makes cosine-based dedup redundant.
+   * Reserved for future use if label-agnostic dedup is needed.
+   */
   deduplicationThreshold?: number;
   originFactor?: number;
   decayWindowDays?: number;
@@ -480,5 +486,15 @@ export interface HiveConsolidationOptions {
 export interface HiveRecallOptions extends RecallOptions {
   hivePath?: string;
   hiveOnly?: boolean;
+  /**
+   * Override the origin factor applied to hive results.
+   * Ignored when hiveExplicit is true (factor becomes 1.0).
+   */
   hiveOriginFactor?: number;
+  /**
+   * When true, hive results are returned at full weight (no structural discount).
+   * Use for explicit `--hive` queries where the agent is intentionally tapping
+   * collective knowledge, vs. passive hive supplementation at discount.
+   */
+  hiveExplicit?: boolean;
 }
