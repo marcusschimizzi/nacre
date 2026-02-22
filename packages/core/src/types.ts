@@ -32,6 +32,7 @@ export interface MemoryNode {
   reinforcementCount: number;
   sourceFiles: string[];
   excerpts: Excerpt[];
+  hiveExclude?: boolean;
 }
 
 export type EdgeType = 'explicit' | 'co-occurrence' | 'temporal' | 'causal';
@@ -441,4 +442,43 @@ export interface RecallResult {
 export interface RecallResponse {
   results: RecallResult[];
   procedures: RecallProcedureMatch[];
+}
+
+// === Hive Graph Types (Federated Multi-Agent) ===
+
+export interface HiveProvenance {
+  sourceAgents: string[];
+  firstSeen: string;
+  lastReferenced: string;
+  referenceCount: number;
+  endorsements: number;
+}
+
+export interface HiveNode extends MemoryNode {
+  hiveWeight: number;
+  originFactor: number;
+  provenance: HiveProvenance;
+}
+
+export interface HiveGraph {
+  version: number;
+  lastConsolidated: string;
+  agents: string[];
+  nodes: Record<string, HiveNode>;
+  edges: Record<string, MemoryEdge>;
+  config: GraphConfig;
+}
+
+export interface HiveConsolidationOptions {
+  agents: Array<{ name: string; graphPath: string }>;
+  outPath: string;
+  deduplicationThreshold?: number;
+  originFactor?: number;
+  decayWindowDays?: number;
+}
+
+export interface HiveRecallOptions extends RecallOptions {
+  hivePath?: string;
+  hiveOnly?: boolean;
+  hiveOriginFactor?: number;
 }
