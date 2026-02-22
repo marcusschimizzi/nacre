@@ -2,6 +2,7 @@ import { defineCommand } from 'citty';
 import {
   SqliteStore,
   recall,
+  recallWithHive,
   resolveProvider,
   type EntityType,
 } from '@nacre/core';
@@ -58,6 +59,14 @@ export default defineCommand({
       description: 'Output format: text or json',
       default: 'text',
     },
+    hive: {
+      type: 'string',
+      description: 'Path to hive .db for federated recall',
+    },
+    'hive-only': {
+      type: 'boolean',
+      description: 'Search hive only, skip private graph',
+    },
   },
   async run({ args }) {
     const graphPath = args.graph as string;
@@ -79,15 +88,45 @@ export default defineCommand({
         ? (args.types as string).split(',').map((t) => t.trim()) as EntityType[]
         : undefined;
 
-      const response = await recall(store, provider, {
-        query: args.query as string,
-        limit: parseInt(args.limit as string, 10),
-        types,
-        since: args.since as string | undefined,
-        until: args.until as string | undefined,
-        hops: parseInt(args.hops as string, 10),
-        asOf: args['as-of'] as string | undefined,
-      });
+      const hivePath = args.hive as string | undefined;
+      const hiveOnly = args['hive-only'] as boolean | undefined;
+
+      let hiveStore: SqliteStore | null = null;
+      if (hivePath) {
+        if (!hivePath.endsWith('.db')) {
+          console.error('Hive path must be a .db file');
+          process.exit(1);
+        }
+        hiveStore = SqliteStore.open(hivePath);
+      }
+
+      let response;
+      try {
+        if (hiveStore) {
+          response = await recallWithHive(store, hiveStore, provider, {
+            query: args.query as string,
+            limit: parseInt(args.limit as string, 10),
+            types,
+            since: args.since as string | undefined,
+            until: args.until as string | undefined,
+            hops: parseInt(args.hops as string, 10),
+            asOf: args['as-of'] as string | undefined,
+            hiveOnly: hiveOnly ?? false,
+          });
+        } else {
+          response = await recall(store, provider, {
+            query: args.query as string,
+            limit: parseInt(args.limit as string, 10),
+            types,
+            since: args.since as string | undefined,
+            until: args.until as string | undefined,
+            hops: parseInt(args.hops as string, 10),
+            asOf: args['as-of'] as string | undefined,
+          });
+        }
+      } finally {
+        hiveStore?.close();
+      }
 
       if ((args.format as string) === 'json') {
         console.log(formatJSON(response));

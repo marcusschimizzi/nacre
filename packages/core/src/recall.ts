@@ -6,6 +6,7 @@ import type {
   RecallWeights,
   RecallConnection,
   RecallProcedureMatch,
+  HiveRecallOptions,
   Episode,
 } from './types.js';
 import { DEFAULT_RECALL_WEIGHTS } from './types.js';
@@ -16,6 +17,7 @@ import { computeCurrentWeight, daysBetween } from './decay.js';
 import { normalize } from './resolve.js';
 import { findNode, searchNodes } from './query.js';
 import { findRelevantProcedures } from './procedures.js';
+import { getHiveOriginFactor } from './hive.js';
 
 /**
  * Discount factor for episode→node semantic score propagation.
@@ -315,4 +317,78 @@ export async function recall(
   }
 
   return { results, procedures };
+}
+
+/**
+ * Hybrid recall that merges results from a private graph and a hive graph.
+ *
+ * - If hiveOnly: search only the hive store
+ * - Otherwise: search private, then hive (if provided), merge by node ID
+ * - Hive scores are discounted by getHiveOriginFactor()
+ */
+export async function recallWithHive(
+  privateStore: SqliteStore,
+  hiveStore: SqliteStore | null,
+  provider: EmbeddingProvider | null,
+  opts: HiveRecallOptions,
+): Promise<RecallResponse> {
+  if (opts.hiveOnly && hiveStore) {
+    return recall(hiveStore, provider, opts);
+  }
+
+  const privateResponse = await recall(privateStore, provider, opts);
+
+  if (!hiveStore) {
+    return privateResponse;
+  }
+
+  const privateNodeCount = privateStore.nodeCount();
+  const factor = getHiveOriginFactor(
+    privateNodeCount,
+    opts.hiveOriginFactor ?? 0.6,
+  );
+
+  const hiveResponse = await recall(hiveStore, provider, opts);
+
+  // Merge by node ID — take higher score, discount hive results
+  const resultMap = new Map<string, RecallResult>();
+
+  for (const r of privateResponse.results) {
+    resultMap.set(r.id, r);
+  }
+
+  for (const r of hiveResponse.results) {
+    const discounted: RecallResult = {
+      ...r,
+      score: r.score * factor,
+      scores: {
+        semantic: r.scores.semantic * factor,
+        graph: r.scores.graph * factor,
+        recency: r.scores.recency * factor,
+        importance: r.scores.importance * factor,
+      },
+    };
+
+    const existing = resultMap.get(r.id);
+    if (!existing || discounted.score > existing.score) {
+      resultMap.set(r.id, discounted);
+    }
+  }
+
+  const results = [...resultMap.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, opts.limit ?? 10);
+
+  // Merge procedures (deduplicate by ID)
+  const procMap = new Map<string, RecallProcedureMatch>();
+  for (const p of privateResponse.procedures) {
+    procMap.set(p.id, p);
+  }
+  for (const p of hiveResponse.procedures) {
+    if (!procMap.has(p.id)) {
+      procMap.set(p.id, p);
+    }
+  }
+
+  return { results, procedures: [...procMap.values()] };
 }
