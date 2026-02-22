@@ -18,6 +18,7 @@ import historyCmd from './commands/history.js';
 import ingestCmd from './commands/ingest.js';
 import { migrateCommand } from './commands/migrate.js';
 import dashboardCmd from './commands/dashboard.js';
+import hiveCmd from './commands/hive.js';
 
 const main = defineCommand({
   meta: {
@@ -46,6 +47,7 @@ const main = defineCommand({
     history: historyCmd,
     ingest: ingestCmd,
     dashboard: dashboardCmd,
+    hive: hiveCmd,
   },
 });
 
