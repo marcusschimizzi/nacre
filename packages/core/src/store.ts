@@ -37,7 +37,7 @@ import { cosineSimilarity, bufferToVector, vectorToBuffer } from './embeddings.j
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   mention_count       INTEGER NOT NULL DEFAULT 1,
   reinforcement_count INTEGER NOT NULL DEFAULT 0,
   source_files        TEXT NOT NULL DEFAULT '[]',
-  excerpts            TEXT NOT NULL DEFAULT '[]'
+  excerpts            TEXT NOT NULL DEFAULT '[]',
+  hive_exclude        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -185,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
 // ── Serialization helpers ───────────────────────────────────────
 
 function rowToNode(row: Record<string, unknown>): MemoryNode {
-  return {
+  const node: MemoryNode = {
     id: row.id as string,
     label: row.label as string,
     type: row.type as EntityType,
@@ -197,6 +198,10 @@ function rowToNode(row: Record<string, unknown>): MemoryNode {
     sourceFiles: JSON.parse(row.source_files as string),
     excerpts: JSON.parse(row.excerpts as string),
   };
+  if ((row.hive_exclude as number) === 1) {
+    node.hiveExclude = true;
+  }
+  return node;
 }
 
 function rowToEdge(row: Record<string, unknown>): MemoryEdge {
@@ -499,6 +504,13 @@ export class SqliteStore implements GraphStore {
           CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
         `);
       }
+      if (ver < 5) {
+        // Add hive_exclude column to nodes (for federated hive graph support)
+        const cols = db.prepare("PRAGMA table_info(nodes)").all() as Array<{ name: string }>;
+        if (!cols.some(c => c.name === 'hive_exclude')) {
+          db.exec("ALTER TABLE nodes ADD COLUMN hive_exclude INTEGER NOT NULL DEFAULT 0");
+        }
+      }
       db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
     }
 
@@ -568,14 +580,14 @@ export class SqliteStore implements GraphStore {
 
   putNode(node: MemoryNode): void {
     this.stmt(
-      `INSERT OR REPLACE INTO nodes 
-       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT OR REPLACE INTO nodes
+       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       node.id, node.label, node.type, JSON.stringify(node.aliases),
       node.firstSeen, node.lastReinforced, node.mentionCount,
       node.reinforcementCount, JSON.stringify(node.sourceFiles),
-      JSON.stringify(node.excerpts)
+      JSON.stringify(node.excerpts), node.hiveExclude ? 1 : 0
     );
   }
 

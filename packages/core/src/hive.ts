@@ -166,10 +166,12 @@ export async function consolidateHive(
     config: mergedConfig,
   };
 
-  // Write to output store
+  // Write to output store (clear existing data for a clean hive)
   const outStore = SqliteStore.open(options.outPath);
   try {
-    // Write nodes (as MemoryNode — the SQLite schema stores base fields)
+    outStore.raw.exec('DELETE FROM edges');
+    outStore.raw.exec('DELETE FROM nodes');
+
     for (const node of Object.values(mergedNodes)) {
       outStore.putNode(node);
     }
