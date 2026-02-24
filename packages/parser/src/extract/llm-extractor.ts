@@ -5,11 +5,11 @@ import type { Section } from '../parse.js';
  * Create an Anthropic-based LLM provider for entity extraction.
  *
  * @param apiKey - Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
- * @param model - Model to use (defaults to claude-3-5-haiku-latest)
+ * @param model - Model to use (defaults to claude-3-5-haiku-20241022)
  */
 export function createAnthropicProvider(
   apiKey?: string,
-  model: string = 'claude-3-5-haiku-latest',
+  model: string = 'claude-haiku-4-5',
 ): LLMProvider {
   const key = apiKey ?? process.env.ANTHROPIC_API_KEY;
   if (!key) {
