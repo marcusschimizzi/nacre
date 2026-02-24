@@ -108,12 +108,26 @@ export interface RawEntity {
   text: string;
   type: EntityType;
   confidence: number;
-  source: 'structural' | 'nlp' | 'custom';
+  source: 'structural' | 'nlp' | 'custom' | 'llm';
   position: {
     file: string;
     section: string;
     line: number;
   };
+}
+
+// === LLM Provider Interface ===
+
+export interface LLMProvider {
+  /**
+   * Complete a prompt and return the raw text response.
+   */
+  complete(prompt: string): Promise<string>;
+
+  /**
+   * Provider name for logging/debugging.
+   */
+  readonly name: string;
 }
 
 export interface DiscoveryResult {

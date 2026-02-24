@@ -7,6 +7,7 @@ import {
   SqliteStore,
   loadConfig,
   type EmbeddingProvider,
+  type LLMProvider,
   type NacreGraph,
   type PendingEdge,
   type ConsolidationResult,
@@ -17,9 +18,10 @@ import { parseMarkdown, extractSections } from './parse.js';
 import { extractStructural } from './extract/structural.js';
 import { extractNLP } from './extract/nlp.js';
 import { extractCustom } from './extract/custom.js';
+import { extractWithLLM } from './extract/llm-extractor.js';
 import { extractEpisodes } from './extract/episode-extractor.js';
 import { processFileExtractions, type ConsolidationStats } from './merge.js';
-import type { Episode } from '@nacre/core';
+import type { Episode, RawEntity } from '@nacre/core';
 
 export interface ConsolidateOptions {
   inputs: string[];
@@ -27,6 +29,7 @@ export interface ConsolidateOptions {
   outDir: string;
   entityMapPath?: string;
   embeddingProvider?: EmbeddingProvider;
+  llmProvider?: LLMProvider;
   now?: Date;
 }
 
@@ -148,7 +151,14 @@ export async function consolidate(
       const structural = extractStructural(sections, filePath);
       const nlpEntities = extractNLP(sections, filePath);
       const custom = extractCustom(sections, filePath);
-      const allEntities = [...structural, ...nlpEntities, ...custom];
+
+      // LLM extraction (if provider configured)
+      let llmEntities: RawEntity[] = [];
+      if (opts.llmProvider) {
+        llmEntities = await extractWithLLM(sections, filePath, opts.llmProvider);
+      }
+
+      const allEntities = [...llmEntities, ...structural, ...nlpEntities, ...custom];
 
       const result = processFileExtractions(
         graph,

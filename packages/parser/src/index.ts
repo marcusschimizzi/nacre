@@ -7,6 +7,7 @@ export type { Section } from './parse.js';
 export { extractStructural } from './extract/structural.js';
 export { extractNLP } from './extract/nlp.js';
 export { extractCustom } from './extract/custom.js';
+export { extractWithLLM, createAnthropicProvider } from './extract/llm-extractor.js';
 export {
   processFileExtractions,
   deduplicateRawEntities,
