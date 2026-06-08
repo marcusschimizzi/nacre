@@ -133,12 +133,12 @@ export class OnnxEmbedder implements EmbeddingProvider {
   private async ensureInitialized(): Promise<void> {
     if (this.pipeline) return;
 
-    if (this._pipelineFactory) {
-      this.pipeline = await this._pipelineFactory(this.modelId, this.cacheDir);
-      return;
-    }
-
     try {
+      if (this._pipelineFactory) {
+        this.pipeline = await this._pipelineFactory(this.modelId, this.cacheDir);
+        return;
+      }
+
       // Dynamic import — module is an optional dependency
       const modName = '@huggingface/transformers';
       const mod = await (Function('m', 'return import(m)')(modName) as Promise<Record<string, unknown>>);

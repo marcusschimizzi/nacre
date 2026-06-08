@@ -53,6 +53,12 @@ export default defineCommand({
     }
 
     const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string });
+    if (!provider) {
+      console.error(
+        'No embedding provider configured. Set one via --provider, nacre.config.json, or NACRE_EMBEDDING_PROVIDER.',
+      );
+      process.exit(1);
+    }
     const store = SqliteStore.open(graphPath);
 
     try {

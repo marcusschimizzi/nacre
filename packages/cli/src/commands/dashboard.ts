@@ -43,7 +43,7 @@ export default defineCommand({
       apiHost = 'localhost';
     }
 
-    const { close } = startDashboardServer({
+    const { close } = await startDashboardServer({
       apiUrl: `http://${apiHost}:${apiPort}`,
       dashboardDir: resolve(__dirname, '..', '..', 'dashboard'),
       port,
