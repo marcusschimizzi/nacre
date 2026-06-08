@@ -64,7 +64,7 @@ describe('MCP Server', () => {
       { name: 'nacre-test', version: '0.1.0' },
       { capabilities: { tools: {}, resources: {} } },
     );
-    registerTools(mcpServer, store);
+    registerTools(mcpServer, store, ':memory:');
     registerResources(mcpServer, store);
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -256,5 +256,72 @@ describe('MCP Server', () => {
       assert.ok(data.edgeCount >= 2);
       assert.ok('nodesByType' in data);
     });
+  });
+});
+
+// Regression test for the MCP recall provider bug: nacre_recall used to embed
+// the query with a hardcoded `mock` provider (64 dims) regardless of how the
+// graph was embedded, so the query vector's dimensions never matched real
+// stored vectors and the semantic half of recall silently returned nothing.
+// Here we configure the (network-stubbed) openai provider — 1536 dims, unlike
+// mock's 64 — and store a matching 1536-dim vector. The old code would yield
+// `semantic: 0.00`; the fix embeds with the configured provider, so the
+// semantic score is non-zero.
+describe('MCP nacre_recall — embedding provider resolution', () => {
+  const originalFetch = global.fetch;
+  const originalKey = process.env.OPENAI_API_KEY;
+  const originalProvider = process.env.NACRE_EMBEDDING_PROVIDER;
+
+  let store: SqliteStore;
+  let client: Client;
+  let mcpServer: McpServer;
+
+  before(async () => {
+    process.env.NACRE_EMBEDDING_PROVIDER = 'openai';
+    process.env.OPENAI_API_KEY = 'test-key';
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => ({ data: [{ embedding: Array(1536).fill(0.1), index: 0 }] }),
+    } as Response);
+
+    store = SqliteStore.open(':memory:');
+    store.setEmbeddingProvider('openai');
+    store.putNode(makeNode({ id: 'n-ts', label: 'TypeScript', type: 'tool', mentionCount: 10 }));
+    // Stored vector matches the stubbed openai provider's dimensions (1536).
+    store.putEmbedding('n-ts', 'node', 'TypeScript', new Float32Array(1536).fill(0.1), 'openai');
+
+    mcpServer = new McpServer(
+      { name: 'nacre-test', version: '0.1.0' },
+      { capabilities: { tools: {}, resources: {} } },
+    );
+    registerTools(mcpServer, store, ':memory:');
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    client = new Client({ name: 'test-client', version: '1.0.0' });
+    await mcpServer.connect(serverTransport);
+    await client.connect(clientTransport);
+  });
+
+  after(async () => {
+    await client.close();
+    await mcpServer.close();
+    store.close();
+    global.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalKey;
+    if (originalProvider === undefined) delete process.env.NACRE_EMBEDDING_PROVIDER;
+    else process.env.NACRE_EMBEDDING_PROVIDER = originalProvider;
+  });
+
+  it('embeds the query with the configured provider so semantic search runs', async () => {
+    const result = await client.callTool({ name: 'nacre_recall', arguments: { query: 'TypeScript language' } });
+    assert.ok(!result.isError);
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    const match = text.match(/semantic:\s*([0-9.]+)/);
+    assert.ok(match, `expected a semantic score in recall output: ${text}`);
+    assert.ok(
+      parseFloat(match[1]) > 0,
+      `expected a non-zero semantic score (provider resolved), got ${match[1]} in: ${text}`,
+    );
   });
 });
