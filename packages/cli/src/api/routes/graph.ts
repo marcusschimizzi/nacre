@@ -49,6 +49,12 @@ export function graphRoutes(store: SqliteStore): Hono {
     return c.json({ data: edges.slice(offset, offset + limit) });
   });
 
+  app.get('/graph', (c) => {
+    // Full graph (nodes + edges + config) for the dashboard's live view.
+    // Shape matches NacreGraph, which is what the dashboard loader expects.
+    return c.json({ data: store.getFullGraph() });
+  });
+
   app.get('/graph/stats', (c) => {
     const graph = store.getFullGraph();
     const edges = Object.values(graph.edges);

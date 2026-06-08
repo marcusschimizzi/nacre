@@ -104,6 +104,18 @@ describe('API server', () => {
     assert.equal(body.data.length, 2);
   });
 
+  it('GET /graph returns the full graph in the shape the dashboard expects', async () => {
+    const res = await app.request('/api/v1/graph');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    // coerceGraphData/transformGraph require nodes/edges records + numeric config.
+    assert.equal(Object.keys(body.data.nodes).length, 3);
+    assert.equal(Object.keys(body.data.edges).length, 2);
+    assert.equal(typeof body.data.config.decayRate, 'number');
+    assert.equal(typeof body.data.config.reinforcementBoost, 'number');
+    assert.equal(typeof body.data.config.visibilityThreshold, 'number');
+  });
+
   it('GET /graph/stats returns correct counts', async () => {
     const res = await app.request('/api/v1/graph/stats');
     assert.equal(res.status, 200);
