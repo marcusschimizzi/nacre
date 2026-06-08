@@ -328,8 +328,19 @@ describe('OnnxEmbedder', () => {
     assert.equal(factoryCalled, 1, 'factory should still be called only once');
   });
 
-  it('throws helpful error when module not found', async () => {
-    const embedder = new OnnxEmbedder();
+  it('throws helpful error when the transformers module is unavailable', async () => {
+    // Simulate a missing optional dependency by injecting a factory that
+    // fails the way a missing dynamic import would. This keeps the test
+    // hermetic — it never touches the real module or the network.
+    const moduleNotFound = Object.assign(
+      new Error("Cannot find package '@huggingface/transformers'"),
+      { code: 'ERR_MODULE_NOT_FOUND' },
+    );
+    const embedder = new OnnxEmbedder({
+      _pipelineFactory: async () => {
+        throw moduleNotFound;
+      },
+    });
     await assert.rejects(
       () => embedder.embed('test'),
       (err: Error) => {
