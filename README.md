@@ -206,13 +206,16 @@ npm run typecheck
 
 ## Roadmap
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full roadmap. Key upcoming milestones:
+SQLite storage, embeddings, hybrid recall, episodic + procedural memory,
+temporal queries, a REST API, an MCP server, and a TypeScript SDK have all
+shipped. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full roadmap. Key
+upcoming milestones:
 
-- **SQLite storage** — migrate from JSON to SQLite for scale and vector support
-- **Embedding layer** — semantic similarity search alongside graph queries
-- **MCP server** — instant integration with Claude Desktop, Cursor, and other MCP clients
-- **REST API & SDKs** — programmatic memory access for any agent framework
-- **Episodic & procedural memory** — formalized event records and learned behaviors
+- **Live visualization dashboard** — wire the 3D graph to the API, add health metrics, search highlighting, and a consolidation animation
+- **Agent integrations** — drop-in wrappers for Claude Code, OpenCode, and LangChain
+- **Inference engine** — automated procedure extraction from episodic patterns
+- **Python SDK** — REST wrapper with LangChain / CrewAI / AutoGen examples
+- **Multi-graph** — multiple named graphs and cross-graph federation
 
 ## Design Principles
 

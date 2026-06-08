@@ -13,32 +13,30 @@ Nacre is a spatial memory graph visualization for Lobstar (an AI agent). It turn
 - Vite for frontend builds
 - tsup for library/CLI packages
 - npm workspaces (monorepo)
-- 3d-force-graph (Three.js/WebGL) for viz (Phase 2)
+- SQLite persistence (`better-sqlite3`), with JSON import/export for portability
+- Hono for the REST API
+- ONNX / Ollama / OpenAI pluggable embedding providers
+- 3d-force-graph (Three.js/WebGL) for viz
 - compromise.js for NLP entity extraction
 - unified + remark-parse for markdown parsing
-- JSON file persistence
 
 ## Project Structure
 This is a monorepo with npm workspaces under `packages/`:
-- `packages/core/` — data model, graph CRUD, decay math, entity resolution, queries
+- `packages/core/` — data model, graph CRUD, decay math, entity resolution, queries, embeddings, recall, episodic/procedural/temporal memory, hive
 - `packages/parser/` — ingestion pipeline (discover → parse → extract → resolve → update → decay → persist)
-- `packages/viz/` — 3D visualization (Phase 2)
-- `packages/cli/` — command-line interface
+- `packages/cli/` — command-line interface, plus the REST API and MCP servers
+- `packages/sdk/` — TypeScript SDK (local + remote backends)
+- `packages/viz/` — 3D visualization (vanilla TS + Three.js)
+- `packages/dashboard/` — React 3D dashboard (newer; intended successor to `viz`)
 - `data/` — graph state, entity map, history snapshots
 
-## Current Phase: Phase 1 — "First Memories"
-Goal: Run `nacre consolidate` and produce a valid graph.json from markdown files.
+## Current Status
+The original Phase 1 goal (consolidate markdown → graph) shipped long ago.
+Milestones M0–M11 plus a federated multi-agent "hive" layer are complete. See
+`docs/ROADMAP.md` for the authoritative status, known issues, and remaining work.
 
-### Phase 1 Deliverables
-1. `@nacre/core`: Types, graph CRUD, decay math, entity resolution
-2. `@nacre/parser`: Full ingestion pipeline
-3. `@nacre/cli`: `nacre consolidate` and `nacre query` commands
-4. Process real memory files from `/workspace/memory/` (or test fixtures)
-
-### Success Criteria
-- Run consolidate on memory directory → get graph.json with 50+ nodes and 100+ edges
-- Decay math produces sensible weights (see ARCHITECTURE.md for the Ebbinghaus model)
-- Entity resolution deduplicates properly (Marcus = marcus = "Marcus S")
+Quick reality check: a clean clone needs `npm install && npm run build` before
+the full test suite passes (cross-package tests resolve `@nacre/*` from `dist/`).
 
 ## Conventions
 - Conventional commits (feat:, fix:, docs:, etc.)
