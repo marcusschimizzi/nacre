@@ -1,7 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { serve } from '@hono/node-server';
-import type { Server } from 'node:http';
 import { SqliteStore, MockEmbedder } from '@nacre/core';
 import type { MemoryNode, MemoryEdge } from '@nacre/core';
 import { createApp } from '../../../cli/src/api/server.js';
@@ -39,7 +38,7 @@ function makeEdge(overrides: Partial<MemoryEdge> & { id: string; source: string;
 
 describe('Nacre — remote mode', () => {
   let store: SqliteStore;
-  let server: Server;
+  let server: ReturnType<typeof serve>;
   let nacre: Nacre;
   const port = 9876;
 

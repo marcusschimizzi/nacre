@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { detectApi, createApiClient, type ApiStatus } from './api/data-source.ts';
 import type { RecallResult } from './api/types.ts';
 import { loadGraph, transformGraph, getEntityTypes, getEdgeTypes } from './graph/loader.ts';
@@ -11,6 +11,7 @@ import { TimelinePanel } from './panels/TimelinePanel.tsx';
 import { ProceduresPanel } from './panels/ProceduresPanel.tsx';
 import { TemporalDiffPanel } from './panels/TemporalDiffPanel.tsx';
 import { NodeDetailsPanel } from './panels/NodeDetailsPanel.tsx';
+import { TimeScrubber } from './panels/TimeScrubber.tsx';
 import { linkIdSet, carryOverPositions, diffToPinnedIds } from './graph/transition.ts';
 
 const STATIC_GRAPH_URL = '/graph.json';
@@ -70,7 +71,7 @@ export function App() {
 
   const apiOnline = apiStatus.status === 'online';
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadInitial = useCallback(async () => {
     setError(null);
