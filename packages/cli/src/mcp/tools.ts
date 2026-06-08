@@ -23,7 +23,7 @@ function generateId(content: string): string {
 
 const now = () => new Date().toISOString();
 
-export function registerTools(server: McpServer, store: SqliteStore): void {
+export function registerTools(server: McpServer, store: SqliteStore, graphPath: string): void {
   server.tool(
     'nacre_recall',
     'Retrieve relevant memories using hybrid semantic + graph search',
@@ -36,7 +36,11 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
     async (args) => {
       let response;
       try {
-        const provider = store.embeddingCount() > 0 ? resolveProvider({ provider: 'mock', allowNull: true }) : null;
+        // Embed the query with the graph's configured provider (config/env) so
+        // it matches the model the stored vectors were built with. Hardcoding a
+        // provider here would mismatch dimensions and silently disable the
+        // semantic half of recall. allowNull → graph-only when none is set.
+        const provider = store.embeddingCount() > 0 ? resolveProvider({ graphPath, allowNull: true }) : null;
         response = await recall(store, provider, {
           query: args.query,
           limit: args.limit,

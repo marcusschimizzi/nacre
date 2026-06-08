@@ -20,7 +20,7 @@ export function createMcpServer(opts: McpServerOptions): McpServer {
     },
   );
 
-  registerTools(server, store);
+  registerTools(server, store, opts.graphPath);
   registerResources(server, store);
 
   return server;
