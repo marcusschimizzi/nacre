@@ -121,6 +121,10 @@ export function App() {
     setEdgeTypes(edges);
     stateRef.current.visibleTypes = new Set(types);
     stateRef.current.visibleEdgeTypes = new Set(edges);
+    // A freshly loaded dataset starts in the live view. Clear any stale scrub —
+    // its absolute date came from the previous dataset's range, so keeping it
+    // would desync the (remounted) slider label from the actual filter.
+    stateRef.current.scrubDate = null;
   }, [data]);
 
   const localSearch = useMemo(() => {
@@ -281,6 +285,7 @@ export function App() {
           </label>
 
           <TimeScrubber
+            key={`${data.dateRange.earliest}|${data.dateRange.latest}`}
             earliest={new Date(data.dateRange.earliest)}
             latest={new Date(data.dateRange.latest)}
             onChange={(d) => {
