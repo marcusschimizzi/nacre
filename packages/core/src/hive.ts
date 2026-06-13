@@ -22,10 +22,7 @@ import { SqliteStore } from './store.js';
  * Small graphs get a higher factor (hive knowledge is more valuable
  * when the agent has little private knowledge).
  */
-export function getHiveOriginFactor(
-  privateNodeCount: number,
-  configuredFactor: number,
-): number {
+export function getHiveOriginFactor(privateNodeCount: number, configuredFactor: number): number {
   if (privateNodeCount < 50) return 0.9;
   if (privateNodeCount < 100) return 0.75;
   return configuredFactor;
@@ -40,9 +37,7 @@ export function getHiveOriginFactor(
  * 4. Applies originFactor to compute hiveWeight
  * 5. Writes merged graph to outPath as a new SqliteStore
  */
-export async function consolidateHive(
-  options: HiveConsolidationOptions,
-): Promise<HiveGraph> {
+export async function consolidateHive(options: HiveConsolidationOptions): Promise<HiveGraph> {
   const originFactor = options.originFactor ?? 0.6;
   const agentNames: string[] = [];
 
@@ -87,7 +82,7 @@ export async function consolidateHive(
           existing.reinforcementCount += node.reinforcementCount;
 
           // Union excerpts (cap at 10)
-          const excerptTexts = new Set(existing.excerpts.map(e => e.text));
+          const excerptTexts = new Set(existing.excerpts.map((e) => e.text));
           for (const ex of node.excerpts) {
             if (!excerptTexts.has(ex.text) && existing.excerpts.length < 10) {
               existing.excerpts.push(ex);
@@ -127,8 +122,7 @@ export async function consolidateHive(
 
           mergedNodes[id] = {
             ...node,
-            hiveWeight:
-              (node.mentionCount + node.reinforcementCount) * originFactor,
+            hiveWeight: (node.mentionCount + node.reinforcementCount) * originFactor,
             originFactor,
             provenance,
           };

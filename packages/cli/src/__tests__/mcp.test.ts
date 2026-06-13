@@ -22,7 +22,9 @@ function makeNode(overrides: Partial<MemoryNode> & { id: string; label: string }
   };
 }
 
-function makeEdge(overrides: Partial<MemoryEdge> & { id: string; source: string; target: string }): MemoryEdge {
+function makeEdge(
+  overrides: Partial<MemoryEdge> & { id: string; source: string; target: string },
+): MemoryEdge {
   return {
     type: 'co-occurrence',
     directed: false,
@@ -49,8 +51,26 @@ describe('MCP Server', () => {
     store.putNode(makeNode({ id: 'n-nacre', label: 'Nacre', type: 'project', mentionCount: 8 }));
     store.putNode(makeNode({ id: 'n-marcus', label: 'Marcus', type: 'person', mentionCount: 5 }));
 
-    store.putEdge(makeEdge({ id: 'n-ts--n-nacre--explicit', source: 'n-ts', target: 'n-nacre', type: 'explicit', weight: 1.0, baseWeight: 1.0 }));
-    store.putEdge(makeEdge({ id: 'n-marcus--n-nacre--explicit', source: 'n-marcus', target: 'n-nacre', type: 'explicit', weight: 0.9, baseWeight: 0.9 }));
+    store.putEdge(
+      makeEdge({
+        id: 'n-ts--n-nacre--explicit',
+        source: 'n-ts',
+        target: 'n-nacre',
+        type: 'explicit',
+        weight: 1.0,
+        baseWeight: 1.0,
+      }),
+    );
+    store.putEdge(
+      makeEdge({
+        id: 'n-marcus--n-nacre--explicit',
+        source: 'n-marcus',
+        target: 'n-nacre',
+        type: 'explicit',
+        weight: 0.9,
+        baseWeight: 0.9,
+      }),
+    );
 
     const embedder = new MockEmbedder();
     for (const id of ['n-ts', 'n-nacre', 'n-marcus']) {
@@ -98,14 +118,20 @@ describe('MCP Server', () => {
 
   describe('nacre_recall', () => {
     it('returns results for matching query', async () => {
-      const result = await client.callTool({ name: 'nacre_recall', arguments: { query: 'TypeScript' } });
+      const result = await client.callTool({
+        name: 'nacre_recall',
+        arguments: { query: 'TypeScript' },
+      });
       assert.ok(!result.isError);
       const text = (result.content as Array<{ type: string; text: string }>)[0].text;
       assert.ok(text.includes('TypeScript'), `Expected TypeScript in result: ${text}`);
     });
 
     it('returns results or no-results message for unmatched query', async () => {
-      const result = await client.callTool({ name: 'nacre_recall', arguments: { query: 'xyznonexistent999' } });
+      const result = await client.callTool({
+        name: 'nacre_recall',
+        arguments: { query: 'xyznonexistent999' },
+      });
       assert.ok(!result.isError);
       const text = (result.content as Array<{ type: string; text: string }>)[0].text;
       // MockEmbedder may find semantic matches even for random queries
@@ -190,7 +216,10 @@ describe('MCP Server', () => {
       assert.ok(!result.isError);
       const text = (result.content as Array<{ type: string; text: string }>)[0].text;
       assert.ok(text.includes('weakened'));
-      assert.strictEqual(store.getNode('n-nacre')!.reinforcementCount, Math.max(0, beforeCount - 1));
+      assert.strictEqual(
+        store.getNode('n-nacre')!.reinforcementCount,
+        Math.max(0, beforeCount - 1),
+      );
     });
 
     it('returns error for missing memory', async () => {

@@ -27,21 +27,100 @@ import { getHiveOriginFactor } from './hive.js';
 const EPISODE_SEMANTIC_DISCOUNT = 0.8;
 
 const STOPWORDS = new Set([
-  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-  'should', 'may', 'might', 'shall', 'can', 'to', 'of', 'in', 'for',
-  'on', 'with', 'at', 'by', 'from', 'as', 'into', 'about', 'between',
-  'through', 'after', 'before', 'above', 'below', 'and', 'or', 'but',
-  'not', 'no', 'nor', 'so', 'if', 'then', 'than', 'that', 'this',
-  'it', 'its', 'what', 'which', 'who', 'how', 'when', 'where', 'why',
-  'all', 'each', 'every', 'both', 'few', 'more', 'most', 'some', 'any',
-  'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he', 'she', 'they',
-  'them', 'his', 'her', 'just', 'also', 'very', 'much',
+  'a',
+  'an',
+  'the',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'being',
+  'have',
+  'has',
+  'had',
+  'do',
+  'does',
+  'did',
+  'will',
+  'would',
+  'could',
+  'should',
+  'may',
+  'might',
+  'shall',
+  'can',
+  'to',
+  'of',
+  'in',
+  'for',
+  'on',
+  'with',
+  'at',
+  'by',
+  'from',
+  'as',
+  'into',
+  'about',
+  'between',
+  'through',
+  'after',
+  'before',
+  'above',
+  'below',
+  'and',
+  'or',
+  'but',
+  'not',
+  'no',
+  'nor',
+  'so',
+  'if',
+  'then',
+  'than',
+  'that',
+  'this',
+  'it',
+  'its',
+  'what',
+  'which',
+  'who',
+  'how',
+  'when',
+  'where',
+  'why',
+  'all',
+  'each',
+  'every',
+  'both',
+  'few',
+  'more',
+  'most',
+  'some',
+  'any',
+  'i',
+  'me',
+  'my',
+  'we',
+  'our',
+  'you',
+  'your',
+  'he',
+  'she',
+  'they',
+  'them',
+  'his',
+  'her',
+  'just',
+  'also',
+  'very',
+  'much',
 ]);
 
 export function extractQueryTerms(query: string): string[] {
   const tokens = query
-    .split(/[\s,;:!?()\[\]{}"']+/)
+    .split(/[\s,;:!?()[\]{}"']+/)
     .map((t) => normalize(t))
     .filter((t) => t.length >= 2 && !STOPWORDS.has(t));
 
@@ -117,7 +196,7 @@ export async function recall(
     const storedDims = store.getMeta('embedding_dimensions');
     if (storedDims && parseInt(storedDims, 10) !== queryVec.length) {
       console.warn(
-        `Embedding dimension mismatch: stored=${storedDims}, query=${queryVec.length}. Results may be empty. Run 'nacre embed --force' to re-embed.`
+        `Embedding dimension mismatch: stored=${storedDims}, query=${queryVec.length}. Results may be empty. Run 'nacre embed --force' to re-embed.`,
       );
     }
 
@@ -158,7 +237,7 @@ export async function recall(
       graph = store.getSnapshotGraph(snapshots[0].id);
     } else {
       console.warn(
-        `No snapshot found before ${opts.asOf}. Using live graph instead. Run 'nacre snapshots create' to create one.`
+        `No snapshot found before ${opts.asOf}. Using live graph instead. Run 'nacre snapshots create' to create one.`,
       );
       graph = store.getFullGraph();
     }
@@ -181,14 +260,10 @@ export async function recall(
     }
   }
 
-  const graphMap = seedIds.length > 0
-    ? graphWalk(graph, seedIds, hops, now)
-    : new Map<string, number>();
+  const graphMap =
+    seedIds.length > 0 ? graphWalk(graph, seedIds, hops, now) : new Map<string, number>();
 
-  const candidateIds = new Set<string>([
-    ...semanticMap.keys(),
-    ...graphMap.keys(),
-  ]);
+  const candidateIds = new Set<string>([...semanticMap.keys(), ...graphMap.keys()]);
 
   if (candidateIds.size === 0) return { results: [], procedures: [] };
 
@@ -225,10 +300,7 @@ export async function recall(
     const graphScore = graphMap.get(id) ?? 0;
     const daysSince = daysBetween(node.lastReinforced, nowStr);
     const recency = Math.max(0, 1 - daysSince / 365);
-    const importance = Math.min(
-      1,
-      (node.mentionCount + node.reinforcementCount) / maxMentions,
-    );
+    const importance = Math.min(1, (node.mentionCount + node.reinforcementCount) / maxMentions);
 
     const combined =
       weights.semantic * semantic +
@@ -306,14 +378,16 @@ export async function recall(
       limit: opts.procedureLimit ?? 3,
       minScore: 0.1,
     });
-    procedures = procMatches.map((m): RecallProcedureMatch => ({
-      id: m.procedure.id,
-      statement: m.procedure.statement,
-      type: m.procedure.type,
-      confidence: m.procedure.confidence,
-      score: m.score,
-      matchedKeywords: m.matchedKeywords,
-    }));
+    procedures = procMatches.map(
+      (m): RecallProcedureMatch => ({
+        id: m.procedure.id,
+        statement: m.procedure.statement,
+        type: m.procedure.type,
+        confidence: m.procedure.confidence,
+        score: m.score,
+        matchedKeywords: m.matchedKeywords,
+      }),
+    );
   }
 
   return { results, procedures };

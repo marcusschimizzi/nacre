@@ -59,26 +59,37 @@ describe('consolidateHive', () => {
 
     // Create agent 1 graph
     const store1 = SqliteStore.open(agent1Path);
-    store1.putNode(makeNode({ id: 'shared-id-001', label: 'Nacre', mentionCount: 5, reinforcementCount: 2 }));
+    store1.putNode(
+      makeNode({
+        id: 'shared-id-001',
+        label: 'Nacre',
+        mentionCount: 5,
+        reinforcementCount: 2,
+      }),
+    );
     store1.putNode(makeNode({ id: 'agent1-only', label: 'Agent1Concept', mentionCount: 2 }));
-    store1.putNode(makeNode({
-      id: 'excluded-node',
-      label: 'Secret',
-      hiveExclude: true,
-    }));
+    store1.putNode(
+      makeNode({
+        id: 'excluded-node',
+        label: 'Secret',
+        hiveExclude: true,
+      }),
+    );
     store1.close();
 
     // Create agent 2 graph
     const store2 = SqliteStore.open(agent2Path);
-    store2.putNode(makeNode({
-      id: 'shared-id-001',
-      label: 'Nacre',
-      mentionCount: 3,
-      reinforcementCount: 1,
-      lastReinforced: '2026-02-01',
-      sourceFiles: ['other.md'],
-      excerpts: [{ file: 'other.md', text: 'Nacre in agent2', date: '2026-02-01' }],
-    }));
+    store2.putNode(
+      makeNode({
+        id: 'shared-id-001',
+        label: 'Nacre',
+        mentionCount: 3,
+        reinforcementCount: 1,
+        lastReinforced: '2026-02-01',
+        sourceFiles: ['other.md'],
+        excerpts: [{ file: 'other.md', text: 'Nacre in agent2', date: '2026-02-01' }],
+      }),
+    );
     store2.putNode(makeNode({ id: 'agent2-only', label: 'Agent2Concept', mentionCount: 4 }));
     store2.close();
   });

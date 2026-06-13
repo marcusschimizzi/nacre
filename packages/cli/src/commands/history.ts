@@ -48,9 +48,8 @@ export default defineCommand({
     const store = SqliteStore.open(graphPath);
 
     try {
-      const history = kind === 'node'
-        ? store.getNodeHistory(entityId)
-        : store.getEdgeHistory(entityId);
+      const history =
+        kind === 'node' ? store.getNodeHistory(entityId) : store.getEdgeHistory(entityId);
 
       if ((args.format as string) === 'json') {
         console.log(formatJSON(history));
@@ -62,7 +61,9 @@ export default defineCommand({
         return;
       }
 
-      console.log(`History for ${kind}:${entityId} (${history.snapshots.length} snapshot${history.snapshots.length === 1 ? '' : 's'}):\n`);
+      console.log(
+        `History for ${kind}:${entityId} (${history.snapshots.length} snapshot${history.snapshots.length === 1 ? '' : 's'}):\n`,
+      );
 
       for (let i = 0; i < history.snapshots.length; i++) {
         const entry = history.snapshots[i];
@@ -70,17 +71,21 @@ export default defineCommand({
 
         if (kind === 'node') {
           const node = state as MemoryNode;
-          const prev = i > 0 ? history.snapshots[i - 1].state as MemoryNode : null;
+          const prev = i > 0 ? (history.snapshots[i - 1].state as MemoryNode) : null;
           const mentionDelta = prev ? node.mentionCount - prev.mentionCount : 0;
           console.log(`  [${entry.timestamp}]  ${node.label} (${node.type})`);
-          console.log(`    mentions: ${node.mentionCount}${mentionDelta > 0 ? ` (+${mentionDelta})` : ''}  reinforcements: ${node.reinforcementCount}  last: ${node.lastReinforced}`);
+          console.log(
+            `    mentions: ${node.mentionCount}${mentionDelta > 0 ? ` (+${mentionDelta})` : ''}  reinforcements: ${node.reinforcementCount}  last: ${node.lastReinforced}`,
+          );
         } else {
           const edge = state as MemoryEdge;
-          const prev = i > 0 ? history.snapshots[i - 1].state as MemoryEdge : null;
+          const prev = i > 0 ? (history.snapshots[i - 1].state as MemoryEdge) : null;
           const weightDelta = prev ? edge.weight - prev.weight : 0;
           const arrow = weightDelta > 0 ? '↑' : weightDelta < 0 ? '↓' : '=';
           console.log(`  [${entry.timestamp}]  ${edge.source} → ${edge.target}`);
-          console.log(`    weight: ${edge.weight.toFixed(3)} ${arrow}${Math.abs(weightDelta) > 0.001 ? ` (${weightDelta > 0 ? '+' : ''}${weightDelta.toFixed(3)})` : ''}  stability: ${edge.stability.toFixed(2)}  type: ${edge.type}`);
+          console.log(
+            `    weight: ${edge.weight.toFixed(3)} ${arrow}${Math.abs(weightDelta) > 0.001 ? ` (${weightDelta > 0 ? '+' : ''}${weightDelta.toFixed(3)})` : ''}  stability: ${edge.stability.toFixed(2)}  type: ${edge.type}`,
+          );
         }
         console.log();
       }

@@ -24,11 +24,10 @@ export async function loadGraph(url: string, options?: LoadOptions): Promise<Loa
     const apiClient = new GraphApiClient(apiUrl);
 
     try {
-      const { data, source } = await apiClient.loadGraphWithFallback(
-        url,
-        onProgress,
-        { nodeLimit, edgeLimit }
-      );
+      const { data, source } = await apiClient.loadGraphWithFallback(url, onProgress, {
+        nodeLimit,
+        edgeLimit,
+      });
 
       const result = transformGraph(data);
       result.source = source;
@@ -56,7 +55,10 @@ export async function loadGraph(url: string, options?: LoadOptions): Promise<Loa
   return result;
 }
 
-export function transformGraph(data: NacreGraphData, source: 'api' | 'static' = 'static'): LoadResult {
+export function transformGraph(
+  data: NacreGraphData,
+  source: 'api' | 'static' = 'static',
+): LoadResult {
   const edgeCounts = new Map<string, number>();
   const maxWeights = new Map<string, number>();
 

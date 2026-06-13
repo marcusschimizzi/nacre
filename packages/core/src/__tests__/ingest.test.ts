@@ -4,7 +4,11 @@ import { SqliteStore } from '../store.js';
 import { ingestConversation } from '../ingest.js';
 import type { ConversationInput, ConversationChunk } from '../types.js';
 
-function makeConversationInput(overrides: Partial<ConversationInput> & { messages: ConversationInput['messages'] }): ConversationInput {
+function makeConversationInput(
+  overrides: Partial<ConversationInput> & {
+    messages: ConversationInput['messages'];
+  },
+): ConversationInput {
   return {
     metadata: {
       sessionId: 'session-test',
@@ -25,7 +29,7 @@ function makeExtractEntities(nodeCount: number = 1, edgeCount: number = 0, seed:
     })),
     edges: Array.from({ length: edgeCount }, (_, i) => ({
       source: `Entity${i + 1}${seed}`,
-      target: `Entity${(i + 1) % nodeCount + 1}${seed}`,
+      target: `Entity${((i + 1) % nodeCount) + 1}${seed}`,
       type: 'co-occurrence',
       context: `mentioned together in chunk`,
     })),
@@ -58,7 +62,10 @@ describe('ingestConversation', () => {
       const input = makeConversationInput({
         messages: [
           { role: 'user' as const, content: 'Hello, how are you?' },
-          { role: 'assistant' as const, content: 'I am doing well, thank you!' },
+          {
+            role: 'assistant' as const,
+            content: 'I am doing well, thank you!',
+          },
         ],
       });
 
@@ -214,7 +221,10 @@ describe('ingestConversation', () => {
         metadata: { sessionId: 'dup-session-unique-1' },
       });
 
-      const result1 = await ingestConversation(input, { store, deduplicateBy: 'sessionId' });
+      const result1 = await ingestConversation(input, {
+        store,
+        deduplicateBy: 'sessionId',
+      });
       assert.equal(result1.episodesCreated, 1);
 
       const result2 = await ingestConversation(input, {
@@ -300,7 +310,10 @@ describe('ingestConversation', () => {
           { role: 'user' as const, content: 'TypeScript and Node.js' },
           { role: 'assistant' as const, content: 'Great pair' },
         ],
-        metadata: { sessionId: 'edge-reinforce-1', source: '/edge-reinforce-1' },
+        metadata: {
+          sessionId: 'edge-reinforce-1',
+          source: '/edge-reinforce-1',
+        },
       });
 
       const result1 = await ingestConversation(input, {
@@ -315,7 +328,10 @@ describe('ingestConversation', () => {
           { role: 'user' as const, content: 'TypeScript and Node.js again' },
           { role: 'assistant' as const, content: 'Still great' },
         ],
-        metadata: { sessionId: 'edge-reinforce-2', source: '/edge-reinforce-2' },
+        metadata: {
+          sessionId: 'edge-reinforce-2',
+          source: '/edge-reinforce-2',
+        },
       });
 
       const result2 = await ingestConversation(input2, {

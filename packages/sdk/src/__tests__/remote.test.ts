@@ -22,7 +22,13 @@ function makeNode(overrides: Partial<MemoryNode> & { id: string; label: string }
   };
 }
 
-function makeEdge(overrides: Partial<MemoryEdge> & { id: string; source: string; target: string }): MemoryEdge {
+function makeEdge(
+  overrides: Partial<MemoryEdge> & {
+    id: string;
+    source: string;
+    target: string;
+  },
+): MemoryEdge {
   return {
     type: 'co-occurrence',
     directed: false,
@@ -46,11 +52,41 @@ describe('Nacre — remote mode', () => {
   before(async () => {
     store = SqliteStore.open(':memory:');
 
-    store.putNode(makeNode({ id: 'n-ts', label: 'TypeScript', type: 'tool', mentionCount: 10 }));
-    store.putNode(makeNode({ id: 'n-nacre', label: 'Nacre', type: 'project', mentionCount: 8 }));
-    store.putNode(makeNode({ id: 'n-marcus', label: 'Marcus', type: 'person', mentionCount: 5 }));
+    store.putNode(
+      makeNode({
+        id: 'n-ts',
+        label: 'TypeScript',
+        type: 'tool',
+        mentionCount: 10,
+      }),
+    );
+    store.putNode(
+      makeNode({
+        id: 'n-nacre',
+        label: 'Nacre',
+        type: 'project',
+        mentionCount: 8,
+      }),
+    );
+    store.putNode(
+      makeNode({
+        id: 'n-marcus',
+        label: 'Marcus',
+        type: 'person',
+        mentionCount: 5,
+      }),
+    );
 
-    store.putEdge(makeEdge({ id: 'n-ts--n-nacre--explicit', source: 'n-ts', target: 'n-nacre', type: 'explicit', weight: 1.0, baseWeight: 1.0 }));
+    store.putEdge(
+      makeEdge({
+        id: 'n-ts--n-nacre--explicit',
+        source: 'n-ts',
+        target: 'n-nacre',
+        type: 'explicit',
+        weight: 1.0,
+        baseWeight: 1.0,
+      }),
+    );
 
     const embedder = new MockEmbedder();
     for (const id of ['n-ts', 'n-nacre', 'n-marcus']) {

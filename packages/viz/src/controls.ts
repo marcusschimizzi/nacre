@@ -1,9 +1,6 @@
 import type { AppState } from './types.ts';
 import { NODE_COLORS, EDGE_STYLES } from './theme.ts';
-import {
-  sliderValueToDate,
-  formatDateLabel,
-} from './time-scrub.ts';
+import { sliderValueToDate, formatDateLabel } from './time-scrub.ts';
 
 export function initControls(
   state: AppState,
@@ -37,9 +34,7 @@ export function initTimeScrub(
     const date = sliderValueToDate(value, earliest, latest);
 
     state.scrubDate = value >= 100 ? null : date;
-    dateLabel.textContent = state.scrubDate
-      ? formatDateLabel(date)
-      : formatDateLabel(latest);
+    dateLabel.textContent = state.scrubDate ? formatDateLabel(date) : formatDateLabel(latest);
 
     onScrubChange();
   });
@@ -82,11 +77,7 @@ export function initTimeScrub(
   });
 }
 
-function initEntityTypeFilters(
-  state: AppState,
-  types: string[],
-  onChange: () => void,
-): void {
+function initEntityTypeFilters(state: AppState, types: string[], onChange: () => void): void {
   const container = document.getElementById('filter-types')!;
   container.innerHTML = '';
 
@@ -112,11 +103,7 @@ function initEntityTypeFilters(
   }
 }
 
-function initEdgeTypeFilters(
-  state: AppState,
-  types: string[],
-  onChange: () => void,
-): void {
+function initEdgeTypeFilters(state: AppState, types: string[], onChange: () => void): void {
   const container = document.getElementById('filter-edges')!;
   container.innerHTML = '';
 

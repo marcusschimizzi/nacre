@@ -53,7 +53,10 @@ export function linkIdSet(links: ForceLink[], nodeIdSet: Set<string>): Set<strin
   return ids;
 }
 
-export function diffToPinnedIds(diff: GraphDiff): { nodes: Set<string>; edges: Set<string> } {
+export function diffToPinnedIds(diff: GraphDiff): {
+  nodes: Set<string>;
+  edges: Set<string>;
+} {
   const nodeIds = new Set<string>();
   for (const n of diff.nodes.added) nodeIds.add(n.id);
   for (const n of diff.nodes.removed) nodeIds.add(n.id);

@@ -46,7 +46,11 @@ export function createLabelSprite(text: string): THREE.Sprite {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
-  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const spriteMat = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  });
   const sprite = new THREE.Sprite(spriteMat);
 
   const aspect = canvas.width / canvas.height;
@@ -86,7 +90,7 @@ export function createNodeObject(node: ForceNode): THREE.Mesh {
   if (node.highlight === 'hover') {
     addGlow(2.0, 0.14);
   } else if (node.highlight === 'pin') {
-    addGlow(1.9, 0.10);
+    addGlow(1.9, 0.1);
   } else if (isRecent(node)) {
     addGlow(1.6, 0.08);
   }

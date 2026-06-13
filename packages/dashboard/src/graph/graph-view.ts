@@ -2,12 +2,7 @@ import ForceGraph3D from '3d-force-graph';
 import type { ForceGraph3DInstance } from '3d-force-graph';
 import * as THREE from 'three';
 import type { AppState, ForceLink, ForceNode, GraphConfig, LoadResult } from './types.ts';
-import {
-  createNodeObject,
-  createNacreMaterial,
-  edgeColor,
-  edgeWidth,
-} from './materials.ts';
+import { createNodeObject, createNacreMaterial, edgeColor, edgeWidth } from './materials.ts';
 import { createTemporalForce } from './forces.ts';
 import { BG_COLOR, NACRE_THRESHOLD, VISIBILITY_THRESHOLD } from './theme.ts';
 import { computeWeightAtDate, isEdgeVisibleAtDate, isNodeVisibleAtDate } from './time-scrub.ts';
@@ -98,20 +93,28 @@ export function createGraphView(
       mesh.userData.isNacre = true;
       return mesh;
     })
-    .linkPositionUpdate((obj: THREE.Object3D | undefined, coords: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }) => {
-      if (!obj?.userData?.isNacre) return false;
+    .linkPositionUpdate(
+      (
+        obj: THREE.Object3D | undefined,
+        coords: {
+          start: { x: number; y: number; z: number };
+          end: { x: number; y: number; z: number };
+        },
+      ) => {
+        if (!obj?.userData?.isNacre) return false;
 
-      const { start, end } = coords;
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const dz = end.z - start.z;
-      const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const { start, end } = coords;
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const dz = end.z - start.z;
+        const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-      obj.position.set((start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2);
-      obj.scale.set(1, 1, length);
-      obj.lookAt(end.x, end.y, end.z);
-      return true;
-    });
+        obj.position.set((start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2);
+        obj.scale.set(1, 1, length);
+        obj.lookAt(end.x, end.y, end.z);
+        return true;
+      },
+    );
 
   graph.d3Force('temporal', createTemporalForce(nodes, now));
 
@@ -174,7 +177,16 @@ export function createGraphView(
     refresh();
   }
 
-  return { graph, nodeMap, nodes, links, refresh, focusNode, setPinned, setData };
+  return {
+    graph,
+    nodeMap,
+    nodes,
+    links,
+    refresh,
+    focusNode,
+    setPinned,
+    setData,
+  };
 }
 
 function setupLighting(graph: Graph): void {
@@ -293,7 +305,7 @@ function setupInteraction(
 
   graph.onNodeClick((node: ForceNode) => {
     const now = Date.now();
-    const isDoubleClick = lastClickedNode?.id === node.id && (now - lastClickTime) < 350;
+    const isDoubleClick = lastClickedNode?.id === node.id && now - lastClickTime < 350;
     lastClickedNode = node;
     lastClickTime = now;
 
@@ -390,7 +402,11 @@ function flyToCluster(
   const dist = Math.hypot(cx, cy, cz) || 1;
   const ratio = 1 + viewDist / dist;
 
-  graph.cameraPosition({ x: cx * ratio, y: cy * ratio, z: cz * ratio }, { x: cx, y: cy, z: cz }, 1500);
+  graph.cameraPosition(
+    { x: cx * ratio, y: cy * ratio, z: cz * ratio },
+    { x: cx, y: cy, z: cz },
+    1500,
+  );
 }
 
 function updateHighlights(graph: Graph, state: AppState): void {

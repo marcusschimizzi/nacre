@@ -25,26 +25,93 @@ export interface ConversationEntities {
 }
 
 const STOP_WORDS = new Set([
-  'the', 'it', 'this', 'that', 'a', 'an', 'is', 'was', 'are', 'were',
-  'be', 'been', 'being', 'have', 'has', 'had', 'also', 'just', 'very',
-  'good', 'great', 'well', 'much', 'big', 'day', 'today', 'yes', 'no',
-  'ok', 'okay', 'sure', 'thanks', 'thank', 'please', 'hello', 'hi',
-  'hey', 'bye', 'yeah', 'yep', 'nope', 'right', 'let', 'me',
+  'the',
+  'it',
+  'this',
+  'that',
+  'a',
+  'an',
+  'is',
+  'was',
+  'are',
+  'were',
+  'be',
+  'been',
+  'being',
+  'have',
+  'has',
+  'had',
+  'also',
+  'just',
+  'very',
+  'good',
+  'great',
+  'well',
+  'much',
+  'big',
+  'day',
+  'today',
+  'yes',
+  'no',
+  'ok',
+  'okay',
+  'sure',
+  'thanks',
+  'thank',
+  'please',
+  'hello',
+  'hi',
+  'hey',
+  'bye',
+  'yeah',
+  'yep',
+  'nope',
+  'right',
+  'let',
+  'me',
 ]);
 
 const KNOWN_TOOL_PATTERNS = [
-  'Claude Code', 'Codex', 'Vite', 'tmux', 'Three.js', 'VS Code',
-  'Git', 'Docker', 'Playwright', 'TypeScript', 'JavaScript', 'Node.js',
-  'npm', 'React', 'Next.js', 'Bun', 'Webpack', 'ESLint', 'Prettier',
-  'SQLite', 'WebGL', 'tsup', 'Hono', 'Express', 'Prisma', 'Python',
-  'Rust', 'Go', 'PostgreSQL', 'Redis', 'Kubernetes', 'AWS', 'Terraform',
+  'Claude Code',
+  'Codex',
+  'Vite',
+  'tmux',
+  'Three.js',
+  'VS Code',
+  'Git',
+  'Docker',
+  'Playwright',
+  'TypeScript',
+  'JavaScript',
+  'Node.js',
+  'npm',
+  'React',
+  'Next.js',
+  'Bun',
+  'Webpack',
+  'ESLint',
+  'Prettier',
+  'SQLite',
+  'WebGL',
+  'tsup',
+  'Hono',
+  'Express',
+  'Prisma',
+  'Python',
+  'Rust',
+  'Go',
+  'PostgreSQL',
+  'Redis',
+  'Kubernetes',
+  'AWS',
+  'Terraform',
 ];
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const TOOL_REGEXPS = KNOWN_TOOL_PATTERNS.map(tool => ({
+const TOOL_REGEXPS = KNOWN_TOOL_PATTERNS.map((tool) => ({
   pattern: new RegExp(`\\b${escapeRegex(tool)}\\b`, 'gi'),
   canonical: tool,
 }));
@@ -56,7 +123,13 @@ const BOLD_RE = /\*\*([^*]+)\*\*/g;
 const BACKTICK_RE = /`([^`]+)`/g;
 
 function isNoisyCodeEntity(text: string): boolean {
-  if (text.startsWith('/') || text.startsWith('./') || text.startsWith('../') || text.startsWith('~')) return true;
+  if (
+    text.startsWith('/') ||
+    text.startsWith('./') ||
+    text.startsWith('../') ||
+    text.startsWith('~')
+  )
+    return true;
   if (text.startsWith('http://') || text.startsWith('https://')) return true;
   if (text.includes('/') && text.split('/').length > 1) return true;
   if (/\s--/.test(text) || /\s-[a-zA-Z]/.test(text)) return true;
@@ -78,8 +151,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
     const trimmed = name.trim();
     if (trimmed.length <= 2 || STOP_WORDS.has(trimmed.toLowerCase())) continue;
     entities.push({
-      text: trimmed, type: 'person', confidence: 0.8, source: 'nlp',
-      position, speaker,
+      text: trimmed,
+      type: 'person',
+      confidence: 0.8,
+      source: 'nlp',
+      position,
+      speaker,
     });
   }
 
@@ -88,8 +165,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
     const trimmed = org.trim();
     if (trimmed.length <= 2 || STOP_WORDS.has(trimmed.toLowerCase())) continue;
     entities.push({
-      text: trimmed, type: 'project', confidence: 0.6, source: 'nlp',
-      position, speaker,
+      text: trimmed,
+      type: 'project',
+      confidence: 0.6,
+      source: 'nlp',
+      position,
+      speaker,
     });
   }
 
@@ -100,8 +181,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
     if (re.test(text) && !seenTools.has(canonical.toLowerCase())) {
       seenTools.add(canonical.toLowerCase());
       entities.push({
-        text: canonical, type: 'tool', confidence: 0.9, source: 'custom',
-        position, speaker,
+        text: canonical,
+        type: 'tool',
+        confidence: 0.9,
+        source: 'custom',
+        position,
+        speaker,
       });
     }
   }
@@ -111,8 +196,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
   const wikiRe = new RegExp(WIKILINK_RE.source, WIKILINK_RE.flags);
   while ((match = wikiRe.exec(text)) !== null) {
     entities.push({
-      text: match[1].trim(), type: 'concept', confidence: 0.9, source: 'structural',
-      position, speaker,
+      text: match[1].trim(),
+      type: 'concept',
+      confidence: 0.9,
+      source: 'structural',
+      position,
+      speaker,
     });
   }
 
@@ -122,8 +211,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
     const t = match[1].trim();
     if (t.length <= 2 || STOP_WORDS.has(t.toLowerCase())) continue;
     entities.push({
-      text: t, type: 'concept', confidence: 0.7, source: 'structural',
-      position, speaker,
+      text: t,
+      type: 'concept',
+      confidence: 0.7,
+      source: 'structural',
+      position,
+      speaker,
     });
   }
 
@@ -133,8 +226,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
     const t = match[1].trim();
     if (isNoisyCodeEntity(t)) continue;
     entities.push({
-      text: t, type: 'tool', confidence: 0.7, source: 'structural',
-      position, speaker,
+      text: t,
+      type: 'tool',
+      confidence: 0.7,
+      source: 'structural',
+      position,
+      speaker,
     });
   }
 
@@ -142,8 +239,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
   const ghRe = new RegExp(GITHUB_URL_RE.source, GITHUB_URL_RE.flags);
   while ((match = ghRe.exec(text)) !== null) {
     entities.push({
-      text: match[1], type: 'project', confidence: 0.9, source: 'custom',
-      position, speaker,
+      text: match[1],
+      type: 'project',
+      confidence: 0.9,
+      source: 'custom',
+      position,
+      speaker,
     });
   }
 
@@ -151,8 +252,12 @@ function extractRawEntities(text: string, speaker: string): Array<RawEntity & { 
   const pkgRe = new RegExp(SCOPED_PKG_RE.source, SCOPED_PKG_RE.flags);
   while ((match = pkgRe.exec(text)) !== null) {
     entities.push({
-      text: `@${match[1]}`, type: 'tool', confidence: 0.8, source: 'custom',
-      position, speaker,
+      text: `@${match[1]}`,
+      type: 'tool',
+      confidence: 0.8,
+      source: 'custom',
+      position,
+      speaker,
     });
   }
 
@@ -218,7 +323,11 @@ export function extractFromConversation(
         existing.speakers.push(entity.speaker);
       }
     } else {
-      deduped.set(ckey, { ...entity, text: canonical, speakers: [entity.speaker] });
+      deduped.set(ckey, {
+        ...entity,
+        text: canonical,
+        speakers: [entity.speaker],
+      });
     }
   }
 

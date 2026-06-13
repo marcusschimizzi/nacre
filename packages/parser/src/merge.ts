@@ -45,7 +45,11 @@ export function processFileExtractions(
   fileDate: string,
   entityMap: EntityMap,
   pendingEdges: PendingEdge[],
-): { graph: NacreGraph; pendingEdges: PendingEdge[]; stats: ConsolidationStats } {
+): {
+  graph: NacreGraph;
+  pendingEdges: PendingEdge[];
+  stats: ConsolidationStats;
+} {
   const stats: ConsolidationStats = {
     newNodes: 0,
     newEdges: 0,
@@ -97,9 +101,7 @@ export function processFileExtractions(
       resolvedIds.push(resolved.nodeId);
 
       const isStructuralWikilink =
-        raw.source === 'structural' &&
-        raw.confidence >= 0.9 &&
-        /^[^*`#]/.test(raw.text);
+        raw.source === 'structural' && raw.confidence >= 0.9 && /^[^*`#]/.test(raw.text);
       if (isStructuralWikilink) {
         wikilinkIds.add(resolved.nodeId);
       }
@@ -133,7 +135,11 @@ export function processFileExtractions(
             lastReinforced: fileDate,
             stability: 1.0,
             evidence: [
-              { file: filePath, date: fileDate, context: 'wikilink connection' },
+              {
+                file: filePath,
+                date: fileDate,
+                context: 'wikilink connection',
+              },
             ],
           });
         }
@@ -158,8 +164,7 @@ export function processFileExtractions(
 
         const pendingIdx = pendingEdges.findIndex(
           (pe) =>
-            (pe.source === src && pe.target === tgt) ||
-            (pe.source === tgt && pe.target === src),
+            (pe.source === src && pe.target === tgt) || (pe.source === tgt && pe.target === src),
         );
 
         if (pendingIdx >= 0) {
@@ -170,9 +175,7 @@ export function processFileExtractions(
             context: 'co-occurrence observation',
           });
 
-          if (
-            pendingEdges[pendingIdx].count >= graph.config.coOccurrenceThreshold
-          ) {
+          if (pendingEdges[pendingIdx].count >= graph.config.coOccurrenceThreshold) {
             stats.newEdges++;
             addEdge(graph, {
               source: src,
@@ -197,7 +200,11 @@ export function processFileExtractions(
             count: 1,
             firstSeen: fileDate,
             evidence: [
-              { file: filePath, date: fileDate, context: 'first co-occurrence' },
+              {
+                file: filePath,
+                date: fileDate,
+                context: 'first co-occurrence',
+              },
             ],
           });
         }
@@ -221,7 +228,11 @@ export function processFileExtractions(
           lastReinforced: fileDate,
           stability: 1.0,
           evidence: [
-            { file: filePath, date: fileDate, context: 'causal language detected' },
+            {
+              file: filePath,
+              date: fileDate,
+              context: 'causal language detected',
+            },
           ],
         });
       }
@@ -233,8 +244,16 @@ export function processFileExtractions(
   let temporalEdgesCreated = 0;
   const MAX_TEMPORAL_EDGES_PER_FILE = 50;
 
-  for (let i = 0; i < allSectionKeys.length && temporalEdgesCreated < MAX_TEMPORAL_EDGES_PER_FILE; i++) {
-    for (let j = i + 1; j < allSectionKeys.length && temporalEdgesCreated < MAX_TEMPORAL_EDGES_PER_FILE; j++) {
+  for (
+    let i = 0;
+    i < allSectionKeys.length && temporalEdgesCreated < MAX_TEMPORAL_EDGES_PER_FILE;
+    i++
+  ) {
+    for (
+      let j = i + 1;
+      j < allSectionKeys.length && temporalEdgesCreated < MAX_TEMPORAL_EDGES_PER_FILE;
+      j++
+    ) {
       const idsA = allResolvedBySection.get(allSectionKeys[i]) ?? [];
       const idsB = allResolvedBySection.get(allSectionKeys[j]) ?? [];
 

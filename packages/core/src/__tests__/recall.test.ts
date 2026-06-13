@@ -19,7 +19,13 @@ function makeNode(overrides: Partial<MemoryNode> & { id: string; label: string }
   };
 }
 
-function makeEdge(overrides: Partial<MemoryEdge> & { id: string; source: string; target: string }): MemoryEdge {
+function makeEdge(
+  overrides: Partial<MemoryEdge> & {
+    id: string;
+    source: string;
+    target: string;
+  },
+): MemoryEdge {
   return {
     type: 'co-occurrence',
     directed: false,
@@ -103,9 +109,34 @@ describe('graphWalk', () => {
     store.putNode(makeNode({ id: 'n4', label: 'Delta' }));
     store.putNode(makeNode({ id: 'n5', label: 'Isolated' }));
 
-    store.putEdge(makeEdge({ id: 'n1--n2--co-occurrence', source: 'n1', target: 'n2', weight: 0.8, baseWeight: 0.8 }));
-    store.putEdge(makeEdge({ id: 'n2--n3--co-occurrence', source: 'n2', target: 'n3', weight: 0.6, baseWeight: 0.6 }));
-    store.putEdge(makeEdge({ id: 'n3--n4--explicit', source: 'n3', target: 'n4', type: 'explicit', weight: 1.0, baseWeight: 1.0 }));
+    store.putEdge(
+      makeEdge({
+        id: 'n1--n2--co-occurrence',
+        source: 'n1',
+        target: 'n2',
+        weight: 0.8,
+        baseWeight: 0.8,
+      }),
+    );
+    store.putEdge(
+      makeEdge({
+        id: 'n2--n3--co-occurrence',
+        source: 'n2',
+        target: 'n3',
+        weight: 0.6,
+        baseWeight: 0.6,
+      }),
+    );
+    store.putEdge(
+      makeEdge({
+        id: 'n3--n4--explicit',
+        source: 'n3',
+        target: 'n4',
+        type: 'explicit',
+        weight: 1.0,
+        baseWeight: 1.0,
+      }),
+    );
   });
 
   after(() => {
@@ -155,20 +186,98 @@ describe('recall — integration', () => {
   before(async () => {
     store = SqliteStore.open();
 
-    store.putNode(makeNode({ id: 'n-ts', label: 'TypeScript', type: 'tool', mentionCount: 10, reinforcementCount: 5 }));
-    store.putNode(makeNode({ id: 'n-nacre', label: 'Nacre', type: 'project', mentionCount: 8, reinforcementCount: 3 }));
-    store.putNode(makeNode({ id: 'n-marcus', label: 'Marcus', type: 'person', mentionCount: 6, reinforcementCount: 2 }));
-    store.putNode(makeNode({ id: 'n-sqlite', label: 'SQLite', type: 'tool', mentionCount: 4 }));
-    store.putNode(makeNode({ id: 'n-graph', label: 'knowledge graph', type: 'concept', mentionCount: 5 }));
-    store.putNode(makeNode({
-      id: 'n-old', label: 'OldThing', type: 'concept',
-      lastReinforced: '2024-01-01', mentionCount: 1, reinforcementCount: 0,
-    }));
+    store.putNode(
+      makeNode({
+        id: 'n-ts',
+        label: 'TypeScript',
+        type: 'tool',
+        mentionCount: 10,
+        reinforcementCount: 5,
+      }),
+    );
+    store.putNode(
+      makeNode({
+        id: 'n-nacre',
+        label: 'Nacre',
+        type: 'project',
+        mentionCount: 8,
+        reinforcementCount: 3,
+      }),
+    );
+    store.putNode(
+      makeNode({
+        id: 'n-marcus',
+        label: 'Marcus',
+        type: 'person',
+        mentionCount: 6,
+        reinforcementCount: 2,
+      }),
+    );
+    store.putNode(
+      makeNode({
+        id: 'n-sqlite',
+        label: 'SQLite',
+        type: 'tool',
+        mentionCount: 4,
+      }),
+    );
+    store.putNode(
+      makeNode({
+        id: 'n-graph',
+        label: 'knowledge graph',
+        type: 'concept',
+        mentionCount: 5,
+      }),
+    );
+    store.putNode(
+      makeNode({
+        id: 'n-old',
+        label: 'OldThing',
+        type: 'concept',
+        lastReinforced: '2024-01-01',
+        mentionCount: 1,
+        reinforcementCount: 0,
+      }),
+    );
 
-    store.putEdge(makeEdge({ id: 'n-ts--n-nacre--explicit', source: 'n-ts', target: 'n-nacre', type: 'explicit', weight: 1.0, baseWeight: 1.0 }));
-    store.putEdge(makeEdge({ id: 'n-marcus--n-nacre--explicit', source: 'n-marcus', target: 'n-nacre', type: 'explicit', weight: 0.9, baseWeight: 0.9 }));
-    store.putEdge(makeEdge({ id: 'n-nacre--n-graph--co-occurrence', source: 'n-nacre', target: 'n-graph', weight: 0.6, baseWeight: 0.6 }));
-    store.putEdge(makeEdge({ id: 'n-nacre--n-sqlite--co-occurrence', source: 'n-nacre', target: 'n-sqlite', weight: 0.5, baseWeight: 0.5 }));
+    store.putEdge(
+      makeEdge({
+        id: 'n-ts--n-nacre--explicit',
+        source: 'n-ts',
+        target: 'n-nacre',
+        type: 'explicit',
+        weight: 1.0,
+        baseWeight: 1.0,
+      }),
+    );
+    store.putEdge(
+      makeEdge({
+        id: 'n-marcus--n-nacre--explicit',
+        source: 'n-marcus',
+        target: 'n-nacre',
+        type: 'explicit',
+        weight: 0.9,
+        baseWeight: 0.9,
+      }),
+    );
+    store.putEdge(
+      makeEdge({
+        id: 'n-nacre--n-graph--co-occurrence',
+        source: 'n-nacre',
+        target: 'n-graph',
+        weight: 0.6,
+        baseWeight: 0.6,
+      }),
+    );
+    store.putEdge(
+      makeEdge({
+        id: 'n-nacre--n-sqlite--co-occurrence',
+        source: 'n-nacre',
+        target: 'n-sqlite',
+        weight: 0.5,
+        baseWeight: 0.5,
+      }),
+    );
 
     const nodes = ['n-ts', 'n-nacre', 'n-marcus', 'n-sqlite', 'n-graph', 'n-old'];
     for (const id of nodes) {
@@ -221,7 +330,10 @@ describe('recall — integration', () => {
   });
 
   it('includes both semantic and graph-connected nodes', async () => {
-    const response = await recall(store, embedder, { query: 'Nacre', limit: 10 });
+    const response = await recall(store, embedder, {
+      query: 'Nacre',
+      limit: 10,
+    });
     const ids = response.results.map((r) => r.id);
     assert.ok(ids.includes('n-nacre'));
     assert.ok(response.results.length > 1);
@@ -249,7 +361,10 @@ describe('recall — integration', () => {
   });
 
   it('filters by entity type', async () => {
-    const response = await recall(store, embedder, { query: 'Nacre', types: ['person'] });
+    const response = await recall(store, embedder, {
+      query: 'Nacre',
+      types: ['person'],
+    });
     for (const r of response.results) {
       assert.strictEqual(r.type, 'person');
     }
@@ -266,13 +381,18 @@ describe('recall — integration', () => {
   });
 
   it('respects limit', async () => {
-    const response = await recall(store, embedder, { query: 'Nacre', limit: 2 });
+    const response = await recall(store, embedder, {
+      query: 'Nacre',
+      limit: 2,
+    });
     assert.ok(response.results.length <= 2);
   });
 
   it('returns fewer results for unmatched query', async () => {
     const matched = await recall(store, embedder, { query: 'Nacre' });
-    const unmatched = await recall(store, embedder, { query: 'xyzzynonexistent99' });
+    const unmatched = await recall(store, embedder, {
+      query: 'xyzzynonexistent99',
+    });
     assert.ok(unmatched.results.length <= matched.results.length);
   });
 
@@ -284,7 +404,10 @@ describe('recall — integration', () => {
   });
 
   it('respects minScore threshold', async () => {
-    const response = await recall(store, embedder, { query: 'Nacre', minScore: 0.99 });
+    const response = await recall(store, embedder, {
+      query: 'Nacre',
+      minScore: 0.99,
+    });
     for (const r of response.results) {
       assert.ok(r.score >= 0.99);
     }

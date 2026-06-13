@@ -7,7 +7,11 @@ export interface GraphDiff {
   nodes: {
     added: MemoryNode[];
     removed: MemoryNode[];
-    changed: Array<{ before: MemoryNode; after: MemoryNode; changes: string[] }>;
+    changed: Array<{
+      before: MemoryNode;
+      after: MemoryNode;
+      changes: string[];
+    }>;
   };
   edges: {
     added: MemoryEdge[];
@@ -46,7 +50,11 @@ export function diffSnapshots(store: SqliteStore, fromId: string, toId: string):
 
   const addedNodes: MemoryNode[] = [];
   const removedNodes: MemoryNode[] = [];
-  const changedNodes: Array<{ before: MemoryNode; after: MemoryNode; changes: string[] }> = [];
+  const changedNodes: Array<{
+    before: MemoryNode;
+    after: MemoryNode;
+    changes: string[];
+  }> = [];
 
   const addedEdges: MemoryEdge[] = [];
   const removedEdges: MemoryEdge[] = [];
@@ -59,7 +67,11 @@ export function diffSnapshots(store: SqliteStore, fromId: string, toId: string):
     } else {
       const changes = diffNodeFields(fromGraph.nodes[id], node);
       if (changes.length > 0) {
-        changedNodes.push({ before: fromGraph.nodes[id], after: node, changes });
+        changedNodes.push({
+          before: fromGraph.nodes[id],
+          after: node,
+          changes,
+        });
       }
     }
   }
@@ -111,7 +123,8 @@ export function diffSnapshots(store: SqliteStore, fromId: string, toId: string):
       edgesRemoved: removedEdges.length,
       edgesStrengthened: strengthenedEdges.length,
       edgesWeakened: weakenedEdges.length,
-      netChange: (addedNodes.length - removedNodes.length) + (addedEdges.length - removedEdges.length),
+      netChange:
+        addedNodes.length - removedNodes.length + (addedEdges.length - removedEdges.length),
     },
   };
 }

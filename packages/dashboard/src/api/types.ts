@@ -117,7 +117,11 @@ export type GraphDiff = {
   nodes: {
     added: MemoryNode[];
     removed: MemoryNode[];
-    changed: Array<{ before: MemoryNode; after: MemoryNode; changes: string[] }>;
+    changed: Array<{
+      before: MemoryNode;
+      after: MemoryNode;
+      changes: string[];
+    }>;
   };
   edges: {
     added: MemoryEdge[];

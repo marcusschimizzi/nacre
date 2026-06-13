@@ -153,11 +153,7 @@ describe('resolveEntity', () => {
       excerpts: [],
     });
 
-    const result = resolveEntity(
-      makeRaw({ text: 'Marcus S', type: 'person' }),
-      graph,
-      entityMap,
-    );
+    const result = resolveEntity(makeRaw({ text: 'Marcus S', type: 'person' }), graph, entityMap);
     assert.ok(result !== null);
     assert.equal(result.isNew, false);
     assert.equal(result.canonicalLabel, 'marcus');
@@ -177,11 +173,7 @@ describe('resolveEntity', () => {
       excerpts: [],
     });
 
-    const result = resolveEntity(
-      makeRaw({ text: 'TypeScript', type: 'tool' }),
-      graph,
-      entityMap,
-    );
+    const result = resolveEntity(makeRaw({ text: 'TypeScript', type: 'tool' }), graph, entityMap);
     assert.ok(result !== null);
     assert.equal(result.isNew, false);
     assert.equal(result.canonicalLabel, 'typescript');
@@ -201,11 +193,7 @@ describe('resolveEntity', () => {
       excerpts: [],
     });
 
-    const result = resolveEntity(
-      makeRaw({ text: 'tide pool', type: 'project' }),
-      graph,
-      entityMap,
-    );
+    const result = resolveEntity(makeRaw({ text: 'tide pool', type: 'project' }), graph, entityMap);
     assert.ok(result !== null);
     assert.equal(result.isNew, false);
     assert.equal(result.canonicalLabel, 'tide-pool');
@@ -225,11 +213,7 @@ describe('resolveEntity', () => {
       excerpts: [],
     });
 
-    const result = resolveEntity(
-      makeRaw({ text: 'markus', type: 'person' }),
-      graph,
-      entityMap,
-    );
+    const result = resolveEntity(makeRaw({ text: 'markus', type: 'person' }), graph, entityMap);
     assert.ok(result !== null);
     assert.equal(result.isNew, false);
     assert.equal(result.canonicalLabel, 'marcus');

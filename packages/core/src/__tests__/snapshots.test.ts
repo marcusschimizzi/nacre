@@ -17,7 +17,13 @@ function makeNode(overrides: Partial<MemoryNode> & { id: string; label: string }
   };
 }
 
-function makeEdge(overrides: Partial<MemoryEdge> & { id: string; source: string; target: string }): MemoryEdge {
+function makeEdge(
+  overrides: Partial<MemoryEdge> & {
+    id: string;
+    source: string;
+    target: string;
+  },
+): MemoryEdge {
   return {
     type: 'co-occurrence',
     directed: false,

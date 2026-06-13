@@ -34,9 +34,9 @@ export default defineCommand({
   },
   async run({ args }) {
     const port = parseInt(args.port as string, 10) || 5174;
-    const host = args.host as string || '0.0.0.0';
+    const host = (args.host as string) || '0.0.0.0';
     const apiPort = parseInt(args.apiPort as string, 10) || 3200;
-    let apiHost = args.apiHost as string || undefined;
+    let apiHost = (args.apiHost as string) || undefined;
 
     // Use localhost as default, not '0.0.0.0'
     if (apiHost === undefined || apiHost === '0.0.0.0' || apiHost === 'localhost') {

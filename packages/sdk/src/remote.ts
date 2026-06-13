@@ -62,9 +62,7 @@ export class RemoteBackend implements Backend {
     if (opts?.top) params.set('top', String(opts.top));
     params.set('format', 'json');
 
-    const { data } = await this.request<{ data: { summary: string } }>(
-      `/api/v1/brief?${params}`,
-    );
+    const { data } = await this.request<{ data: { summary: string } }>(`/api/v1/brief?${params}`);
     return data.summary;
   }
 
@@ -99,9 +97,7 @@ export class RemoteBackend implements Backend {
     const params = new URLSearchParams();
     if (filter?.type) params.set('type', filter.type);
 
-    const { data } = await this.request<{ data: Memory[] }>(
-      `/api/v1/nodes?${params}`,
-    );
+    const { data } = await this.request<{ data: Memory[] }>(`/api/v1/nodes?${params}`);
     return data.map((n) => ({
       id: n.id,
       label: n.label,
@@ -124,9 +120,7 @@ export class RemoteBackend implements Backend {
     if (filter?.type) params.set('type', filter.type);
     if (filter?.flagged) params.set('flagged', 'true');
 
-    const { data } = await this.request<{ data: SdkProcedure[] }>(
-      `/api/v1/procedures?${params}`,
-    );
+    const { data } = await this.request<{ data: SdkProcedure[] }>(`/api/v1/procedures?${params}`);
     return data;
   }
 

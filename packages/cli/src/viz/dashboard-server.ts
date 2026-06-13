@@ -10,7 +10,9 @@ export interface DashboardServerOptions {
   host: string;
 }
 
-export async function startDashboardServer(opts: DashboardServerOptions): Promise<{ close: () => void }> {
+export async function startDashboardServer(
+  opts: DashboardServerOptions,
+): Promise<{ close: () => void }> {
   const distDir = resolve(opts.dashboardDir, 'dist');
   const indexHtmlPath = join(distDir, 'index.html');
 

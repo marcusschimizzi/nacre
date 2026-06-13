@@ -42,7 +42,12 @@ export interface Memory {
   type: string;
   score?: number;
   excerpts?: string[];
-  connections?: Array<{ label: string; type: string; relationship: string; weight: number }>;
+  connections?: Array<{
+    label: string;
+    type: string;
+    relationship: string;
+    weight: number;
+  }>;
   episodes?: Array<{ id: string; title: string; type: string }>;
 }
 

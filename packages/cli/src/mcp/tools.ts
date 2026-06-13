@@ -36,7 +36,10 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
     async (args) => {
       let response;
       try {
-        const provider = store.embeddingCount() > 0 ? resolveProvider({ provider: 'mock', allowNull: true }) : null;
+        const provider =
+          store.embeddingCount() > 0
+            ? resolveProvider({ provider: 'mock', allowNull: true })
+            : null;
         response = await recall(store, provider, {
           query: args.query,
           limit: args.limit,
@@ -62,21 +65,24 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
         return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
       }
 
-      const lines = response.results.map((r, i) =>
-        `${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}\n` +
-        `   semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  ` +
-        `recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}` +
-        (r.connections.length > 0
-          ? `\n   connections: ${r.connections.map((c) => `${c.label} (${c.relationship})`).join(', ')}`
-          : ''),
+      const lines = response.results.map(
+        (r, i) =>
+          `${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}\n` +
+          `   semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  ` +
+          `recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}` +
+          (r.connections.length > 0
+            ? `\n   connections: ${r.connections.map((c) => `${c.label} (${c.relationship})`).join(', ')}`
+            : ''),
       );
 
       let text = `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
-      
+
       if (response.procedures.length > 0) {
-        text += `\n\nRelevant Procedures:\n` + response.procedures.map(p => 
-          `• ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})`
-        ).join('\n');
+        text +=
+          `\n\nRelevant Procedures:\n` +
+          response.procedures
+            .map((p) => `• ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})`)
+            .join('\n');
       }
 
       return {
@@ -103,9 +109,12 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
       let text = result.summary;
       if (args.focus) {
         const focusLower = args.focus.toLowerCase();
-        const lines = text.split('\n').filter(
-          (line) => line.toLowerCase().includes(focusLower) || line.startsWith('#') || line.trim() === '',
-        );
+        const lines = text
+          .split('\n')
+          .filter(
+            (line) =>
+              line.toLowerCase().includes(focusLower) || line.startsWith('#') || line.trim() === '',
+          );
         if (lines.length > 2) {
           text = lines.join('\n');
         }
@@ -182,10 +191,12 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
 
       const linkMsg = linked.length > 0 ? ` Linked to: ${linked.join(', ')}.` : '';
       return {
-        content: [{
-          type: 'text',
-          text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}`,
+          },
+        ],
       };
     },
   );
@@ -210,10 +221,12 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
       store.deleteNode(args.memoryId);
 
       return {
-        content: [{
-          type: 'text',
-          text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
+          },
+        ],
       };
     },
   );
@@ -246,10 +259,12 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
 
       const direction = args.rating > 0 ? 'reinforced' : args.rating < 0 ? 'weakened' : 'noted';
       return {
-        content: [{
-          type: 'text',
-          text: `Feedback ${direction}: "${existing.label}" (rating: ${args.rating}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Feedback ${direction}: "${existing.label}" (rating: ${args.rating}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
+          },
+        ],
       };
     },
   );
@@ -295,10 +310,12 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
       store.putProcedure(proc);
 
       return {
-        content: [{
-          type: 'text',
-          text: `Procedure recorded: "${proc.statement}" (${proc.type}, id: ${id}, triggers: ${proc.triggerKeywords.join(', ')})`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Procedure recorded: "${proc.statement}" (${proc.type}, id: ${id}, triggers: ${proc.triggerKeywords.join(', ')})`,
+          },
+        ],
       };
     },
   );
@@ -328,15 +345,19 @@ export function registerTools(server: McpServer, store: SqliteStore): void {
 
       const lines = limited.map((p, i) => {
         const flagged = p.flaggedForReview ? ' [FLAGGED]' : '';
-        return `${i + 1}. ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})${flagged}\n` +
-          `   id: ${p.id}, applied: ${p.applications}x, contradictions: ${p.contradictions}`;
+        return (
+          `${i + 1}. ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})${flagged}\n` +
+          `   id: ${p.id}, applied: ${p.applications}x, contradictions: ${p.contradictions}`
+        );
       });
 
       return {
-        content: [{
-          type: 'text',
-          text: `${limited.length} procedure${limited.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `${limited.length} procedure${limited.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`,
+          },
+        ],
       };
     },
   );

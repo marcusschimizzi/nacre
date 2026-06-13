@@ -14,7 +14,10 @@ export function NodeDetailsPanel(props: {
 
   const node = props.node;
   const color = nodeColor(node.type);
-  const dateRange = node.firstSeen === node.lastReinforced ? node.firstSeen : `${node.firstSeen} — ${node.lastReinforced}`;
+  const dateRange =
+    node.firstSeen === node.lastReinforced
+      ? node.firstSeen
+      : `${node.firstSeen} — ${node.lastReinforced}`;
 
   const neighbors = props.links
     .filter((l) => {
@@ -27,7 +30,12 @@ export function NodeDetailsPanel(props: {
       const tgt = typeof l.target === 'string' ? l.target : l.target.id;
       const neighborId = src === node.id ? tgt : src;
       const neighborNode = props.nodeMap.get(neighborId);
-      return { id: neighborId, label: neighborNode?.label ?? neighborId, type: l.type, weight: l.weight };
+      return {
+        id: neighborId,
+        label: neighborNode?.label ?? neighborId,
+        type: l.type,
+        weight: l.weight,
+      };
     })
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 20);
@@ -36,12 +44,24 @@ export function NodeDetailsPanel(props: {
     <div id="details">
       <div className="panel-header" style={{ marginBottom: 6 }}>
         <h3 style={{ marginBottom: 0 }}>{node.label}</h3>
-        <button className="btn" onClick={props.onClose}>Close</button>
+        <button className="btn" onClick={props.onClose}>
+          Close
+        </button>
       </div>
-      <span className="type-badge" style={{ background: `${color}33`, color }}>{node.type}</span>
-      <div className="stat">Mentions: <strong>{node.mentionCount}</strong> · Reinforced: <strong>{node.reinforcementCount}</strong></div>
-      <div className="stat">Dates: <strong>{dateRange}</strong></div>
-      <div className="stat">Sources: <strong>{node.sourceFiles.length} files</strong> · Edges: <strong>{node.edgeCount}</strong></div>
+      <span className="type-badge" style={{ background: `${color}33`, color }}>
+        {node.type}
+      </span>
+      <div className="stat">
+        Mentions: <strong>{node.mentionCount}</strong> · Reinforced:{' '}
+        <strong>{node.reinforcementCount}</strong>
+      </div>
+      <div className="stat">
+        Dates: <strong>{dateRange}</strong>
+      </div>
+      <div className="stat">
+        Sources: <strong>{node.sourceFiles.length} files</strong> · Edges:{' '}
+        <strong>{node.edgeCount}</strong>
+      </div>
       {node.excerpts.length > 0 && (
         <div className="stat" style={{ marginTop: 6, fontStyle: 'italic', opacity: 0.7 }}>
           "{node.excerpts[0].text}"
@@ -49,7 +69,9 @@ export function NodeDetailsPanel(props: {
       )}
 
       <div className="neighbors">
-        <div className="stat" style={{ marginBottom: 4 }}>Connected to:</div>
+        <div className="stat" style={{ marginBottom: 4 }}>
+          Connected to:
+        </div>
         {neighbors.map((n) => (
           <span key={n.id} className="neighbor" onClick={() => props.onClickNeighbor(n.id)}>
             {n.label} <span style={{ opacity: 0.5 }}>{n.type.slice(0, 3)}</span>

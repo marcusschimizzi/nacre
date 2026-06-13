@@ -94,14 +94,12 @@ function isSqlitePath(outDir: string): boolean {
 
 /**
  * Run the consolidation pipeline.
- * 
+ *
  * Supports both JSON and SQLite output:
  * - If outDir ends in .db → reads/writes SQLite database
  * - Otherwise → reads/writes graph.json + pending-edges.json in the directory
  */
-export async function consolidate(
-  opts: ConsolidateOptions,
-): Promise<ConsolidationResult> {
+export async function consolidate(opts: ConsolidateOptions): Promise<ConsolidationResult> {
   const outDir = resolve(opts.outDir);
   const now = opts.now ?? new Date();
   const useSqlite = isSqlitePath(outDir);
@@ -122,9 +120,7 @@ export async function consolidate(
     pendingEdges = loadPendingEdges(outDir);
   }
 
-  const entityMap = loadEntityMap(
-    opts.entityMapPath ?? resolve('data', 'entity-map.json'),
-  );
+  const entityMap = loadEntityMap(opts.entityMapPath ?? resolve('data', 'entity-map.json'));
 
   const basePath = resolve(opts.inputs[0]);
   const files = await scanDirectories(opts.inputs);
@@ -177,9 +173,7 @@ export async function consolidate(
 
       const hash = hashFileSync(filePath);
       const relPath = relative(basePath, filePath);
-      const existingIdx = graph.processedFiles.findIndex(
-        (pf) => pf.path === relPath,
-      );
+      const existingIdx = graph.processedFiles.findIndex((pf) => pf.path === relPath);
       if (existingIdx >= 0) {
         graph.processedFiles[existingIdx] = {
           path: relPath,
@@ -202,8 +196,8 @@ export async function consolidate(
             storedEpisodes.push(episode);
             newEpisodes++;
 
-            const sectionEntities = allEntities.filter(e => {
-              const matchingSection = sections.find(s => s.headingPath === e.position.section);
+            const sectionEntities = allEntities.filter((e) => {
+              const matchingSection = sections.find((s) => s.headingPath === e.position.section);
               return matchingSection?.heading === episode.title;
             });
 
@@ -211,9 +205,11 @@ export async function consolidate(
               const resolved = store.findNode(entity.text);
               if (!resolved) continue;
               const role: 'participant' | 'topic' | 'mentioned' =
-                entity.type === 'person' ? 'participant' :
-                ['concept', 'project', 'tool', 'tag'].includes(entity.type) ? 'topic' :
-                'mentioned';
+                entity.type === 'person'
+                  ? 'participant'
+                  : ['concept', 'project', 'tool', 'tag'].includes(entity.type)
+                    ? 'topic'
+                    : 'mentioned';
               try {
                 store.linkEpisodeEntity(episode.id, resolved.id, role);
               } catch {
@@ -238,7 +234,7 @@ export async function consolidate(
   if (opts.embeddingProvider && useSqlite && store) {
     const provider = opts.embeddingProvider;
     for (const node of Object.values(graph.nodes)) {
-      const text = node.label + ' — ' + node.excerpts.map(e => e.text).join('. ');
+      const text = node.label + ' — ' + node.excerpts.map((e) => e.text).join('. ');
       const existing = store.getEmbedding(node.id);
       if (existing && existing.content === text) continue;
 
@@ -293,11 +289,7 @@ export async function consolidate(
     store.close();
   } else {
     mkdirSync(outDir, { recursive: true });
-    writeFileSync(
-      resolve(outDir, 'graph.json'),
-      JSON.stringify(graph, null, 2),
-      'utf8',
-    );
+    writeFileSync(resolve(outDir, 'graph.json'), JSON.stringify(graph, null, 2), 'utf8');
     writeFileSync(
       resolve(outDir, 'pending-edges.json'),
       JSON.stringify(pendingEdges, null, 2),

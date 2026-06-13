@@ -3,19 +3,43 @@ import type { Section } from '../parse.js';
 
 /**
  * Custom entity extractor — pattern-matched extraction for known entities.
- * 
+ *
  * These lists serve as defaults and examples. For production use, these should
  * be loaded from a configuration file (entity-map.json or nacre.config.json).
- * 
+ *
  * TODO: Load known entities from config file instead of hardcoded lists.
  */
 
 const KNOWN_TOOLS = [
-  'Claude Code', 'Codex', 'Vite', 'tmux', 'Three.js', 'VS Code',
-  'Git', 'Docker', 'Playwright', 'TypeScript', 'JavaScript', 'Node.js',
-  'npm', 'React', 'Next.js', 'Bun', 'Webpack', 'ESLint', 'Prettier',
-  'D3.js', 'SQLite', 'WebGL', 'Esbuild', 'tsup',
-  'remark', 'unified', 'Hono', 'Express', 'Prisma',
+  'Claude Code',
+  'Codex',
+  'Vite',
+  'tmux',
+  'Three.js',
+  'VS Code',
+  'Git',
+  'Docker',
+  'Playwright',
+  'TypeScript',
+  'JavaScript',
+  'Node.js',
+  'npm',
+  'React',
+  'Next.js',
+  'Bun',
+  'Webpack',
+  'ESLint',
+  'Prettier',
+  'D3.js',
+  'SQLite',
+  'WebGL',
+  'Esbuild',
+  'tsup',
+  'remark',
+  'unified',
+  'Hono',
+  'Express',
+  'Prisma',
 ];
 
 const KNOWN_PROJECTS: string[] = [
@@ -51,10 +75,7 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function extractCustom(
-  sections: Section[],
-  filePath: string,
-): RawEntity[] {
+export function extractCustom(sections: Section[], filePath: string): RawEntity[] {
   const entities: RawEntity[] = [];
 
   for (const section of sections) {

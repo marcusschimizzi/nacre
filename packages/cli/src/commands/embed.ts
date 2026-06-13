@@ -1,8 +1,5 @@
 import { defineCommand } from 'citty';
-import {
-  SqliteStore,
-  resolveProvider,
-} from '@nacre/core';
+import { SqliteStore, resolveProvider } from '@nacre/core';
 
 export default defineCommand({
   meta: {
@@ -49,8 +46,12 @@ export default defineCommand({
 
         console.log('Embedding Status:');
         console.log(`  Provider:  ${providerName} (${dims} dims)`);
-        console.log(`  Nodes:     ${nodeEmbeddings}/${nodeCount} embedded (${nodeCount > 0 ? Math.round(nodeEmbeddings / nodeCount * 100) : 0}%)`);
-        console.log(`  Episodes:  ${episodeEmbeddings}/${episodeCount} embedded (${episodeCount > 0 ? Math.round(episodeEmbeddings / episodeCount * 100) : 0}%)`);
+        console.log(
+          `  Nodes:     ${nodeEmbeddings}/${nodeCount} embedded (${nodeCount > 0 ? Math.round((nodeEmbeddings / nodeCount) * 100) : 0}%)`,
+        );
+        console.log(
+          `  Episodes:  ${episodeEmbeddings}/${episodeCount} embedded (${episodeCount > 0 ? Math.round((episodeEmbeddings / episodeCount) * 100) : 0}%)`,
+        );
         console.log(`  Total:     ${totalEmbeddings}`);
 
         if (totalEmbeddings === 0) {
@@ -79,7 +80,10 @@ export default defineCommand({
       return;
     }
 
-    const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string });
+    const provider = resolveProvider({
+      provider: args.provider as string | undefined,
+      graphPath: args.graph as string,
+    });
     const store = SqliteStore.open(graphPath);
 
     try {
@@ -105,7 +109,9 @@ export default defineCommand({
           const cleared = store.clearAllEmbeddings();
           console.log(`Cleared ${cleared} existing embeddings for re-embedding.`);
         } else if (storedProvider !== provider.name) {
-          console.log(`Provider name changed (${storedProvider} → ${provider.name}), dimensions match.`);
+          console.log(
+            `Provider name changed (${storedProvider} → ${provider.name}), dimensions match.`,
+          );
         }
       }
 
@@ -122,7 +128,7 @@ export default defineCommand({
           continue;
         }
 
-        const text = node.label + ' — ' + node.excerpts.map(e => e.text).join('. ');
+        const text = node.label + ' — ' + node.excerpts.map((e) => e.text).join('. ');
 
         try {
           const vector = await provider.embed(text);
@@ -143,7 +149,9 @@ export default defineCommand({
       }
 
       console.log('');
-      console.log(`Done. Embedded: ${embedded}, Skipped: ${skipped}, Total stored: ${store.embeddingCount()}`);
+      console.log(
+        `Done. Embedded: ${embedded}, Skipped: ${skipped}, Total stored: ${store.embeddingCount()}`,
+      );
 
       if (embedded > 0) {
         store.setMeta('embedding_provider', provider.name);

@@ -38,7 +38,9 @@ export function createAnthropicProvider(
         throw new Error(`Anthropic API error: ${res.status} ${text}`);
       }
 
-      const data = (await res.json()) as { content: Array<{ type: string; text: string }> };
+      const data = (await res.json()) as {
+        content: Array<{ type: string; text: string }>;
+      };
       const textContent = data.content.find((c) => c.type === 'text');
       if (!textContent) {
         throw new Error('Anthropic response missing text content');
@@ -101,11 +103,7 @@ function buildPrompt(sections: Section[]): string {
   return EXTRACTION_PROMPT + content;
 }
 
-function parseEntityResponse(
-  response: string,
-  filePath: string,
-  section: Section,
-): RawEntity[] {
+function parseEntityResponse(response: string, filePath: string, section: Section): RawEntity[] {
   let entities: LLMExtractedEntity[];
 
   try {
@@ -116,7 +114,9 @@ function parseEntityResponse(
       .trim();
     entities = JSON.parse(cleaned);
   } catch {
-    console.warn(`[llm-extractor] Failed to parse LLM response as JSON: ${response.slice(0, 100)}...`);
+    console.warn(
+      `[llm-extractor] Failed to parse LLM response as JSON: ${response.slice(0, 100)}...`,
+    );
     return [];
   }
 
@@ -169,7 +169,9 @@ export async function extractWithLLM(
   try {
     response = await provider.complete(prompt);
   } catch (err) {
-    console.warn(`[llm-extractor] LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(
+      `[llm-extractor] LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return [];
   }
 

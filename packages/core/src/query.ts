@@ -18,10 +18,7 @@ import { buildAdjacencyMap } from './graph.js';
 import { calculateStability, computeCurrentWeight, daysBetween } from './decay.js';
 import { levenshteinDistance, normalize } from './resolve.js';
 
-export function findNode(
-  graph: NacreGraph,
-  search: string,
-): MemoryNode | undefined {
+export function findNode(graph: NacreGraph, search: string): MemoryNode | undefined {
   if (graph.nodes[search]) return graph.nodes[search];
 
   const norm = normalize(search);
@@ -68,10 +65,7 @@ export function getNeighbors(
   return { nodes, edges };
 }
 
-export function getRelated(
-  graph: NacreGraph,
-  nodeId: string,
-): MemoryNode[] {
+export function getRelated(graph: NacreGraph, nodeId: string): MemoryNode[] {
   const adj = buildAdjacencyMap(graph);
   const entries = adj[nodeId] ?? [];
 
@@ -87,11 +81,7 @@ export function getRelated(
     .filter((n): n is MemoryNode => n !== undefined);
 }
 
-export function getFading(
-  graph: NacreGraph,
-  now: Date,
-  config: GraphConfig,
-): MemoryEdge[] {
+export function getFading(graph: NacreGraph, now: Date, config: GraphConfig): MemoryEdge[] {
   const threshold = config.visibilityThreshold;
   const upper = threshold * 2;
 
@@ -101,9 +91,7 @@ export function getFading(
   });
 }
 
-export function getClusters(
-  graph: NacreGraph,
-): Record<string, string[]> {
+export function getClusters(graph: NacreGraph): Record<string, string[]> {
   const adj = buildAdjacencyMap(graph);
   const nodeIds = Object.keys(graph.nodes);
   const visited = new Set<string>();
@@ -144,49 +132,36 @@ export function getClusters(
   return clusters;
 }
 
-function scoreNodes(
-  graph: NacreGraph,
-  now: Date,
-  recentDays: number,
-): ScoredNode[] {
+function scoreNodes(graph: NacreGraph, now: Date, recentDays: number): ScoredNode[] {
   const adj = buildAdjacencyMap(graph);
   const nowStr = now.toISOString();
 
   return Object.values(graph.nodes).map((node) => {
     const daysSinceReinforced = daysBetween(node.lastReinforced, nowStr);
-    const recencyBonus = daysSinceReinforced <= recentDays
-      ? 1.0 - (daysSinceReinforced / recentDays) * 0.5
-      : Math.max(0, 0.5 - (daysSinceReinforced - recentDays) / 60);
+    const recencyBonus =
+      daysSinceReinforced <= recentDays
+        ? 1.0 - (daysSinceReinforced / recentDays) * 0.5
+        : Math.max(0, 0.5 - (daysSinceReinforced - recentDays) / 60);
 
     const edgeCount = adj[node.id]?.length ?? 0;
 
-    const score =
-      node.mentionCount * 0.3 +
-      node.reinforcementCount * 0.3 +
-      recencyBonus * 10 * 0.4;
+    const score = node.mentionCount * 0.3 + node.reinforcementCount * 0.3 + recencyBonus * 10 * 0.4;
 
     return { node, score, edgeCount, daysSinceReinforced };
   });
 }
 
-function buildFadingEdgeInfo(
-  edge: MemoryEdge,
-  graph: NacreGraph,
-  now: Date,
-): FadingEdgeInfo {
+function buildFadingEdgeInfo(edge: MemoryEdge, graph: NacreGraph, now: Date): FadingEdgeInfo {
   const nowStr = now.toISOString();
   const currentWeight = computeCurrentWeight(edge, now, graph.config);
   const daysSinceReinforced = daysBetween(edge.lastReinforced, nowStr);
 
-  const stability = calculateStability(
-    edge.reinforcementCount,
-    graph.config.reinforcementBoost,
-  );
+  const stability = calculateStability(edge.reinforcementCount, graph.config.reinforcementBoost);
   const threshold = graph.config.visibilityThreshold;
   const daysToThreshold =
     edge.baseWeight > 0 && threshold > 0
-      ? (stability / graph.config.decayRate) *
-        Math.log(edge.baseWeight / threshold) - daysSinceReinforced
+      ? (stability / graph.config.decayRate) * Math.log(edge.baseWeight / threshold) -
+        daysSinceReinforced
       : 0;
 
   return {
@@ -254,9 +229,7 @@ function formatBriefSummary(result: Omit<BriefResult, 'summary'>): string {
   // Top 3 clusters with hub labels
   if (result.clusters.length > 0) {
     const topClusters = result.clusters.slice(0, 3);
-    const clusterDesc = topClusters
-      .map(c => `${c.hub} (${c.size})`)
-      .join(', ');
+    const clusterDesc = topClusters.map((c) => `${c.hub} (${c.size})`).join(', ');
     lines.push(`Active clusters: ${clusterDesc}.`);
   }
 
@@ -264,7 +237,10 @@ function formatBriefSummary(result: Omit<BriefResult, 'summary'>): string {
   const recentActive = result.activeNodes.slice(0, 5);
   if (recentActive.length > 0) {
     const activeDesc = recentActive
-      .map(s => `${s.node.label} (${s.edgeCount} connections, ${formatDaysAgo(s.daysSinceReinforced)})`)
+      .map(
+        (s) =>
+          `${s.node.label} (${s.edgeCount} connections, ${formatDaysAgo(s.daysSinceReinforced)})`,
+      )
       .join(', ');
     lines.push(`Recently active: ${activeDesc}.`);
   }
@@ -273,14 +249,16 @@ function formatBriefSummary(result: Omit<BriefResult, 'summary'>): string {
   if (result.fadingEdges.length > 0) {
     const topFading = result.fadingEdges.slice(0, 5);
     const fadingDesc = topFading
-      .map(f => `${f.sourceLabel} ↔ ${f.targetLabel} (~${f.estimatedDaysUntilDormant}d left)`)
+      .map((f) => `${f.sourceLabel} ↔ ${f.targetLabel} (~${f.estimatedDaysUntilDormant}d left)`)
       .join(', ');
     lines.push(`Fading connections: ${fadingDesc}.`);
   }
 
   // Graph stats summary
   const s = result.stats;
-  lines.push(`Graph: ${s.totalNodes} nodes, ${s.totalEdges} edges (${s.dormantEdges} dormant), avg weight ${s.averageWeight.toFixed(3)}.`);
+  lines.push(
+    `Graph: ${s.totalNodes} nodes, ${s.totalEdges} edges (${s.dormantEdges} dormant), avg weight ${s.averageWeight.toFixed(3)}.`,
+  );
 
   if (lines.length === 0) {
     lines.push('No active nodes in the graph.');
@@ -316,10 +294,7 @@ export function generateBrief(
   return { ...partial, summary };
 }
 
-export function generateAlerts(
-  graph: NacreGraph,
-  options: { now?: Date } = {},
-): AlertResult {
+export function generateAlerts(graph: NacreGraph, options: { now?: Date } = {}): AlertResult {
   const { now = new Date() } = options;
 
   const fadingEdges = getFading(graph, now, graph.config)
@@ -333,32 +308,34 @@ export function generateAlerts(
       connectedNodeIds.add(edge.target);
     }
   }
-  const orphanNodes = Object.values(graph.nodes)
-    .filter((node) => !connectedNodeIds.has(node.id));
+  const orphanNodes = Object.values(graph.nodes).filter((node) => !connectedNodeIds.has(node.id));
 
   const totalEdges = Object.keys(graph.edges).length;
-  const activeEdges = Object.values(graph.edges)
-    .filter((e) => e.weight >= graph.config.visibilityThreshold).length;
+  const activeEdges = Object.values(graph.edges).filter(
+    (e) => e.weight >= graph.config.visibilityThreshold,
+  ).length;
   const totalNodes = Object.keys(graph.nodes).length;
   const connectedNodes = connectedNodeIds.size;
 
   const edgeHealth = totalEdges > 0 ? activeEdges / totalEdges : 1;
   const nodeHealth = totalNodes > 0 ? connectedNodes / totalNodes : 1;
   const fadingPenalty = Math.min(fadingEdges.length * 0.02, 0.3);
-  const healthScore = Math.max(0, Math.min(1,
-    edgeHealth * 0.5 + nodeHealth * 0.5 - fadingPenalty,
-  ));
+  const healthScore = Math.max(0, Math.min(1, edgeHealth * 0.5 + nodeHealth * 0.5 - fadingPenalty));
 
   const lines: string[] = [];
   if (fadingEdges.length > 0) {
     lines.push(`${fadingEdges.length} connection${fadingEdges.length === 1 ? '' : 's'} fading.`);
     const urgent = fadingEdges.filter((f) => f.estimatedDaysUntilDormant <= 7);
     if (urgent.length > 0) {
-      lines.push(`Urgent (< 7 days): ${urgent.map((f) => `${f.sourceLabel} \u2194 ${f.targetLabel}`).join(', ')}.`);
+      lines.push(
+        `Urgent (< 7 days): ${urgent.map((f) => `${f.sourceLabel} \u2194 ${f.targetLabel}`).join(', ')}.`,
+      );
     }
   }
   if (orphanNodes.length > 0) {
-    lines.push(`${orphanNodes.length} orphan node${orphanNodes.length === 1 ? '' : 's'} (no active connections).`);
+    lines.push(
+      `${orphanNodes.length} orphan node${orphanNodes.length === 1 ? '' : 's'} (no active connections).`,
+    );
   }
   if (fadingEdges.length === 0 && orphanNodes.length === 0) {
     lines.push('No alerts. Graph is healthy.');

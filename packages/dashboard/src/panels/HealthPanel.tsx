@@ -6,7 +6,11 @@ import { formatAgeStats, formatNumber } from './healthMetrics.ts';
 export function HealthPanel(props: {
   apiOnline: boolean;
   graph?: { nodes: ForceNode[]; links: ForceLink[] };
-  load: () => Promise<{ stats: GraphStatsData | null; alerts: AlertResult | null; procedures: Procedure[] | null }>;
+  load: () => Promise<{
+    stats: GraphStatsData | null;
+    alerts: AlertResult | null;
+    procedures: Procedure[] | null;
+  }>;
 }) {
   const [stats, setStats] = useState<GraphStatsData | null>(null);
   const [alerts, setAlerts] = useState<AlertResult | null>(null);
@@ -65,7 +69,9 @@ export function HealthPanel(props: {
       </div>
 
       {!props.apiOnline && (
-        <div className="panel-note">API offline. Showing static graph-only metrics where available.</div>
+        <div className="panel-note">
+          API offline. Showing static graph-only metrics where available.
+        </div>
       )}
 
       {error && <div className="panel-error">{error}</div>}
@@ -111,19 +117,33 @@ export function HealthPanel(props: {
       {age && (
         <div className="panel-subsection">
           <div className="subheader">Memory Age</div>
-          <div className="subrow">Average: <strong>{age.avgDays.toFixed(1)}d</strong></div>
-          <div className="subrow">Median: <strong>{age.medianDays.toFixed(1)}d</strong></div>
-          <div className="subrow">Oldest: <strong>{age.oldestLabel}</strong></div>
+          <div className="subrow">
+            Average: <strong>{age.avgDays.toFixed(1)}d</strong>
+          </div>
+          <div className="subrow">
+            Median: <strong>{age.medianDays.toFixed(1)}d</strong>
+          </div>
+          <div className="subrow">
+            Oldest: <strong>{age.oldestLabel}</strong>
+          </div>
         </div>
       )}
 
       {procHealth && (
         <div className="panel-subsection">
           <div className="subheader">Procedures</div>
-          <div className="subrow">Total: <strong>{procHealth.total}</strong></div>
-          <div className="subrow">Avg confidence: <strong>{(procHealth.avgConfidence * 100).toFixed(0)}%</strong></div>
-          <div className="subrow">Low confidence: <strong>{procHealth.lowConfidence}</strong></div>
-          <div className="subrow">Flagged: <strong>{procHealth.flagged}</strong></div>
+          <div className="subrow">
+            Total: <strong>{procHealth.total}</strong>
+          </div>
+          <div className="subrow">
+            Avg confidence: <strong>{(procHealth.avgConfidence * 100).toFixed(0)}%</strong>
+          </div>
+          <div className="subrow">
+            Low confidence: <strong>{procHealth.lowConfidence}</strong>
+          </div>
+          <div className="subrow">
+            Flagged: <strong>{procHealth.flagged}</strong>
+          </div>
         </div>
       )}
     </div>

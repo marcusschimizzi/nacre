@@ -30,9 +30,7 @@ export const migrateCommand = defineCommand({
     }
 
     // Determine output path
-    const outputPath = args.output
-      ? resolve(args.output)
-      : inputPath.replace(/\.json$/, '.db');
+    const outputPath = args.output ? resolve(args.output) : inputPath.replace(/\.json$/, '.db');
 
     if (existsSync(outputPath)) {
       console.error(`⚠️  Output file already exists: ${outputPath}`);

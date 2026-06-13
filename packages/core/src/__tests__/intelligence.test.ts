@@ -1,18 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  generateSuggestions,
-  labelClusters,
-  analyzeSignificance,
-} from '../intelligence.js';
+import { generateSuggestions, labelClusters, analyzeSignificance } from '../intelligence.js';
 import { createGraph, addNode, addEdge } from '../graph.js';
 import type { EntityType, NacreGraph, PendingEdge } from '../types.js';
 
-function makeNode(
-  label: string,
-  type: EntityType,
-  overrides: Record<string, unknown> = {},
-) {
+function makeNode(label: string, type: EntityType, overrides: Record<string, unknown> = {}) {
   return {
     label,
     type,
@@ -51,91 +43,172 @@ function makeEdge(
 
 function buildTestGraph(): NacreGraph {
   const graph = createGraph();
-  const marcus = addNode(graph, makeNode('marcus', 'person', {
-    mentionCount: 10,
-    reinforcementCount: 8,
-    lastReinforced: '2026-01-28',
-    aliases: ['Marcus S'],
-  }));
-  const nacre = addNode(graph, makeNode('nacre', 'concept', {
-    mentionCount: 8,
-    reinforcementCount: 5,
-    lastReinforced: '2026-01-27',
-  }));
-  const typescript = addNode(graph, makeNode('typescript', 'tool', {
-    mentionCount: 5,
-    reinforcementCount: 3,
-    lastReinforced: '2026-01-25',
-  }));
-  const tidepool = addNode(graph, makeNode('tide-pool', 'project', {
-    mentionCount: 4,
-    reinforcementCount: 2,
-    lastReinforced: '2026-01-20',
-  }));
-  const forgotten = addNode(graph, makeNode('forgotten-idea', 'concept', {
-    mentionCount: 1,
-    reinforcementCount: 0,
-    lastReinforced: '2026-01-10',
-  }));
-  const lobstar = addNode(graph, makeNode('lobstar', 'project', {
-    mentionCount: 6,
-    reinforcementCount: 4,
-    lastReinforced: '2026-01-26',
-  }));
-  const vscode = addNode(graph, makeNode('vscode', 'tool', {
-    mentionCount: 3,
-    reinforcementCount: 1,
-    lastReinforced: '2026-01-24',
-  }));
+  const marcus = addNode(
+    graph,
+    makeNode('marcus', 'person', {
+      mentionCount: 10,
+      reinforcementCount: 8,
+      lastReinforced: '2026-01-28',
+      aliases: ['Marcus S'],
+    }),
+  );
+  const nacre = addNode(
+    graph,
+    makeNode('nacre', 'concept', {
+      mentionCount: 8,
+      reinforcementCount: 5,
+      lastReinforced: '2026-01-27',
+    }),
+  );
+  const typescript = addNode(
+    graph,
+    makeNode('typescript', 'tool', {
+      mentionCount: 5,
+      reinforcementCount: 3,
+      lastReinforced: '2026-01-25',
+    }),
+  );
+  const tidepool = addNode(
+    graph,
+    makeNode('tide-pool', 'project', {
+      mentionCount: 4,
+      reinforcementCount: 2,
+      lastReinforced: '2026-01-20',
+    }),
+  );
+  const forgotten = addNode(
+    graph,
+    makeNode('forgotten-idea', 'concept', {
+      mentionCount: 1,
+      reinforcementCount: 0,
+      lastReinforced: '2026-01-10',
+    }),
+  );
+  const lobstar = addNode(
+    graph,
+    makeNode('lobstar', 'project', {
+      mentionCount: 6,
+      reinforcementCount: 4,
+      lastReinforced: '2026-01-26',
+    }),
+  );
+  const vscode = addNode(
+    graph,
+    makeNode('vscode', 'tool', {
+      mentionCount: 3,
+      reinforcementCount: 1,
+      lastReinforced: '2026-01-24',
+    }),
+  );
 
-  addEdge(graph, makeEdge(marcus.id, nacre.id, 'explicit', {
-    weight: 0.9, baseWeight: 1.0, reinforcementCount: 5,
-    lastReinforced: '2026-01-28',
-  }));
-  addEdge(graph, makeEdge(marcus.id, typescript.id, 'co-occurrence', {
-    weight: 0.6, baseWeight: 0.3, reinforcementCount: 3,
-    lastReinforced: '2026-01-25',
-  }));
-  addEdge(graph, makeEdge(nacre.id, typescript.id, 'co-occurrence', {
-    weight: 0.4, baseWeight: 0.3, reinforcementCount: 2,
-    lastReinforced: '2026-01-22',
-  }));
-  addEdge(graph, makeEdge(marcus.id, tidepool.id, 'explicit', {
-    weight: 0.08, baseWeight: 1.0, reinforcementCount: 0,
-    lastReinforced: '2026-01-10',
-  }));
-  addEdge(graph, makeEdge(nacre.id, tidepool.id, 'temporal', {
-    weight: 0.07, baseWeight: 0.1, reinforcementCount: 0,
-    lastReinforced: '2026-01-10',
-  }));
-  addEdge(graph, makeEdge(marcus.id, lobstar.id, 'co-occurrence', {
-    weight: 0.7, baseWeight: 0.3, reinforcementCount: 4,
-    lastReinforced: '2026-01-26',
-  }));
-  addEdge(graph, makeEdge(nacre.id, lobstar.id, 'co-occurrence', {
-    weight: 0.5, baseWeight: 0.3, reinforcementCount: 3,
-    lastReinforced: '2026-01-25',
-  }));
-  addEdge(graph, makeEdge(typescript.id, lobstar.id, 'co-occurrence', {
-    weight: 0.35, baseWeight: 0.3, reinforcementCount: 2,
-    lastReinforced: '2026-01-23',
-  }));
-  addEdge(graph, makeEdge(vscode.id, marcus.id, 'co-occurrence', {
-    weight: 0.5, baseWeight: 0.3, reinforcementCount: 1,
-    lastReinforced: '2026-01-24',
-  }));
-  addEdge(graph, makeEdge(vscode.id, typescript.id, 'co-occurrence', {
-    weight: 0.55, baseWeight: 0.3, reinforcementCount: 2,
-    lastReinforced: '2026-01-24',
-  }));
-  addEdge(graph, makeEdge(vscode.id, nacre.id, 'co-occurrence', {
-    weight: 0.45, baseWeight: 0.3, reinforcementCount: 1,
-    lastReinforced: '2026-01-23',
-  }));
-  addEdge(graph, makeEdge(tidepool.id, typescript.id, 'co-occurrence', {
-    weight: 0.05, baseWeight: 0.3, reinforcementCount: 0,
-    lastReinforced: '2026-01-10',
-  }));
+  addEdge(
+    graph,
+    makeEdge(marcus.id, nacre.id, 'explicit', {
+      weight: 0.9,
+      baseWeight: 1.0,
+      reinforcementCount: 5,
+      lastReinforced: '2026-01-28',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(marcus.id, typescript.id, 'co-occurrence', {
+      weight: 0.6,
+      baseWeight: 0.3,
+      reinforcementCount: 3,
+      lastReinforced: '2026-01-25',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(nacre.id, typescript.id, 'co-occurrence', {
+      weight: 0.4,
+      baseWeight: 0.3,
+      reinforcementCount: 2,
+      lastReinforced: '2026-01-22',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(marcus.id, tidepool.id, 'explicit', {
+      weight: 0.08,
+      baseWeight: 1.0,
+      reinforcementCount: 0,
+      lastReinforced: '2026-01-10',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(nacre.id, tidepool.id, 'temporal', {
+      weight: 0.07,
+      baseWeight: 0.1,
+      reinforcementCount: 0,
+      lastReinforced: '2026-01-10',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(marcus.id, lobstar.id, 'co-occurrence', {
+      weight: 0.7,
+      baseWeight: 0.3,
+      reinforcementCount: 4,
+      lastReinforced: '2026-01-26',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(nacre.id, lobstar.id, 'co-occurrence', {
+      weight: 0.5,
+      baseWeight: 0.3,
+      reinforcementCount: 3,
+      lastReinforced: '2026-01-25',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(typescript.id, lobstar.id, 'co-occurrence', {
+      weight: 0.35,
+      baseWeight: 0.3,
+      reinforcementCount: 2,
+      lastReinforced: '2026-01-23',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(vscode.id, marcus.id, 'co-occurrence', {
+      weight: 0.5,
+      baseWeight: 0.3,
+      reinforcementCount: 1,
+      lastReinforced: '2026-01-24',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(vscode.id, typescript.id, 'co-occurrence', {
+      weight: 0.55,
+      baseWeight: 0.3,
+      reinforcementCount: 2,
+      lastReinforced: '2026-01-24',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(vscode.id, nacre.id, 'co-occurrence', {
+      weight: 0.45,
+      baseWeight: 0.3,
+      reinforcementCount: 1,
+      lastReinforced: '2026-01-23',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(tidepool.id, typescript.id, 'co-occurrence', {
+      weight: 0.05,
+      baseWeight: 0.3,
+      reinforcementCount: 0,
+      lastReinforced: '2026-01-10',
+    }),
+  );
 
   return graph;
 }
@@ -168,9 +241,7 @@ describe('generateSuggestions', () => {
     const result = generateSuggestions(graph, pendingEdges);
 
     assert.ok(result.suggestions.length > 0);
-    const suggestion = result.suggestions.find(
-      (s) => s.sourceId === a.id && s.targetId === b.id,
-    );
+    const suggestion = result.suggestions.find((s) => s.sourceId === a.id && s.targetId === b.id);
     assert.ok(suggestion);
     assert.equal(suggestion.reason, 'pending-near-threshold');
   });
@@ -179,9 +250,7 @@ describe('generateSuggestions', () => {
     const graph = buildTestGraph();
     const result = generateSuggestions(graph, []);
 
-    const structuralHoles = result.suggestions.filter(
-      (s) => s.reason === 'structural-hole',
-    );
+    const structuralHoles = result.suggestions.filter((s) => s.reason === 'structural-hole');
     assert.ok(structuralHoles.length > 0);
   });
 
@@ -189,9 +258,7 @@ describe('generateSuggestions', () => {
     const graph = buildTestGraph();
     const result = generateSuggestions(graph, []);
 
-    const typeBridges = result.suggestions.filter(
-      (s) => s.reason === 'type-bridge',
-    );
+    const typeBridges = result.suggestions.filter((s) => s.reason === 'type-bridge');
     assert.ok(typeBridges.length > 0);
   });
 
@@ -200,9 +267,7 @@ describe('generateSuggestions', () => {
     const result = generateSuggestions(graph, []);
 
     for (let i = 1; i < result.suggestions.length; i++) {
-      assert.ok(
-        result.suggestions[i - 1].confidence >= result.suggestions[i].confidence,
-      );
+      assert.ok(result.suggestions[i - 1].confidence >= result.suggestions[i].confidence);
     }
   });
 
@@ -218,10 +283,7 @@ describe('generateSuggestions', () => {
     const result = generateSuggestions(graph, []);
 
     assert.ok(result.summary.length > 0);
-    assert.ok(
-      result.summary.includes('suggestion') ||
-        result.summary.includes('No connection'),
-    );
+    assert.ok(result.summary.includes('suggestion') || result.summary.includes('No connection'));
   });
 });
 

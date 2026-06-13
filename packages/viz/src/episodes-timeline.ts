@@ -57,7 +57,7 @@ function formatTimestamp(iso: string): string {
 }
 
 function summarizeEpisode(ep: Episode): string {
-  const raw = (ep.summary && ep.summary.trim().length > 0) ? ep.summary : ep.content;
+  const raw = ep.summary && ep.summary.trim().length > 0 ? ep.summary : ep.content;
   const trimmed = raw.trim();
   if (trimmed.length <= 100) return trimmed;
   return trimmed.slice(0, 100) + '…';
@@ -445,7 +445,14 @@ export class EpisodesTimeline {
   }
 
   private renderTimeline(): void {
-    if (!this.trackEl || !this.trackInnerEl || !this.markersLayerEl || !this.axisEl || !this.baselineEl) return;
+    if (
+      !this.trackEl ||
+      !this.trackInnerEl ||
+      !this.markersLayerEl ||
+      !this.axisEl ||
+      !this.baselineEl
+    )
+      return;
     this.hideHoverCard();
 
     if (this.detailEl) this.detailEl.style.display = 'none';
@@ -556,7 +563,7 @@ export class EpisodesTimeline {
         return {
           episode: e,
           startMs: start ?? 0,
-          endMs: end ?? (start ?? 0),
+          endMs: end ?? start ?? 0,
         };
       })
       .filter((p) => p.startMs > 0);
@@ -607,7 +614,12 @@ export class EpisodesTimeline {
     return layout;
   }
 
-  private renderAxis(layout: EpisodeWithLayout[], timelineW: number, minMs: number, maxMs: number): void {
+  private renderAxis(
+    layout: EpisodeWithLayout[],
+    timelineW: number,
+    minMs: number,
+    maxMs: number,
+  ): void {
     if (!this.axisEl) return;
     removeAllChildren(this.axisEl);
 
@@ -620,7 +632,7 @@ export class EpisodesTimeline {
 
     const range = Math.max(1, maxMs - minMs);
     const padding = 16;
-    const usableW = Math.max(1, (Math.max(1200, timelineW) - padding * 2));
+    const usableW = Math.max(1, Math.max(1200, timelineW) - padding * 2);
 
     const addTick = (ms: number, label: string, strong: boolean): void => {
       const pct = clamp((ms - minMs) / range, 0, 1);
@@ -650,7 +662,7 @@ export class EpisodesTimeline {
 
     // Month ticks (or coarser) depending on span.
     const spanDays = (maxMs - minMs) / (1000 * 60 * 60 * 24);
-    const approxTicks = Math.max(2, Math.floor((Math.max(1200, timelineW)) / 160));
+    const approxTicks = Math.max(2, Math.floor(Math.max(1200, timelineW) / 160));
     const monthStep = (() => {
       if (spanDays < 45) return 1;
       if (spanDays < 120) return 2;
@@ -663,8 +675,14 @@ export class EpisodesTimeline {
     const start = new Date(minD.getFullYear(), minD.getMonth(), 1);
     const end = new Date(maxMs);
 
-    const monthLabelFmt = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' });
-    const dayLabelFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+    const monthLabelFmt = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      year: 'numeric',
+    });
+    const dayLabelFmt = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
 
     // Always show ends.
     addTick(minMs, dayLabelFmt.format(new Date(minMs)), true);
@@ -672,7 +690,7 @@ export class EpisodesTimeline {
 
     // Internal ticks.
     let tickCount = 0;
-    for (let y = start.getFullYear(), m = start.getMonth();; ) {
+    for (let y = start.getFullYear(), m = start.getMonth(); ; ) {
       const tickDate = new Date(y, m, 1);
       const ms = tickDate.getTime();
       if (ms > maxMs) break;
@@ -740,9 +758,10 @@ export class EpisodesTimeline {
     parts.classList.add('episodes-muted');
     parts.style.marginTop = '8px';
     parts.style.fontSize = '12px';
-    parts.textContent = (ep.participants?.length ?? 0) > 0
-      ? `Participants: ${ep.participants.join(', ')}`
-      : 'Participants: —';
+    parts.textContent =
+      (ep.participants?.length ?? 0) > 0
+        ? `Participants: ${ep.participants.join(', ')}`
+        : 'Participants: —';
     card.appendChild(parts);
 
     card.style.display = 'block';
@@ -758,8 +777,16 @@ export class EpisodesTimeline {
     const cardRect = card.getBoundingClientRect();
     const padding = 12;
 
-    const x = clamp(ev.clientX - rootRect.left + 12, padding, rootRect.width - cardRect.width - padding);
-    const y = clamp(ev.clientY - rootRect.top + 12, padding, rootRect.height - cardRect.height - padding);
+    const x = clamp(
+      ev.clientX - rootRect.left + 12,
+      padding,
+      rootRect.width - cardRect.width - padding,
+    );
+    const y = clamp(
+      ev.clientY - rootRect.top + 12,
+      padding,
+      rootRect.height - cardRect.height - padding,
+    );
 
     card.style.left = `${Math.round(x)}px`;
     card.style.top = `${Math.round(y)}px`;
@@ -859,9 +886,10 @@ export class EpisodesTimeline {
     parts.classList.add('episodes-muted');
     parts.style.fontSize = '12px';
     parts.style.marginBottom = '10px';
-    parts.textContent = (ep.participants?.length ?? 0) > 0
-      ? `Participants: ${ep.participants.join(', ')}`
-      : 'Participants: —';
+    parts.textContent =
+      (ep.participants?.length ?? 0) > 0
+        ? `Participants: ${ep.participants.join(', ')}`
+        : 'Participants: —';
     this.detailEl.appendChild(parts);
 
     if ((ep.topics?.length ?? 0) > 0) {

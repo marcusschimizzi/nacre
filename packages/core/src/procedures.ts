@@ -28,9 +28,7 @@ export function findRelevantProcedures(
   const queryTerms = extractQueryTerms(query);
   if (queryTerms.length === 0 && contexts.length === 0) return [];
 
-  const procedures = store.listProcedures(
-    opts.types ? { type: opts.types[0] } : undefined,
-  );
+  const procedures = store.listProcedures(opts.types ? { type: opts.types[0] } : undefined);
 
   const matches: TriggerMatch[] = [];
 
@@ -39,17 +37,13 @@ export function findRelevantProcedures(
       queryTerms.some((q) => k.includes(q) || q.includes(k)),
     );
     const keywordScore =
-      keywordHits.length > 0
-        ? keywordHits.length / Math.max(proc.triggerKeywords.length, 1)
-        : 0;
+      keywordHits.length > 0 ? keywordHits.length / Math.max(proc.triggerKeywords.length, 1) : 0;
 
     const contextHits = proc.triggerContexts.filter((c) =>
       contexts.some((ctx) => c.toLowerCase() === ctx.toLowerCase()),
     );
     const contextScore =
-      contextHits.length > 0
-        ? contextHits.length / Math.max(proc.triggerContexts.length, 1)
-        : 0;
+      contextHits.length > 0 ? contextHits.length / Math.max(proc.triggerContexts.length, 1) : 0;
 
     let score = (keywordScore * 0.7 + contextScore * 0.3) * proc.confidence;
 

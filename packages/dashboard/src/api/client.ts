@@ -27,7 +27,7 @@ export class NacreAPIClient {
     });
 
     const text = await res.text();
-    const json = text ? JSON.parse(text) as unknown : null;
+    const json = text ? (JSON.parse(text) as unknown) : null;
 
     if (!res.ok) {
       const err = (json as Partial<ApiError>)?.error;
@@ -54,7 +54,12 @@ export class NacreAPIClient {
     return res.data;
   }
 
-  async recall(opts: { q: string; limit?: number; hops?: number; types?: string[] }): Promise<RecallResponse> {
+  async recall(opts: {
+    q: string;
+    limit?: number;
+    hops?: number;
+    types?: string[];
+  }): Promise<RecallResponse> {
     const params = new URLSearchParams();
     params.set('q', opts.q);
     if (opts.limit) params.set('limit', String(opts.limit));
@@ -62,14 +67,22 @@ export class NacreAPIClient {
     if (opts.types?.length) params.set('types', opts.types.join(','));
 
     // API returns `{ data: RecallResult[], procedures: RecallProcedureMatch[] }` (not enveloped)
-    const res = await this.requestJson<{ data: RecallResponse['data']; procedures: RecallResponse['procedures'] }>(
-      `/recall?${params.toString()}`,
-    );
+    const res = await this.requestJson<{
+      data: RecallResponse['data'];
+      procedures: RecallResponse['procedures'];
+    }>(`/recall?${params.toString()}`);
 
     return { data: res.data, procedures: res.procedures };
   }
 
-  async episodesList(opts?: { since?: string; until?: string; type?: string; entity?: string; limit?: number; offset?: number }): Promise<Episode[]> {
+  async episodesList(opts?: {
+    since?: string;
+    until?: string;
+    type?: string;
+    entity?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<Episode[]> {
     const params = new URLSearchParams();
     if (opts?.since) params.set('since', opts.since);
     if (opts?.until) params.set('until', opts.until);
@@ -83,10 +96,16 @@ export class NacreAPIClient {
     return res.data;
   }
 
-  async episodeDetail(id: string): Promise<{ episode: Episode; entities: Array<{ id: string; label: string; type: string }> }> {
-    const res = await this.requestJson<ApiEnvelope<{ episode: Episode; entities: Array<{ id: string; label: string; type: string }> }>>(
-      `/episodes/${encodeURIComponent(id)}`,
-    );
+  async episodeDetail(id: string): Promise<{
+    episode: Episode;
+    entities: Array<{ id: string; label: string; type: string }>;
+  }> {
+    const res = await this.requestJson<
+      ApiEnvelope<{
+        episode: Episode;
+        entities: Array<{ id: string; label: string; type: string }>;
+      }>
+    >(`/episodes/${encodeURIComponent(id)}`);
     return res.data;
   }
 
@@ -100,16 +119,26 @@ export class NacreAPIClient {
     return res.data;
   }
 
-  async procedureApply(id: string, feedback: 'positive' | 'negative' | 'neutral' = 'neutral'): Promise<Procedure> {
-    const res = await this.requestJson<ApiEnvelope<Procedure>>(`/procedures/${encodeURIComponent(id)}/apply`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ feedback }),
-    });
+  async procedureApply(
+    id: string,
+    feedback: 'positive' | 'negative' | 'neutral' = 'neutral',
+  ): Promise<Procedure> {
+    const res = await this.requestJson<ApiEnvelope<Procedure>>(
+      `/procedures/${encodeURIComponent(id)}/apply`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ feedback }),
+      },
+    );
     return res.data;
   }
 
-  async snapshotsList(opts?: { since?: string; until?: string; limit?: number }): Promise<Snapshot[]> {
+  async snapshotsList(opts?: {
+    since?: string;
+    until?: string;
+    limit?: number;
+  }): Promise<Snapshot[]> {
     const params = new URLSearchParams();
     if (opts?.since) params.set('since', opts.since);
     if (opts?.until) params.set('until', opts.until);
@@ -128,7 +157,9 @@ export class NacreAPIClient {
   }
 
   async diff(fromId: string, toId: string): Promise<GraphDiff> {
-    const res = await this.requestJson<ApiEnvelope<GraphDiff>>(`/diff/${encodeURIComponent(fromId)}/${encodeURIComponent(toId)}`);
+    const res = await this.requestJson<ApiEnvelope<GraphDiff>>(
+      `/diff/${encodeURIComponent(fromId)}/${encodeURIComponent(toId)}`,
+    );
     return res.data;
   }
 

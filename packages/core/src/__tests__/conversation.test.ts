@@ -85,10 +85,18 @@ describe('chunkConversation', () => {
   describe('time gap splitting', () => {
     it('splits at time gap > 30 minutes', () => {
       const input = makeConversation([
-        makeMessage('user', 'First message', { timestamp: '2026-01-15T10:00:00Z' }),
-        makeMessage('assistant', 'First response', { timestamp: '2026-01-15T10:01:00Z' }),
-        makeMessage('user', 'Second message after gap', { timestamp: '2026-01-15T10:35:00Z' }),
-        makeMessage('assistant', 'Second response', { timestamp: '2026-01-15T10:36:00Z' }),
+        makeMessage('user', 'First message', {
+          timestamp: '2026-01-15T10:00:00Z',
+        }),
+        makeMessage('assistant', 'First response', {
+          timestamp: '2026-01-15T10:01:00Z',
+        }),
+        makeMessage('user', 'Second message after gap', {
+          timestamp: '2026-01-15T10:35:00Z',
+        }),
+        makeMessage('assistant', 'Second response', {
+          timestamp: '2026-01-15T10:36:00Z',
+        }),
       ]);
       const chunks = chunkConversation(input);
       assert.equal(chunks.length, 2);
@@ -98,10 +106,18 @@ describe('chunkConversation', () => {
 
     it('does not split at time gap < 30 minutes', () => {
       const input = makeConversation([
-        makeMessage('user', 'First message', { timestamp: '2026-01-15T10:00:00Z' }),
-        makeMessage('assistant', 'First response', { timestamp: '2026-01-15T10:01:00Z' }),
-        makeMessage('user', 'Second message', { timestamp: '2026-01-15T10:15:00Z' }),
-        makeMessage('assistant', 'Second response', { timestamp: '2026-01-15T10:16:00Z' }),
+        makeMessage('user', 'First message', {
+          timestamp: '2026-01-15T10:00:00Z',
+        }),
+        makeMessage('assistant', 'First response', {
+          timestamp: '2026-01-15T10:01:00Z',
+        }),
+        makeMessage('user', 'Second message', {
+          timestamp: '2026-01-15T10:15:00Z',
+        }),
+        makeMessage('assistant', 'Second response', {
+          timestamp: '2026-01-15T10:16:00Z',
+        }),
       ]);
       const chunks = chunkConversation(input);
       assert.equal(chunks.length, 1);
@@ -123,7 +139,9 @@ describe('chunkConversation', () => {
     it('handles invalid timestamps gracefully', () => {
       const input = makeConversation([
         makeMessage('user', 'First message', { timestamp: 'invalid-date' }),
-        makeMessage('assistant', 'First response', { timestamp: 'also-invalid' }),
+        makeMessage('assistant', 'First response', {
+          timestamp: 'also-invalid',
+        }),
         makeMessage('user', 'Second message', { timestamp: 'not-a-date' }),
       ]);
       const chunks = chunkConversation(input);
@@ -140,7 +158,7 @@ describe('chunkConversation', () => {
       }
       const input = makeConversation(messages);
       const chunks = chunkConversation(input, { maxMessages: 10 });
-      
+
       for (const chunk of chunks) {
         for (let i = 0; i < chunk.messages.length - 1; i++) {
           if (chunk.messages[i].role === 'user' && i === chunk.messages.length - 1) {
@@ -158,7 +176,7 @@ describe('chunkConversation', () => {
       }
       const input = makeConversation(messages);
       const chunks = chunkConversation(input, { maxMessages: 10 });
-      
+
       assert.ok(chunks.length >= 1);
       const lastChunk = chunks[chunks.length - 1];
       if (lastChunk.messages.length > 0) {
@@ -203,7 +221,7 @@ describe('chunkConversation', () => {
         makeMessage('assistant', longContent),
       ]);
       const chunks = chunkConversation(input, { maxTokens: 1000 });
-      
+
       for (const chunk of chunks) {
         if (chunk.messages.length > 1) {
           const lastMsg = chunk.messages[chunk.messages.length - 1];
@@ -236,10 +254,7 @@ describe('chunkConversation', () => {
 
     it('uses metadata topic when provided', () => {
       const input = makeConversation(
-        [
-          makeMessage('user', 'Some question'),
-          makeMessage('assistant', 'Some answer'),
-        ],
+        [makeMessage('user', 'Some question'), makeMessage('assistant', 'Some answer')],
         { topic: 'Custom Topic' },
       );
       const chunks = chunkConversation(input);
@@ -273,7 +288,9 @@ describe('chunkConversation', () => {
     it('sets startTime from first message timestamp', () => {
       const input = makeConversation([
         makeMessage('user', 'First', { timestamp: '2026-01-15T10:00:00Z' }),
-        makeMessage('assistant', 'Response', { timestamp: '2026-01-15T10:01:00Z' }),
+        makeMessage('assistant', 'Response', {
+          timestamp: '2026-01-15T10:01:00Z',
+        }),
       ]);
       const chunks = chunkConversation(input);
       assert.equal(chunks[0].startTime, '2026-01-15T10:00:00Z');
@@ -282,7 +299,9 @@ describe('chunkConversation', () => {
     it('sets endTime from last message timestamp', () => {
       const input = makeConversation([
         makeMessage('user', 'First', { timestamp: '2026-01-15T10:00:00Z' }),
-        makeMessage('assistant', 'Response', { timestamp: '2026-01-15T10:05:00Z' }),
+        makeMessage('assistant', 'Response', {
+          timestamp: '2026-01-15T10:05:00Z',
+        }),
       ]);
       const chunks = chunkConversation(input);
       assert.equal(chunks[0].endTime, '2026-01-15T10:05:00Z');
@@ -301,9 +320,13 @@ describe('chunkConversation', () => {
     it('multiple chunks get correct startTime/endTime', () => {
       const input = makeConversation([
         makeMessage('user', 'First', { timestamp: '2026-01-15T10:00:00Z' }),
-        makeMessage('assistant', 'Response', { timestamp: '2026-01-15T10:01:00Z' }),
+        makeMessage('assistant', 'Response', {
+          timestamp: '2026-01-15T10:01:00Z',
+        }),
         makeMessage('user', 'Second', { timestamp: '2026-01-15T10:35:00Z' }),
-        makeMessage('assistant', 'Response', { timestamp: '2026-01-15T10:36:00Z' }),
+        makeMessage('assistant', 'Response', {
+          timestamp: '2026-01-15T10:36:00Z',
+        }),
       ]);
       const chunks = chunkConversation(input);
       assert.equal(chunks.length, 2);
@@ -319,10 +342,7 @@ describe('chunkToEpisode', () => {
   describe('basic episode creation', () => {
     it('creates episode with type conversation', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi there'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi there')],
         startTime: '2026-01-15T10:00:00Z',
         topic: 'Greeting',
       };
@@ -332,10 +352,7 @@ describe('chunkToEpisode', () => {
 
     it('sets sourceType to conversation', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.sourceType, 'conversation');
@@ -343,10 +360,7 @@ describe('chunkToEpisode', () => {
 
     it('generates unique episode IDs', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const ep1 = chunkToEpisode(chunk);
       const ep2 = chunkToEpisode(chunk);
@@ -357,10 +371,7 @@ describe('chunkToEpisode', () => {
 
     it('sets timestamp from chunk startTime', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
         startTime: '2026-01-15T10:00:00Z',
       };
       const episode = chunkToEpisode(chunk);
@@ -369,10 +380,7 @@ describe('chunkToEpisode', () => {
 
     it('sets endTimestamp from chunk endTime', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
         startTime: '2026-01-15T10:00:00Z',
         endTime: '2026-01-15T10:05:00Z',
       };
@@ -408,10 +416,7 @@ describe('chunkToEpisode', () => {
     it('truncates long user message titles to 80 chars', () => {
       const longMessage = 'a'.repeat(100);
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', longMessage),
-          makeMessage('assistant', 'Response'),
-        ],
+        messages: [makeMessage('user', longMessage), makeMessage('assistant', 'Response')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.title.length, 80);
@@ -419,10 +424,7 @@ describe('chunkToEpisode', () => {
 
     it('uses metadata topic when provided', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Some question'),
-          makeMessage('assistant', 'Some answer'),
-        ],
+        messages: [makeMessage('user', 'Some question'), makeMessage('assistant', 'Some answer')],
       };
       const metadata = { topic: 'Custom Topic' };
       const episode = chunkToEpisode(chunk, metadata);
@@ -431,10 +433,7 @@ describe('chunkToEpisode', () => {
 
     it('defaults to Untitled conversation when no topic or user message', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('system', 'System message'),
-          makeMessage('assistant', 'Response'),
-        ],
+        messages: [makeMessage('system', 'System message'), makeMessage('assistant', 'Response')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.title, 'Untitled conversation');
@@ -444,10 +443,7 @@ describe('chunkToEpisode', () => {
   describe('content formatting', () => {
     it('formats messages as content with speaker labels', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi there'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi there')],
       };
       const episode = chunkToEpisode(chunk);
       assert.ok(episode.content.includes('[user]: Hello'));
@@ -503,7 +499,7 @@ describe('chunkToEpisode', () => {
         ],
       };
       const episode = chunkToEpisode(chunk);
-      assert.equal(episode.participants.filter(p => p === 'Alice').length, 1);
+      assert.equal(episode.participants.filter((p) => p === 'Alice').length, 1);
     });
 
     it('ignores assistant names in participants', () => {
@@ -520,10 +516,7 @@ describe('chunkToEpisode', () => {
 
     it('handles messages without names', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.participants.length, 0);
@@ -533,10 +526,7 @@ describe('chunkToEpisode', () => {
   describe('episode metadata', () => {
     it('sets sequence to 0', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.sequence, 0);
@@ -544,10 +534,7 @@ describe('chunkToEpisode', () => {
 
     it('sets importance to 0.5', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.importance, 0.5);
@@ -555,10 +542,7 @@ describe('chunkToEpisode', () => {
 
     it('sets accessCount to 0', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.accessCount, 0);
@@ -566,10 +550,7 @@ describe('chunkToEpisode', () => {
 
     it('sets topics to empty array', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const episode = chunkToEpisode(chunk);
       assert.deepEqual(episode.topics, []);
@@ -577,10 +558,7 @@ describe('chunkToEpisode', () => {
 
     it('sets lastAccessed to current time', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const before = new Date().toISOString();
       const episode = chunkToEpisode(chunk);
@@ -593,10 +571,7 @@ describe('chunkToEpisode', () => {
   describe('source handling', () => {
     it('uses metadata source when provided', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const metadata = { source: '/path/to/conversation.json' };
       const episode = chunkToEpisode(chunk, metadata);
@@ -605,10 +580,7 @@ describe('chunkToEpisode', () => {
 
     it('falls back to sessionId when source not provided', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const metadata = { sessionId: 'session-123' };
       const episode = chunkToEpisode(chunk, metadata);
@@ -617,10 +589,7 @@ describe('chunkToEpisode', () => {
 
     it('defaults to conversation when no source or sessionId', () => {
       const chunk: ConversationChunk = {
-        messages: [
-          makeMessage('user', 'Hello'),
-          makeMessage('assistant', 'Hi'),
-        ],
+        messages: [makeMessage('user', 'Hello'), makeMessage('assistant', 'Hi')],
       };
       const episode = chunkToEpisode(chunk);
       assert.equal(episode.source, 'conversation');
@@ -687,15 +656,25 @@ describe('chunkToEpisode', () => {
   describe('integration', () => {
     it('creates valid episode from chunked conversation', () => {
       const input = makeConversation([
-        makeMessage('user', 'What is TypeScript?', { timestamp: '2026-01-15T10:00:00Z', name: 'Alice' }),
-        makeMessage('assistant', 'TypeScript is a typed superset of JavaScript', { timestamp: '2026-01-15T10:01:00Z' }),
-        makeMessage('user', 'How do I use it?', { timestamp: '2026-01-15T10:02:00Z', name: 'Alice' }),
-        makeMessage('assistant', 'You can install it with npm', { timestamp: '2026-01-15T10:03:00Z' }),
+        makeMessage('user', 'What is TypeScript?', {
+          timestamp: '2026-01-15T10:00:00Z',
+          name: 'Alice',
+        }),
+        makeMessage('assistant', 'TypeScript is a typed superset of JavaScript', {
+          timestamp: '2026-01-15T10:01:00Z',
+        }),
+        makeMessage('user', 'How do I use it?', {
+          timestamp: '2026-01-15T10:02:00Z',
+          name: 'Alice',
+        }),
+        makeMessage('assistant', 'You can install it with npm', {
+          timestamp: '2026-01-15T10:03:00Z',
+        }),
       ]);
-      
+
       const chunks = chunkConversation(input);
       assert.equal(chunks.length, 1);
-      
+
       const episode = chunkToEpisode(chunks[0]);
       assert.equal(episode.type, 'conversation');
       assert.equal(episode.sourceType, 'conversation');
@@ -707,18 +686,28 @@ describe('chunkToEpisode', () => {
 
     it('handles multi-chunk conversation', () => {
       const input = makeConversation([
-        makeMessage('user', 'First topic', { timestamp: '2026-01-15T10:00:00Z', name: 'Alice' }),
-        makeMessage('assistant', 'Response 1', { timestamp: '2026-01-15T10:01:00Z' }),
-        makeMessage('user', 'Second topic', { timestamp: '2026-01-15T10:35:00Z', name: 'Bob' }),
-        makeMessage('assistant', 'Response 2', { timestamp: '2026-01-15T10:36:00Z' }),
+        makeMessage('user', 'First topic', {
+          timestamp: '2026-01-15T10:00:00Z',
+          name: 'Alice',
+        }),
+        makeMessage('assistant', 'Response 1', {
+          timestamp: '2026-01-15T10:01:00Z',
+        }),
+        makeMessage('user', 'Second topic', {
+          timestamp: '2026-01-15T10:35:00Z',
+          name: 'Bob',
+        }),
+        makeMessage('assistant', 'Response 2', {
+          timestamp: '2026-01-15T10:36:00Z',
+        }),
       ]);
-      
+
       const chunks = chunkConversation(input);
       assert.equal(chunks.length, 2);
-      
+
       const ep1 = chunkToEpisode(chunks[0]);
       const ep2 = chunkToEpisode(chunks[1]);
-      
+
       assert.notEqual(ep1.id, ep2.id);
       assert.ok(ep1.participants.includes('Alice'));
       assert.ok(ep2.participants.includes('Bob'));

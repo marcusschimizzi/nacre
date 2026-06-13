@@ -24,7 +24,8 @@ export function TemporalDiffPanel(props: {
       setDiff(null);
       return;
     }
-    props.loadSnapshots()
+    props
+      .loadSnapshots()
       .then((s) => {
         if (cancelled) return;
         setSnaps(s);
@@ -45,8 +46,12 @@ export function TemporalDiffPanel(props: {
   const summary = useMemo(() => {
     if (!diff) return null;
     return {
-      nodes: (diff.nodes.added.length + diff.nodes.removed.length + diff.nodes.changed.length),
-      edges: (diff.edges.added.length + diff.edges.removed.length + diff.edges.strengthened.length + diff.edges.weakened.length),
+      nodes: diff.nodes.added.length + diff.nodes.removed.length + diff.nodes.changed.length,
+      edges:
+        diff.edges.added.length +
+        diff.edges.removed.length +
+        diff.edges.strengthened.length +
+        diff.edges.weakened.length,
     };
   }, [diff]);
 
@@ -98,23 +103,34 @@ export function TemporalDiffPanel(props: {
           <div className="diff-controls">
             <select value={fromId} onChange={(e) => setFromId(e.target.value)}>
               {snaps.map((s) => (
-                <option key={s.id} value={s.id}>{new Date(s.createdAt).toLocaleString()}</option>
+                <option key={s.id} value={s.id}>
+                  {new Date(s.createdAt).toLocaleString()}
+                </option>
               ))}
             </select>
             <select value={toId} onChange={(e) => setToId(e.target.value)}>
               {snaps.map((s) => (
-                <option key={s.id} value={s.id}>{new Date(s.createdAt).toLocaleString()}</option>
+                <option key={s.id} value={s.id}>
+                  {new Date(s.createdAt).toLocaleString()}
+                </option>
               ))}
             </select>
           </div>
           <div className="diff-actions">
-            <button className="btn" onClick={loadDiff} disabled={!fromId || !toId || loading}>Load</button>
-            <button className="btn" onClick={animate} disabled={!fromId || !toId || loading}>Animate</button>
+            <button className="btn" onClick={loadDiff} disabled={!fromId || !toId || loading}>
+              Load
+            </button>
+            <button className="btn" onClick={animate} disabled={!fromId || !toId || loading}>
+              Animate
+            </button>
           </div>
 
           {diff && summary && (
             <div className="panel-note">
-              Nodes: +{diff.nodes.added.length} -{diff.nodes.removed.length} ~{diff.nodes.changed.length} | Edges: +{diff.edges.added.length} -{diff.edges.removed.length} ^{diff.edges.strengthened.length} v{diff.edges.weakened.length}
+              Nodes: +{diff.nodes.added.length} -{diff.nodes.removed.length} ~
+              {diff.nodes.changed.length} | Edges: +{diff.edges.added.length} -
+              {diff.edges.removed.length} ^{diff.edges.strengthened.length} v
+              {diff.edges.weakened.length}
             </div>
           )}
         </>

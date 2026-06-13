@@ -83,30 +83,57 @@ export function ProceduresPanel(props: {
           <option value="insight">insight</option>
         </select>
         <label className="checkbox">
-          <input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={flaggedOnly}
+            onChange={(e) => setFlaggedOnly(e.target.checked)}
+          />
           flagged
         </label>
-        <button className="btn" onClick={refresh} disabled={!props.apiOnline || loading}>Refresh</button>
+        <button className="btn" onClick={refresh} disabled={!props.apiOnline || loading}>
+          Refresh
+        </button>
       </div>
 
       <div className="procedures-list">
         {sorted.slice(0, 40).map((p) => (
           <div key={p.id} className="procedure-card">
             <div className="confidence-meter">
-              <div className="meter-fill" style={{ width: `${Math.max(0, Math.min(1, p.confidence)) * 100}%` }} />
+              <div
+                className="meter-fill"
+                style={{
+                  width: `${Math.max(0, Math.min(1, p.confidence)) * 100}%`,
+                }}
+              />
               <span className="value">{(p.confidence * 100).toFixed(0)}%</span>
             </div>
             <div className="content">
               <div className="title">{p.statement}</div>
               <div className="meta">
                 <span className="type">{p.type}</span>
-                <span className="last">{p.lastApplied ? `Applied ${new Date(p.lastApplied).toLocaleDateString()}` : 'Never applied'}</span>
+                <span className="last">
+                  {p.lastApplied
+                    ? `Applied ${new Date(p.lastApplied).toLocaleDateString()}`
+                    : 'Never applied'}
+                </span>
                 {p.flaggedForReview && <span className="flag">flagged</span>}
               </div>
             </div>
             <div className="actions">
-              <button className="btn" onClick={() => apply(p.id, 'positive')} disabled={!props.apiOnline}>Teach</button>
-              <button className="btn danger" onClick={() => apply(p.id, 'negative')} disabled={!props.apiOnline}>Contradict</button>
+              <button
+                className="btn"
+                onClick={() => apply(p.id, 'positive')}
+                disabled={!props.apiOnline}
+              >
+                Teach
+              </button>
+              <button
+                className="btn danger"
+                onClick={() => apply(p.id, 'negative')}
+                disabled={!props.apiOnline}
+              >
+                Contradict
+              </button>
             </div>
           </div>
         ))}

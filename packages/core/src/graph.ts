@@ -11,13 +11,15 @@ import type {
 import { DEFAULT_CONFIG } from './types.js';
 
 export function generateNodeId(label: string): string {
-  return createHash('sha256')
-    .update(label.toLowerCase().trim())
-    .digest('hex')
-    .slice(0, 16);
+  return createHash('sha256').update(label.toLowerCase().trim()).digest('hex').slice(0, 16);
 }
 
-export function generateEdgeId(source: string, target: string, type: EdgeType, directed: boolean = false): string {
+export function generateEdgeId(
+  source: string,
+  target: string,
+  type: EdgeType,
+  directed: boolean = false,
+): string {
   // For directed edges (causal), preserve order to maintain directionality
   if (directed) {
     return `${source}--${target}--${type}`;
@@ -104,18 +106,13 @@ export function reinforceNode(
   return node;
 }
 
-export function reinforceEdge(
-  graph: NacreGraph,
-  id: string,
-  evidence: Evidence,
-): MemoryEdge {
+export function reinforceEdge(graph: NacreGraph, id: string, evidence: Evidence): MemoryEdge {
   const edge = graph.edges[id];
   if (!edge) throw new Error(`Edge not found: ${id}`);
 
   edge.reinforcementCount += 1;
   edge.lastReinforced = evidence.date;
-  edge.stability =
-    1 + graph.config.reinforcementBoost * Math.log(edge.reinforcementCount + 1);
+  edge.stability = 1 + graph.config.reinforcementBoost * Math.log(edge.reinforcementCount + 1);
 
   if (edge.evidence.length < 20) {
     edge.evidence.push(evidence);
@@ -150,10 +147,7 @@ export function buildAdjacencyMap(graph: NacreGraph): AdjacencyMap {
   return map;
 }
 
-export function findNodeByLabel(
-  graph: NacreGraph,
-  label: string,
-): MemoryNode | undefined {
+export function findNodeByLabel(graph: NacreGraph, label: string): MemoryNode | undefined {
   const normalized = label.toLowerCase().trim();
 
   for (const node of Object.values(graph.nodes)) {

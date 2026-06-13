@@ -14,9 +14,7 @@ function findVizDir(): string {
   const fromDist = resolve(__dirname, '..', '..', '..', '..', 'viz');
   if (existsSync(resolve(fromDist, 'index.html'))) return fromDist;
 
-  throw new Error(
-    'Could not find @nacre/viz package. Expected sibling directory in packages/',
-  );
+  throw new Error('Could not find @nacre/viz package. Expected sibling directory in packages/');
 }
 
 export default defineCommand({
