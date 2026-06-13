@@ -1,13 +1,9 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  SqliteStore,
-  type Procedure,
-  type ProcedureType,
-  type ProcedureFilter,
-  recall,
-  MockEmbedder,
-} from '@nacre/core';
+import { SqliteStore } from '../store.js';
+import type { Procedure, ProcedureType, ProcedureFilter } from '../types.js';
+import { recall } from '../recall.js';
+import { MockEmbedder } from '../embeddings.js';
 import { findRelevantProcedures, applyProcedure } from '../procedures.js';
 
 function asProcedureStore(store: SqliteStore): Parameters<typeof findRelevantProcedures>[0] {
@@ -91,7 +87,13 @@ describe('procedures store CRUD', () => {
 
   it('listProcedures with type filter returns matching type', () => {
     const prefType: ProcedureType = 'preference';
-    store.putProcedure(makeProc({ id: 'p4', statement: 'Use monospace fonts in editor', type: prefType }));
+    store.putProcedure(
+      makeProc({
+        id: 'p4',
+        statement: 'Use monospace fonts in editor',
+        type: prefType,
+      }),
+    );
 
     const filter: ProcedureFilter = { type: prefType };
     const results = store.listProcedures(filter);
@@ -101,8 +103,20 @@ describe('procedures store CRUD', () => {
   });
 
   it('listProcedures with minConfidence filter returns confident procedures', () => {
-    store.putProcedure(makeProc({ id: 'p5', statement: 'Validate input types', confidence: 0.9 }));
-    store.putProcedure(makeProc({ id: 'p6', statement: 'Try random workaround', confidence: 0.2 }));
+    store.putProcedure(
+      makeProc({
+        id: 'p5',
+        statement: 'Validate input types',
+        confidence: 0.9,
+      }),
+    );
+    store.putProcedure(
+      makeProc({
+        id: 'p6',
+        statement: 'Try random workaround',
+        confidence: 0.2,
+      }),
+    );
 
     const results = store.listProcedures({ minConfidence: 0.8 });
     assert.ok(results.length >= 1);
@@ -110,8 +124,20 @@ describe('procedures store CRUD', () => {
   });
 
   it('listProcedures with flaggedOnly filter returns flagged procedures', () => {
-    store.putProcedure(makeProc({ id: 'p7', statement: 'Outdated deployment flow', flaggedForReview: true }));
-    store.putProcedure(makeProc({ id: 'p8', statement: 'Current deployment flow', flaggedForReview: false }));
+    store.putProcedure(
+      makeProc({
+        id: 'p7',
+        statement: 'Outdated deployment flow',
+        flaggedForReview: true,
+      }),
+    );
+    store.putProcedure(
+      makeProc({
+        id: 'p8',
+        statement: 'Current deployment flow',
+        flaggedForReview: false,
+      }),
+    );
 
     const flagged = store.listProcedures({ flaggedOnly: true });
     assert.ok(flagged.length >= 1);
@@ -139,38 +165,46 @@ describe('findRelevantProcedures trigger matching', () => {
   before(() => {
     store = SqliteStore.open(':memory:');
 
-    store.putProcedure(makeProc({
-      id: 'tm-1',
-      statement: 'Use incremental rollout for deploys',
-      type: 'skill',
-      triggerKeywords: ['deploy', 'rollout'],
-      triggerContexts: ['release'],
-      confidence: 0.9,
-    }));
-    store.putProcedure(makeProc({
-      id: 'tm-2',
-      statement: 'Run tests before merge',
-      type: 'heuristic',
-      triggerKeywords: ['tests', 'merge'],
-      triggerContexts: ['CI'],
-      confidence: 0.7,
-    }));
-    store.putProcedure(makeProc({
-      id: 'tm-3',
-      statement: 'Avoid force-pushes to shared branches',
-      type: 'antipattern',
-      triggerKeywords: ['force-push'],
-      triggerContexts: ['git'],
-      confidence: 0.4,
-    }));
-    store.putProcedure(makeProc({
-      id: 'tm-4',
-      statement: 'Use staging for deployments',
-      type: 'skill',
-      triggerKeywords: ['deployment'],
-      triggerContexts: ['Release'],
-      confidence: 0.8,
-    }));
+    store.putProcedure(
+      makeProc({
+        id: 'tm-1',
+        statement: 'Use incremental rollout for deploys',
+        type: 'skill',
+        triggerKeywords: ['deploy', 'rollout'],
+        triggerContexts: ['release'],
+        confidence: 0.9,
+      }),
+    );
+    store.putProcedure(
+      makeProc({
+        id: 'tm-2',
+        statement: 'Run tests before merge',
+        type: 'heuristic',
+        triggerKeywords: ['tests', 'merge'],
+        triggerContexts: ['CI'],
+        confidence: 0.7,
+      }),
+    );
+    store.putProcedure(
+      makeProc({
+        id: 'tm-3',
+        statement: 'Avoid force-pushes to shared branches',
+        type: 'antipattern',
+        triggerKeywords: ['force-push'],
+        triggerContexts: ['git'],
+        confidence: 0.4,
+      }),
+    );
+    store.putProcedure(
+      makeProc({
+        id: 'tm-4',
+        statement: 'Use staging for deployments',
+        type: 'skill',
+        triggerKeywords: ['deployment'],
+        triggerContexts: ['Release'],
+        confidence: 0.8,
+      }),
+    );
   });
 
   after(() => {
@@ -194,7 +228,9 @@ describe('findRelevantProcedures trigger matching', () => {
   });
 
   it('matches contexts case-insensitively', () => {
-    const matches = findRelevantProcedures(asProcedureStore(store), '', ['release'], { minScore: 0 });
+    const matches = findRelevantProcedures(asProcedureStore(store), '', ['release'], {
+      minScore: 0,
+    });
     const ids = matches.map((m) => m.procedure.id);
     assert.ok(ids.includes('tm-1'));
     assert.ok(ids.includes('tm-4'));
@@ -209,25 +245,36 @@ describe('findRelevantProcedures trigger matching', () => {
   });
 
   it('respects limit option', () => {
-    const matches = findRelevantProcedures(asProcedureStore(store), 'deploy tests merge release', [], { limit: 2, minScore: 0 });
+    const matches = findRelevantProcedures(
+      asProcedureStore(store),
+      'deploy tests merge release',
+      [],
+      { limit: 2, minScore: 0 },
+    );
     assert.equal(matches.length, 2);
   });
 
   it('weights scores by confidence', () => {
-    store.putProcedure(makeProc({
-      id: 'tm-high',
-      statement: 'High confidence deploy rule',
-      triggerKeywords: ['deploy'],
-      confidence: 0.95,
-    }));
-    store.putProcedure(makeProc({
-      id: 'tm-low',
-      statement: 'Low confidence deploy rule',
-      triggerKeywords: ['deploy'],
-      confidence: 0.25,
-    }));
+    store.putProcedure(
+      makeProc({
+        id: 'tm-high',
+        statement: 'High confidence deploy rule',
+        triggerKeywords: ['deploy'],
+        confidence: 0.95,
+      }),
+    );
+    store.putProcedure(
+      makeProc({
+        id: 'tm-low',
+        statement: 'Low confidence deploy rule',
+        triggerKeywords: ['deploy'],
+        confidence: 0.25,
+      }),
+    );
 
-    const matches = findRelevantProcedures(asProcedureStore(store), 'deploy', [], { minScore: 0 });
+    const matches = findRelevantProcedures(asProcedureStore(store), 'deploy', [], {
+      minScore: 0,
+    });
     const high = matches.find((m) => m.procedure.id === 'tm-high');
     const low = matches.find((m) => m.procedure.id === 'tm-low');
 
@@ -237,13 +284,17 @@ describe('findRelevantProcedures trigger matching', () => {
   });
 
   it('does not return procedures below minScore', () => {
-    const matches = findRelevantProcedures(asProcedureStore(store), 'force-push', [], { minScore: 0.5 });
+    const matches = findRelevantProcedures(asProcedureStore(store), 'force-push', [], {
+      minScore: 0.5,
+    });
     assert.ok(matches.every((m) => m.score >= 0.5));
     assert.ok(!matches.some((m) => m.procedure.id === 'tm-3'));
   });
 
   it('includes matchedKeywords and matchedContexts in results', () => {
-    const matches = findRelevantProcedures(asProcedureStore(store), 'deploy', ['release'], { minScore: 0 });
+    const matches = findRelevantProcedures(asProcedureStore(store), 'deploy', ['release'], {
+      minScore: 0,
+    });
     const match = matches.find((m) => m.procedure.id === 'tm-1');
     assert.ok(match);
     assert.ok(match.matchedKeywords.includes('deploy'));
@@ -263,7 +314,13 @@ describe('applyProcedure confidence dynamics', () => {
   });
 
   it('positive feedback increases confidence asymptotically', () => {
-    store.putProcedure(makeProc({ id: 'c-pos-curve', statement: 'Use retries', confidence: 0.4 }));
+    store.putProcedure(
+      makeProc({
+        id: 'c-pos-curve',
+        statement: 'Use retries',
+        confidence: 0.4,
+      }),
+    );
 
     const first = applyProcedure(asApplyStore(store), 'c-pos-curve', 'positive');
     const second = applyProcedure(asApplyStore(store), 'c-pos-curve', 'positive');
@@ -276,40 +333,66 @@ describe('applyProcedure confidence dynamics', () => {
   });
 
   it('positive feedback increments applications', () => {
-    store.putProcedure(makeProc({ id: 'c-pos-app', statement: 'Cache expensive calls', applications: 2 }));
+    store.putProcedure(
+      makeProc({
+        id: 'c-pos-app',
+        statement: 'Cache expensive calls',
+        applications: 2,
+      }),
+    );
     const updated = applyProcedure(asApplyStore(store), 'c-pos-app', 'positive');
     assert.equal(updated.applications, 3);
   });
 
   it('positive feedback increases stability', () => {
-    store.putProcedure(makeProc({ id: 'c-pos-stab', statement: 'Use feature flags', stability: 1.1 }));
+    store.putProcedure(
+      makeProc({
+        id: 'c-pos-stab',
+        statement: 'Use feature flags',
+        stability: 1.1,
+      }),
+    );
     const updated = applyProcedure(asApplyStore(store), 'c-pos-stab', 'positive');
     assert.ok(updated.stability > 1.1);
   });
 
   it('negative feedback decreases confidence by factor 0.8', () => {
-    store.putProcedure(makeProc({ id: 'c-neg-conf', statement: 'Always squash merge', confidence: 0.5 }));
+    store.putProcedure(
+      makeProc({
+        id: 'c-neg-conf',
+        statement: 'Always squash merge',
+        confidence: 0.5,
+      }),
+    );
     const updated = applyProcedure(asApplyStore(store), 'c-neg-conf', 'negative');
     assert.equal(updated.confidence, 0.4);
   });
 
   it('negative feedback increments contradictions', () => {
-    store.putProcedure(makeProc({ id: 'c-neg-ctr', statement: 'Use strict linting', contradictions: 1 }));
+    store.putProcedure(
+      makeProc({
+        id: 'c-neg-ctr',
+        statement: 'Use strict linting',
+        contradictions: 1,
+      }),
+    );
     const updated = applyProcedure(asApplyStore(store), 'c-neg-ctr', 'negative');
     assert.equal(updated.contradictions, 2);
   });
 
   it('neutral feedback only updates lastApplied and timestamps', () => {
-    store.putProcedure(makeProc({
-      id: 'c-neu',
-      statement: 'Log key events',
-      confidence: 0.66,
-      applications: 5,
-      contradictions: 2,
-      stability: 1.7,
-      lastApplied: null,
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    }));
+    store.putProcedure(
+      makeProc({
+        id: 'c-neu',
+        statement: 'Log key events',
+        confidence: 0.66,
+        applications: 5,
+        contradictions: 2,
+        stability: 1.7,
+        lastApplied: null,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
 
     const beforeProc = store.getProcedure('c-neu')!;
     const updated = applyProcedure(asApplyStore(store), 'c-neu', 'neutral');
@@ -323,13 +406,15 @@ describe('applyProcedure confidence dynamics', () => {
   });
 
   it('flags procedure when contradictions >= 3 and confidence < 0.3', () => {
-    store.putProcedure(makeProc({
-      id: 'c-flag',
-      statement: 'Legacy release process',
-      confidence: 0.2,
-      contradictions: 2,
-      flaggedForReview: false,
-    }));
+    store.putProcedure(
+      makeProc({
+        id: 'c-flag',
+        statement: 'Legacy release process',
+        confidence: 0.2,
+        contradictions: 2,
+        flaggedForReview: false,
+      }),
+    );
 
     const updated = applyProcedure(asApplyStore(store), 'c-flag', 'negative');
     assert.equal(updated.contradictions, 3);
@@ -338,7 +423,10 @@ describe('applyProcedure confidence dynamics', () => {
   });
 
   it('throws for nonexistent procedure id', () => {
-    assert.throws(() => applyProcedure(asApplyStore(store), 'does-not-exist', 'positive'), /Procedure not found/);
+    assert.throws(
+      () => applyProcedure(asApplyStore(store), 'does-not-exist', 'positive'),
+      /Procedure not found/,
+    );
   });
 });
 
@@ -359,19 +447,33 @@ describe('recall integration with procedures', () => {
       mentionCount: 6,
       reinforcementCount: 2,
       sourceFiles: ['deploy.md'],
-      excerpts: [{ file: 'deploy.md', text: 'Deploy workflow and rollback checklist', date: '2026-01-15' }],
+      excerpts: [
+        {
+          file: 'deploy.md',
+          text: 'Deploy workflow and rollback checklist',
+          date: '2026-01-15',
+        },
+      ],
     });
 
     const embedding = await embedder.embed('deploy workflow rollback checklist');
-    store.putEmbedding('n-deploy', 'node', 'deploy workflow rollback checklist', embedding, embedder.name);
+    store.putEmbedding(
+      'n-deploy',
+      'node',
+      'deploy workflow rollback checklist',
+      embedding,
+      embedder.name,
+    );
 
-    store.putProcedure(makeProc({
-      id: 'r-proc-1',
-      statement: 'Use canary deploy and monitor errors',
-      type: 'skill',
-      triggerKeywords: ['deploy', 'rollback'],
-      confidence: 0.85,
-    }));
+    store.putProcedure(
+      makeProc({
+        id: 'r-proc-1',
+        statement: 'Use canary deploy and monitor errors',
+        type: 'skill',
+        triggerKeywords: ['deploy', 'rollback'],
+        confidence: 0.85,
+      }),
+    );
   });
 
   after(() => {
@@ -379,7 +481,9 @@ describe('recall integration with procedures', () => {
   });
 
   it('recall includes procedures when procedures match', async () => {
-    const response = await recall(store, embedder, { query: 'deploy rollback' });
+    const response = await recall(store, embedder, {
+      query: 'deploy rollback',
+    });
     assert.ok(response.results.length > 0);
     assert.ok(response.procedures.length > 0);
     assert.equal(response.procedures[0].id, 'r-proc-1');
@@ -396,7 +500,9 @@ describe('recall integration with procedures', () => {
   });
 
   it('recall procedure matches contain score and matchedKeywords', async () => {
-    const response = await recall(store, embedder, { query: 'deploy rollback' });
+    const response = await recall(store, embedder, {
+      query: 'deploy rollback',
+    });
     const proc = response.procedures[0];
 
     assert.ok(proc);

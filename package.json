@@ -23,19 +23,29 @@
   "workspaces": [
     "packages/*"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "build": "npm -ws run build",
-    "typecheck": "npm -ws run typecheck",
-    "test": "npx tsx --test packages/core/src/__tests__/*.test.ts",
-    "test:parser": "npx tsx --test packages/parser/src/__tests__/*.test.ts",
-    "test:integration": "npx tsx --test test/integration/*.test.ts",
-    "test:all": "npx tsx --test packages/core/src/__tests__/*.test.ts packages/parser/src/__tests__/*.test.ts packages/cli/src/__tests__/*.test.ts test/integration/*.test.ts",
-    "lint": "npm -ws run lint"
+    "build": "npm -ws run build --if-present",
+    "typecheck": "npm -ws run typecheck --if-present",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "pretest": "npm run build -w @nacre/core -w @nacre/parser",
+    "test": "tsx --test packages/core/src/__tests__/*.test.ts packages/parser/src/__tests__/*.test.ts packages/cli/src/__tests__/*.test.ts packages/sdk/src/__tests__/*.test.ts test/integration/*.test.ts",
+    "test:core": "tsx --test packages/core/src/__tests__/*.test.ts",
+    "test:parser": "tsx --test packages/parser/src/__tests__/*.test.ts",
+    "test:cli": "tsx --test packages/cli/src/__tests__/*.test.ts",
+    "test:sdk": "tsx --test packages/sdk/src/__tests__/*.test.ts",
+    "test:integration": "tsx --test test/integration/*.test.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.2.0",
     "tsup": "^8.5.1",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {

@@ -184,7 +184,7 @@ describe('SqliteStore embedding operations', () => {
 
     const queryVec = await embedder.embed('episode content');
     const onlyEpisodes = store.searchSimilar(queryVec, { type: 'episode' });
-    assert.ok(onlyEpisodes.every(r => r.type === 'episode'));
+    assert.ok(onlyEpisodes.every((r) => r.type === 'episode'));
   });
 
   it('searchSimilar respects limit', async () => {
@@ -196,7 +196,7 @@ describe('SqliteStore embedding operations', () => {
   it('searchSimilar respects minSimilarity threshold', async () => {
     const queryVec = await embedder.embed('something very specific');
     const results = store.searchSimilar(queryVec, { minSimilarity: 0.99 });
-    assert.ok(results.every(r => r.similarity >= 0.99));
+    assert.ok(results.every((r) => r.similarity >= 0.99));
   });
 
   it('deleteEmbedding removes the embedding', async () => {
@@ -329,13 +329,17 @@ describe('OnnxEmbedder', () => {
   });
 
   it('throws helpful error when module not found', async () => {
-    const embedder = new OnnxEmbedder();
+    // Force the dynamic-import path to fail deterministically, independent of
+    // whether the optional @huggingface/transformers dep is installed.
+    const embedder = new OnnxEmbedder({
+      _moduleName: '@nacre/__missing-transformers-for-test__',
+    });
     await assert.rejects(
       () => embedder.embed('test'),
       (err: Error) => {
         assert.match(err.message, /requires @huggingface\/transformers/);
         return true;
-      }
+      },
     );
   });
 });
@@ -394,7 +398,7 @@ describe('OpenAIEmbedder', () => {
         (err: Error) => {
           assert.match(err.message, /requires an API key/);
           return true;
-        }
+        },
       );
     } finally {
       if (savedKey !== undefined) process.env.OPENAI_API_KEY = savedKey;
@@ -414,7 +418,10 @@ describe('OpenAIEmbedder', () => {
       } as Response;
     };
 
-    const embedder = new OpenAIEmbedder({ apiKey: 'k', baseUrl: 'https://custom.api/v1' });
+    const embedder = new OpenAIEmbedder({
+      apiKey: 'k',
+      baseUrl: 'https://custom.api/v1',
+    });
     await embedder.embed('test');
     assert.ok(calledUrl.startsWith('https://custom.api/v1'), `URL was ${calledUrl}`);
   });
@@ -434,7 +441,7 @@ describe('OpenAIEmbedder', () => {
       (err: Error) => {
         assert.match(err.message, /invalid/i);
         return true;
-      }
+      },
     );
   });
 
@@ -453,12 +460,15 @@ describe('OpenAIEmbedder', () => {
       (err: Error) => {
         assert.match(err.message, /rate limit/i);
         return true;
-      }
+      },
     );
   });
 
   it('text-embedding-3-large has 3072 dimensions', () => {
-    const embedder = new OpenAIEmbedder({ apiKey: 'k', model: 'text-embedding-3-large' });
+    const embedder = new OpenAIEmbedder({
+      apiKey: 'k',
+      model: 'text-embedding-3-large',
+    });
     assert.equal(embedder.dimensions, 3072);
   });
 

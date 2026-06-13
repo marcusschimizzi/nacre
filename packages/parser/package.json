@@ -21,7 +21,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test",
-    "lint": "echo 'no lint yet'"
+    "test": "tsx --test src/__tests__/*.test.ts",
+    "lint": "biome check ."
   }
 }

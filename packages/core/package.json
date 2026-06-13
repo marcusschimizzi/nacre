@@ -12,7 +12,7 @@
   },
   "files": ["dist"],
   "dependencies": {
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^12.6.2"
   },
   "optionalDependencies": {
     "@huggingface/transformers": "^3.0.0"
@@ -20,7 +20,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npx tsx --test src/__tests__/*.test.ts",
-    "lint": "echo 'no lint yet'"
+    "test": "tsx --test src/__tests__/*.test.ts",
+    "lint": "biome check ."
   }
 }
