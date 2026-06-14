@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { detectApi, createApiClient, type ApiStatus } from './api/data-source.ts';
 import type { RecallResult } from './api/types.ts';
 import { loadGraph, transformGraph, getEntityTypes, getEdgeTypes } from './graph/loader.ts';
@@ -12,8 +12,51 @@ import { ProceduresPanel } from './panels/ProceduresPanel.tsx';
 import { TemporalDiffPanel } from './panels/TemporalDiffPanel.tsx';
 import { NodeDetailsPanel } from './panels/NodeDetailsPanel.tsx';
 import { linkIdSet, carryOverPositions, diffToPinnedIds } from './graph/transition.ts';
+import { sliderValueToDate, formatDateLabel } from './graph/time-scrub.ts';
 
 const STATIC_GRAPH_URL = '/graph.json';
+
+/**
+ * Time-scrub control: a labeled range slider over the graph's date range.
+ * At the far right (live) it reports `null`; otherwise the interpolated date.
+ */
+function TimeScrubber({
+  earliest,
+  latest,
+  onChange,
+}: {
+  earliest: Date;
+  latest: Date;
+  onChange: (date: Date | null) => void;
+}) {
+  const [label, setLabel] = useState(() => formatDateLabel(latest));
+  return (
+    <div id="time-scrub">
+      <div id="time-scrub-header">
+        <span>Time</span>
+        <span id="time-scrub-date">{label}</span>
+      </div>
+      <input
+        id="time-slider"
+        type="range"
+        min="0"
+        max="100"
+        defaultValue="100"
+        onInput={(e) => {
+          const value = parseInt((e.target as HTMLInputElement).value, 10);
+          const live = value >= 100;
+          const date = sliderValueToDate(value, earliest, latest);
+          onChange(live ? null : date);
+          setLabel(formatDateLabel(live ? latest : date));
+        }}
+      />
+      <div id="time-scrub-range">
+        <span>{formatDateLabel(earliest)}</span>
+        <span>{formatDateLabel(latest)}</span>
+      </div>
+    </div>
+  );
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -79,8 +122,6 @@ export function App() {
   const [, forceUiRefresh] = useState(0);
 
   const apiOnline = apiStatus.status === 'online';
-
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadInitial = useCallback(async () => {
     setError(null);
