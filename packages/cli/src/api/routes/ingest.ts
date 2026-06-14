@@ -6,7 +6,7 @@ import { extractFromConversation } from '@nacre/parser';
 
 const messageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system', 'tool']),
-  content: z.string(),
+  content: z.string().max(100_000),
   timestamp: z.string().optional(),
   name: z.string().optional(),
   toolName: z.string().optional(),
@@ -14,7 +14,7 @@ const messageSchema = z.object({
 });
 
 const ingestSchema = z.object({
-  messages: z.array(messageSchema).min(1),
+  messages: z.array(messageSchema).min(1).max(2000),
   metadata: z
     .object({
       sessionId: z.string().optional(),
@@ -88,8 +88,8 @@ export function ingestRoutes(store: SqliteStore, graphPath: string): Hono {
       const result = await ingestConversation({ messages, metadata }, ingestOpts);
       return c.json({ data: result }, 201);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return c.json({ error: { message, code: 'INGEST_ERROR' } }, 500);
+      console.error('[nacre api] ingest failed:', err);
+      return c.json({ error: { message: 'Ingestion failed', code: 'INGEST_ERROR' } }, 500);
     }
   });
 

@@ -21,8 +21,16 @@ export default defineCommand({
     },
     host: {
       type: 'string',
-      description: 'Server host',
-      default: '0.0.0.0',
+      description: 'Server host (defaults to loopback; exposing requires --token)',
+      default: '127.0.0.1',
+    },
+    token: {
+      type: 'string',
+      description: 'Bearer token required on every request (or set NACRE_API_TOKEN)',
+    },
+    'cors-origin': {
+      type: 'string',
+      description: 'Comma-separated allowed browser origins (default: dashboard/viz localhost)',
     },
     cors: {
       type: 'boolean',
@@ -37,14 +45,35 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const store = SqliteStore.open(graphPath);
     const port = parseInt(args.port as string, 10);
     const hostname = args.host as string;
+    const token = (args.token as string | undefined) ?? process.env.NACRE_API_TOKEN;
+    const corsOriginArg = args['cors-origin'] as string | undefined;
+    const corsOrigins = corsOriginArg
+      ? corsOriginArg
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : undefined;
+
+    // Secure default: never expose an unauthenticated server beyond loopback.
+    const loopback = new Set(['127.0.0.1', '::1', 'localhost']);
+    if (!loopback.has(hostname) && !token) {
+      console.error(`Refusing to bind to non-loopback host "${hostname}" without authentication.`);
+      console.error(
+        'Set a token via --token or NACRE_API_TOKEN, or bind to 127.0.0.1 (the default).',
+      );
+      process.exit(1);
+    }
+
+    const store = SqliteStore.open(graphPath);
 
     const app = createApp({
       store,
       graphPath,
       enableCors: args.cors as boolean,
+      corsOrigins,
+      token,
     });
 
     const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
@@ -52,6 +81,7 @@ export default defineCommand({
         `nacre API server running at http://${hostname === '0.0.0.0' ? 'localhost' : hostname}:${info.port}`,
       );
       console.log(`Graph: ${graphPath} (${store.nodeCount()} nodes, ${store.edgeCount()} edges)`);
+      console.log(`Auth: ${token ? 'bearer token required' : 'none (loopback only)'}`);
       console.log('');
       console.log('Endpoints:');
       console.log('  GET  /api/v1/health');
