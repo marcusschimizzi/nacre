@@ -47,6 +47,12 @@ export function loadConfig(graphPath: string | null): NacreConfig {
   return {};
 }
 
+export function resolveProvider(
+  opts: ResolveProviderOptions & { allowNull: true },
+): EmbeddingProvider | null;
+export function resolveProvider(
+  opts?: ResolveProviderOptions & { allowNull?: false },
+): EmbeddingProvider;
 export function resolveProvider(opts?: ResolveProviderOptions): EmbeddingProvider | null {
   let providerName: string | undefined = opts?.provider;
 
