@@ -117,13 +117,14 @@ export class HealthDashboard {
     if (!metricsDiv) return;
 
     // Calculate graph density
-    const graphDensity = stats.nodeCount > 1
-      ? stats.edgeCount / (stats.nodeCount * (stats.nodeCount - 1) / 2)
-      : 0;
+    const graphDensity =
+      stats.nodeCount > 1 ? stats.edgeCount / ((stats.nodeCount * (stats.nodeCount - 1)) / 2) : 0;
 
     const lastConsolidated = new Date(stats.lastConsolidated);
     const now = new Date();
-    const daysSinceConsolidation = Math.floor((now.getTime() - lastConsolidated.getTime()) / (1000 * 60 * 60 * 24));
+    const daysSinceConsolidation = Math.floor(
+      (now.getTime() - lastConsolidated.getTime()) / (1000 * 60 * 60 * 24),
+    );
 
     metricsDiv.innerHTML = `
       ${this.renderMetricCard('Nodes', stats.nodeCount.toLocaleString())}
@@ -134,7 +135,7 @@ export class HealthDashboard {
       ${this.renderMetricCard(
         'Last Consolidated',
         daysSinceConsolidation === 0 ? 'Today' : `${daysSinceConsolidation}d ago`,
-        this.getConsolidationColor(daysSinceConsolidation)
+        this.getConsolidationColor(daysSinceConsolidation),
       )}
       ${this.renderNodesByType(stats.nodesByType)}
     `;
@@ -160,9 +161,10 @@ export class HealthDashboard {
     const entries = Object.entries(nodesByType).sort((a, b) => b[1] - a[1]);
     const total = entries.reduce((sum, [, count]) => sum + count, 0);
 
-    const bars = entries.map(([type, count]) => {
-      const percentage = (count / total) * 100;
-      return `
+    const bars = entries
+      .map(([type, count]) => {
+        const percentage = (count / total) * 100;
+        return `
         <div class="type-bar-row">
           <div class="type-label">${type}</div>
           <div class="type-bar-container">
@@ -171,7 +173,8 @@ export class HealthDashboard {
           <div class="type-count">${count}</div>
         </div>
       `;
-    }).join('');
+      })
+      .join('');
 
     return `
       <div class="metric-section">
@@ -206,14 +209,16 @@ export class HealthDashboard {
   /**
    * Calculate metrics from loaded graph data (fallback when API unavailable)
    */
-  static calculateMetrics(nodes: ForceNode[], links: ForceLink[], config: { decayRate: number }): HealthMetrics {
+  static calculateMetrics(
+    nodes: ForceNode[],
+    links: ForceLink[],
+    config: { decayRate: number },
+  ): HealthMetrics {
     const nodeCount = nodes.length;
     const edgeCount = links.length;
 
     // Calculate graph density
-    const graphDensity = nodeCount > 1
-      ? edgeCount / (nodeCount * (nodeCount - 1) / 2)
-      : 0;
+    const graphDensity = nodeCount > 1 ? edgeCount / ((nodeCount * (nodeCount - 1)) / 2) : 0;
 
     // Calculate average weight
     const totalWeight = links.reduce((sum, link) => sum + link.weight, 0);
@@ -226,7 +231,7 @@ export class HealthDashboard {
     }
 
     // Reinforcement frequency histogram (10 buckets)
-    const maxReinforcement = Math.max(...nodes.map(n => n.reinforcementCount), 1);
+    const maxReinforcement = Math.max(...nodes.map((n) => n.reinforcementCount), 1);
     const reinforcementFrequency = new Array(10).fill(0);
     for (const node of nodes) {
       const bucket = Math.min(Math.floor((node.reinforcementCount / maxReinforcement) * 10), 9);
@@ -235,7 +240,7 @@ export class HealthDashboard {
 
     // Memory age distribution (10 buckets based on firstSeen)
     const now = new Date();
-    const timestamps = nodes.map(n => new Date(n.firstSeen).getTime()).sort((a, b) => a - b);
+    const timestamps = nodes.map((n) => new Date(n.firstSeen).getTime()).sort((a, b) => a - b);
     const minTime = timestamps[0] ?? now.getTime();
     const maxTime = timestamps[timestamps.length - 1] ?? now.getTime();
     const timeRange = maxTime - minTime || 1;

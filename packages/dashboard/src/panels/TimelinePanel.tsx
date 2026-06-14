@@ -19,7 +19,8 @@ export function TimelinePanel(props: {
 
     setLoading(true);
     setError(null);
-    props.loadEpisodes()
+    props
+      .loadEpisodes()
       .then((eps) => {
         if (cancelled) return;
         setEpisodes(eps);

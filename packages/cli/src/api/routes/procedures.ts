@@ -19,15 +19,22 @@ export function procedureRoutes(store: SqliteStore): Hono {
   app.post('/procedures', async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || !body.statement) {
-      return c.json({ error: { message: 'Missing required field: statement', code: 'BAD_REQUEST' } }, 400);
+      return c.json(
+        { error: { message: 'Missing required field: statement', code: 'BAD_REQUEST' } },
+        400,
+      );
     }
 
     const timestamp = new Date().toISOString();
     const statement: string = body.statement;
     const type: ProcedureType = body.type ?? 'insight';
 
-    const keywords: string[] = body.keywords ??
-      statement.toLowerCase().split(/[^a-z0-9]+/).filter((t: string) => t.length >= 3);
+    const keywords: string[] =
+      body.keywords ??
+      statement
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((t: string) => t.length >= 3);
 
     let hash = 0;
     const key = `proc:${statement}`;

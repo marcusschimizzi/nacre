@@ -1,9 +1,5 @@
 import { createHash } from 'node:crypto';
-import type {
-  ConversationInput,
-  ConversationChunk,
-  EntityMap,
-} from './types.js';
+import type { ConversationInput, ConversationChunk, EntityMap } from './types.js';
 import type { EmbeddingProvider } from './embeddings.js';
 import type { SqliteStore } from './store.js';
 import { chunkConversation, chunkToEpisode, type ChunkOptions } from './conversation.js';
@@ -16,7 +12,10 @@ export interface IngestOptions {
   entityMap?: EntityMap;
   chunkOptions?: ChunkOptions;
   deduplicateBy?: 'sessionId' | 'contentHash' | 'none';
-  extractEntities?: (chunk: ConversationChunk, entityMap?: EntityMap) => {
+  extractEntities?: (
+    chunk: ConversationChunk,
+    entityMap?: EntityMap,
+  ) => {
     nodes: Array<{
       label: string;
       type: string;
@@ -42,7 +41,7 @@ export interface IngestResult {
 }
 
 function computeContentHash(input: ConversationInput): string {
-  const content = input.messages.map(m => `${m.role}:${m.content}`).join('\n');
+  const content = input.messages.map((m) => `${m.role}:${m.content}`).join('\n');
   return createHash('sha256').update(content).digest('hex').slice(0, 32);
 }
 
@@ -125,7 +124,7 @@ export async function ingestConversation(
             mentionCount: 1,
             reinforcementCount: 0,
             sourceFiles: [episode.source],
-            excerpts: entityNode.excerpts.slice(0, 3).map(text => ({
+            excerpts: entityNode.excerpts.slice(0, 3).map((text) => ({
               file: episode.source,
               text,
               date: now,
@@ -176,11 +175,13 @@ export async function ingestConversation(
             firstFormed: now,
             lastReinforced: now,
             stability: 1.0,
-            evidence: [{
-              file: episode.source,
-              date: now,
-              context: edge.context,
-            }],
+            evidence: [
+              {
+                file: episode.source,
+                date: now,
+                context: edge.context,
+              },
+            ],
           });
           result.edgesCreated++;
         }

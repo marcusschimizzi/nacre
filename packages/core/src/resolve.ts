@@ -29,22 +29,14 @@ export function levenshteinDistance(a: string, b: string): number {
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost,
-      );
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
     }
   }
 
   return dp[m][n];
 }
 
-export function fuzzyMatch(
-  candidate: string,
-  existing: string,
-  maxDistance?: number,
-): boolean {
+export function fuzzyMatch(candidate: string, existing: string, maxDistance?: number): boolean {
   const a = normalize(candidate);
   const b = normalize(existing);
 

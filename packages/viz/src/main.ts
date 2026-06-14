@@ -136,11 +136,7 @@ async function init(): Promise<void> {
           const z = node.z ?? 0;
           const dist = Math.hypot(x, y, z) || 1;
           const ratio = 1 + 80 / dist;
-          graph.cameraPosition(
-            { x: x * ratio, y: y * ratio, z: z * ratio },
-            { x, y, z },
-            1200,
-          );
+          graph.cameraPosition({ x: x * ratio, y: y * ratio, z: z * ratio }, { x, y, z }, 1200);
         }
       },
       onHighlight: (nodeIds: string[]) => {
@@ -242,18 +238,27 @@ async function init(): Promise<void> {
   searchInput.placeholder = isLive ? 'Recall search...' : 'Search nodes...';
 }
 
-function updateLoadingProgress(progress: { stage: string; totalNodes: number; loadedNodes: number; totalEdges: number; loadedEdges: number }): void {
+function updateLoadingProgress(progress: {
+  stage: string;
+  totalNodes: number;
+  loadedNodes: number;
+  totalEdges: number;
+  loadedEdges: number;
+}): void {
   const loadingText = document.getElementById('loading-text');
   const loadingDetail = document.getElementById('loading-detail');
   if (!loadingText || !loadingDetail) return;
 
-  const stageText = progress.stage === 'fetching' ? 'Fetching data' :
-                   progress.stage === 'processing' ? 'Processing' : 'Complete';
+  const stageText =
+    progress.stage === 'fetching'
+      ? 'Fetching data'
+      : progress.stage === 'processing'
+        ? 'Processing'
+        : 'Complete';
   loadingText.textContent = `${stageText}...`;
 
   if (progress.totalNodes > 0 || progress.totalEdges > 0) {
-    loadingDetail.textContent =
-      `Nodes: ${progress.loadedNodes}/${progress.totalNodes} | Edges: ${progress.loadedEdges}/${progress.totalEdges}`;
+    loadingDetail.textContent = `Nodes: ${progress.loadedNodes}/${progress.totalNodes} | Edges: ${progress.loadedEdges}/${progress.totalEdges}`;
   }
 }
 
@@ -322,7 +327,9 @@ function setupLiveReload(
 
       dashboard?.refreshMetrics();
 
-      console.log(`[Nacre Viz] Reloaded: ${freshData.nodes.length} nodes, ${freshData.links.length} links`);
+      console.log(
+        `[Nacre Viz] Reloaded: ${freshData.nodes.length} nodes, ${freshData.links.length} links`,
+      );
     } catch (e) {
       console.error('[Nacre Viz] Reload failed:', e);
     } finally {
@@ -354,8 +361,12 @@ function setupLiveReload(
       margin-left: 2px;
     `;
     btn.addEventListener('click', () => reloadLiveGraph());
-    btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(100, 200, 100, 0.2)'; });
-    btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(60, 60, 100, 0.4)'; });
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(100, 200, 100, 0.2)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(60, 60, 100, 0.4)';
+    });
     indicator.appendChild(btn);
   }
 

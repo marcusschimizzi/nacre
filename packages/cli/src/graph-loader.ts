@@ -1,6 +1,6 @@
 /**
  * Graph loader — opens a nacre graph from either SQLite (.db) or JSON (.json).
- * 
+ *
  * This provides a unified interface for CLI commands to load graphs
  * regardless of the storage format.
  */
@@ -10,7 +10,7 @@ import { SqliteStore, type NacreGraph } from '@nacre/core';
 
 export interface LoadedGraph {
   graph: NacreGraph;
-  store: SqliteStore | null;  // non-null if loaded from SQLite
+  store: SqliteStore | null; // non-null if loaded from SQLite
   format: 'sqlite' | 'json';
 }
 
@@ -61,7 +61,7 @@ export async function loadGraph(graphPath: string): Promise<LoadedGraph> {
 
   throw new Error(
     `Could not find graph at: ${graphPath}\n` +
-    `Tried: ${graphPath}.db, ${graphPath}.json, ${dirJsonPath}`
+      `Tried: ${graphPath}.db, ${graphPath}.json, ${dirJsonPath}`,
   );
 }
 

@@ -6,7 +6,8 @@ import { loadGraph, closeGraph } from '../graph-loader.js';
 export default defineCommand({
   meta: {
     name: 'insights',
-    description: 'Analyze graph significance — emerging topics, anchors, fading-but-important nodes',
+    description:
+      'Analyze graph significance — emerging topics, anchors, fading-but-important nodes',
   },
   args: {
     graph: {

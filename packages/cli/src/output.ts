@@ -42,10 +42,7 @@ export function formatText(data: {
   return lines.join('\n');
 }
 
-export function formatConsolidationSummary(
-  result: ConsolidationResult,
-  elapsedMs: number,
-): string {
+export function formatConsolidationSummary(result: ConsolidationResult, elapsedMs: number): string {
   const totalNodes = Object.keys(result.graph.nodes).length;
   const totalEdges = Object.keys(result.graph.edges).length;
 

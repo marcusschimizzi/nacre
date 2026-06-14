@@ -1,11 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  daysBetween,
-  calculateStability,
-  computeCurrentWeight,
-  decayAllEdges,
-} from '../decay.js';
+import { daysBetween, calculateStability, computeCurrentWeight, decayAllEdges } from '../decay.js';
 import { createGraph, addEdge } from '../graph.js';
 import type { MemoryEdge } from '../types.js';
 
@@ -19,10 +14,7 @@ describe('daysBetween', () => {
   });
 
   it('is commutative (absolute difference)', () => {
-    assert.equal(
-      daysBetween('2026-01-10', '2026-01-20'),
-      daysBetween('2026-01-20', '2026-01-10'),
-    );
+    assert.equal(daysBetween('2026-01-10', '2026-01-20'), daysBetween('2026-01-20', '2026-01-10'));
   });
 
   it('handles cross-month boundaries', () => {
@@ -31,10 +23,7 @@ describe('daysBetween', () => {
 
   it('returns 0 for sub-day differences (elapsed-time semantics)', () => {
     // 23:59 → 00:01 should be 0 days (2 minutes apart)
-    assert.equal(
-      daysBetween('2026-02-07T23:59:00', '2026-02-08T00:01:00'),
-      0,
-    );
+    assert.equal(daysBetween('2026-02-07T23:59:00', '2026-02-08T00:01:00'), 0);
   });
 });
 

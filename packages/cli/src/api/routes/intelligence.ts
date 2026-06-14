@@ -55,9 +55,15 @@ export function intelligenceRoutes(store: SqliteStore, graphPath: string): Hono 
 
     const parsed = consolidateSchema.safeParse(body);
     if (!parsed.success) {
-      return c.json({
-        error: { message: parsed.error.issues.map(i => i.message).join('; '), code: 'VALIDATION_ERROR' },
-      }, 400);
+      return c.json(
+        {
+          error: {
+            message: parsed.error.issues.map((i) => i.message).join('; '),
+            code: 'VALIDATION_ERROR',
+          },
+        },
+        400,
+      );
     }
 
     const { inputs, outDir } = parsed.data;

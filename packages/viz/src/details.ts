@@ -23,15 +23,21 @@ export function showNodeDetails(
       const tgt = typeof l.target === 'string' ? l.target : l.target.id;
       const neighborId = src === node.id ? tgt : src;
       const neighborNode = allNodes.get(neighborId);
-      return { id: neighborId, label: neighborNode?.label ?? neighborId, type: l.type, weight: l.weight };
+      return {
+        id: neighborId,
+        label: neighborNode?.label ?? neighborId,
+        type: l.type,
+        weight: l.weight,
+      };
     })
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 20);
 
   const color = nodeColor(node.type);
-  const dateRange = node.firstSeen === node.lastReinforced
-    ? node.firstSeen
-    : `${node.firstSeen} — ${node.lastReinforced}`;
+  const dateRange =
+    node.firstSeen === node.lastReinforced
+      ? node.firstSeen
+      : `${node.firstSeen} — ${node.lastReinforced}`;
 
   el.innerHTML = `
     <h3>${escapeHtml(node.label)}</h3>

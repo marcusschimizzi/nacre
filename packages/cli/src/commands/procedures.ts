@@ -210,7 +210,9 @@ export default defineCommand({
           process.exit(1);
         }
         if (!feedback || !isFeedback(feedback)) {
-          console.error('Missing or invalid --feedback for apply. Use: positive, negative, neutral');
+          console.error(
+            'Missing or invalid --feedback for apply. Use: positive, negative, neutral',
+          );
           process.exit(1);
         }
 

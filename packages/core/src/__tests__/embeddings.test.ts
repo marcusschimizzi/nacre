@@ -184,7 +184,7 @@ describe('SqliteStore embedding operations', () => {
 
     const queryVec = await embedder.embed('episode content');
     const onlyEpisodes = store.searchSimilar(queryVec, { type: 'episode' });
-    assert.ok(onlyEpisodes.every(r => r.type === 'episode'));
+    assert.ok(onlyEpisodes.every((r) => r.type === 'episode'));
   });
 
   it('searchSimilar respects limit', async () => {
@@ -196,7 +196,7 @@ describe('SqliteStore embedding operations', () => {
   it('searchSimilar respects minSimilarity threshold', async () => {
     const queryVec = await embedder.embed('something very specific');
     const results = store.searchSimilar(queryVec, { minSimilarity: 0.99 });
-    assert.ok(results.every(r => r.similarity >= 0.99));
+    assert.ok(results.every((r) => r.similarity >= 0.99));
   });
 
   it('deleteEmbedding removes the embedding', async () => {
@@ -346,7 +346,7 @@ describe('OnnxEmbedder', () => {
       (err: Error) => {
         assert.match(err.message, /requires @huggingface\/transformers/);
         return true;
-      }
+      },
     );
   });
 });
@@ -405,7 +405,7 @@ describe('OpenAIEmbedder', () => {
         (err: Error) => {
           assert.match(err.message, /requires an API key/);
           return true;
-        }
+        },
       );
     } finally {
       if (savedKey !== undefined) process.env.OPENAI_API_KEY = savedKey;
@@ -445,7 +445,7 @@ describe('OpenAIEmbedder', () => {
       (err: Error) => {
         assert.match(err.message, /invalid/i);
         return true;
-      }
+      },
     );
   });
 
@@ -464,7 +464,7 @@ describe('OpenAIEmbedder', () => {
       (err: Error) => {
         assert.match(err.message, /rate limit/i);
         return true;
-      }
+      },
     );
   });
 

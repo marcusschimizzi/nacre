@@ -13,11 +13,7 @@ import {
 import { createGraph, addNode, addEdge } from '../graph.js';
 import type { EntityType, NacreGraph } from '../types.js';
 
-function makeNode(
-  label: string,
-  type: EntityType,
-  overrides: Record<string, unknown> = {},
-) {
+function makeNode(label: string, type: EntityType, overrides: Record<string, unknown> = {}) {
   return {
     label,
     type,
@@ -56,53 +52,93 @@ function makeEdge(
 
 function buildTestGraph(): NacreGraph {
   const graph = createGraph();
-  const marcus = addNode(graph, makeNode('marcus', 'person', {
-    mentionCount: 10,
-    reinforcementCount: 8,
-    lastReinforced: '2026-01-28',
-    aliases: ['Marcus S'],
-  }));
-  const nacre = addNode(graph, makeNode('nacre', 'concept', {
-    mentionCount: 8,
-    reinforcementCount: 5,
-    lastReinforced: '2026-01-27',
-  }));
-  const typescript = addNode(graph, makeNode('typescript', 'tool', {
-    mentionCount: 5,
-    reinforcementCount: 3,
-    lastReinforced: '2026-01-25',
-  }));
-  const tidepool = addNode(graph, makeNode('tide-pool', 'project', {
-    mentionCount: 4,
-    reinforcementCount: 2,
-    lastReinforced: '2026-01-20',
-  }));
-  const orphan = addNode(graph, makeNode('forgotten-idea', 'concept', {
-    mentionCount: 1,
-    reinforcementCount: 0,
-    lastReinforced: '2026-01-10',
-  }));
+  const marcus = addNode(
+    graph,
+    makeNode('marcus', 'person', {
+      mentionCount: 10,
+      reinforcementCount: 8,
+      lastReinforced: '2026-01-28',
+      aliases: ['Marcus S'],
+    }),
+  );
+  const nacre = addNode(
+    graph,
+    makeNode('nacre', 'concept', {
+      mentionCount: 8,
+      reinforcementCount: 5,
+      lastReinforced: '2026-01-27',
+    }),
+  );
+  const typescript = addNode(
+    graph,
+    makeNode('typescript', 'tool', {
+      mentionCount: 5,
+      reinforcementCount: 3,
+      lastReinforced: '2026-01-25',
+    }),
+  );
+  const tidepool = addNode(
+    graph,
+    makeNode('tide-pool', 'project', {
+      mentionCount: 4,
+      reinforcementCount: 2,
+      lastReinforced: '2026-01-20',
+    }),
+  );
+  const orphan = addNode(
+    graph,
+    makeNode('forgotten-idea', 'concept', {
+      mentionCount: 1,
+      reinforcementCount: 0,
+      lastReinforced: '2026-01-10',
+    }),
+  );
 
-  addEdge(graph, makeEdge(marcus.id, nacre.id, 'explicit', {
-    weight: 0.9, baseWeight: 1.0, reinforcementCount: 5,
-    lastReinforced: '2026-01-28',
-  }));
-  addEdge(graph, makeEdge(marcus.id, typescript.id, 'co-occurrence', {
-    weight: 0.6, baseWeight: 0.3, reinforcementCount: 3,
-    lastReinforced: '2026-01-25',
-  }));
-  addEdge(graph, makeEdge(nacre.id, typescript.id, 'co-occurrence', {
-    weight: 0.4, baseWeight: 0.3, reinforcementCount: 2,
-    lastReinforced: '2026-01-22',
-  }));
-  addEdge(graph, makeEdge(marcus.id, tidepool.id, 'explicit', {
-    weight: 0.08, baseWeight: 1.0, reinforcementCount: 0,
-    lastReinforced: '2026-01-10',
-  }));
-  addEdge(graph, makeEdge(nacre.id, tidepool.id, 'temporal', {
-    weight: 0.07, baseWeight: 0.1, reinforcementCount: 0,
-    lastReinforced: '2026-01-10',
-  }));
+  addEdge(
+    graph,
+    makeEdge(marcus.id, nacre.id, 'explicit', {
+      weight: 0.9,
+      baseWeight: 1.0,
+      reinforcementCount: 5,
+      lastReinforced: '2026-01-28',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(marcus.id, typescript.id, 'co-occurrence', {
+      weight: 0.6,
+      baseWeight: 0.3,
+      reinforcementCount: 3,
+      lastReinforced: '2026-01-25',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(nacre.id, typescript.id, 'co-occurrence', {
+      weight: 0.4,
+      baseWeight: 0.3,
+      reinforcementCount: 2,
+      lastReinforced: '2026-01-22',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(marcus.id, tidepool.id, 'explicit', {
+      weight: 0.08,
+      baseWeight: 1.0,
+      reinforcementCount: 0,
+      lastReinforced: '2026-01-10',
+    }),
+  );
+  addEdge(
+    graph,
+    makeEdge(nacre.id, tidepool.id, 'temporal', {
+      weight: 0.07,
+      baseWeight: 0.1,
+      reinforcementCount: 0,
+      lastReinforced: '2026-01-10',
+    }),
+  );
 
   return graph;
 }
@@ -220,16 +256,29 @@ describe('generateAlerts', () => {
 
   it('healthy graph reports high health score', () => {
     const graph = createGraph();
-    const a = addNode(graph, makeNode('a', 'concept', {
-      lastReinforced: '2026-01-29', reinforcementCount: 5,
-    }));
-    const b = addNode(graph, makeNode('b', 'concept', {
-      lastReinforced: '2026-01-29', reinforcementCount: 5,
-    }));
-    addEdge(graph, makeEdge(a.id, b.id, 'explicit', {
-      weight: 0.9, baseWeight: 1.0, reinforcementCount: 5,
-      lastReinforced: '2026-01-29',
-    }));
+    const a = addNode(
+      graph,
+      makeNode('a', 'concept', {
+        lastReinforced: '2026-01-29',
+        reinforcementCount: 5,
+      }),
+    );
+    const b = addNode(
+      graph,
+      makeNode('b', 'concept', {
+        lastReinforced: '2026-01-29',
+        reinforcementCount: 5,
+      }),
+    );
+    addEdge(
+      graph,
+      makeEdge(a.id, b.id, 'explicit', {
+        weight: 0.9,
+        baseWeight: 1.0,
+        reinforcementCount: 5,
+        lastReinforced: '2026-01-29',
+      }),
+    );
 
     const result = generateAlerts(graph, { now: new Date('2026-01-30') });
     assert.ok(result.healthScore >= 0.8, `expected >= 0.8, got ${result.healthScore}`);

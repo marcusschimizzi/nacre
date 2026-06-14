@@ -1,9 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import {
-  SqliteStore,
-  generateBrief,
-  generateAlerts,
-} from '@nacre/core';
+import { SqliteStore, generateBrief, generateAlerts } from '@nacre/core';
 
 export function registerResources(server: McpServer, store: SqliteStore): void {
   server.resource(
@@ -15,11 +11,13 @@ export function registerResources(server: McpServer, store: SqliteStore): void {
       const result = generateBrief(graph, { top: 10, recentDays: 7, now: new Date() });
 
       return {
-        contents: [{
-          uri: 'nacre://brief',
-          mimeType: 'text/plain',
-          text: result.summary,
-        }],
+        contents: [
+          {
+            uri: 'nacre://brief',
+            mimeType: 'text/plain',
+            text: result.summary,
+          },
+        ],
       };
     },
   );
@@ -47,11 +45,13 @@ export function registerResources(server: McpServer, store: SqliteStore): void {
       };
 
       return {
-        contents: [{
-          uri: 'nacre://health',
-          mimeType: 'application/json',
-          text: JSON.stringify(health, null, 2),
-        }],
+        contents: [
+          {
+            uri: 'nacre://health',
+            mimeType: 'application/json',
+            text: JSON.stringify(health, null, 2),
+          },
+        ],
       };
     },
   );
@@ -86,11 +86,13 @@ export function registerResources(server: McpServer, store: SqliteStore): void {
       };
 
       return {
-        contents: [{
-          uri: 'nacre://graph/stats',
-          mimeType: 'application/json',
-          text: JSON.stringify(stats, null, 2),
-        }],
+        contents: [
+          {
+            uri: 'nacre://graph/stats',
+            mimeType: 'application/json',
+            text: JSON.stringify(stats, null, 2),
+          },
+        ],
       };
     },
   );

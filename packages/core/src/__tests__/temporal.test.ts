@@ -18,7 +18,9 @@ function makeNode(overrides: Partial<MemoryNode> & { id: string; label: string }
   };
 }
 
-function makeEdge(overrides: Partial<MemoryEdge> & { id: string; source: string; target: string }): MemoryEdge {
+function makeEdge(
+  overrides: Partial<MemoryEdge> & { id: string; source: string; target: string },
+): MemoryEdge {
   return {
     type: 'co-occurrence',
     directed: false,
@@ -162,7 +164,7 @@ describe('Temporal: Entity History', () => {
     assert.equal(history.type, 'node');
     assert.equal(history.snapshots.length, 3);
 
-    const mentions = history.snapshots.map(s => (s.state as MemoryNode).mentionCount);
+    const mentions = history.snapshots.map((s) => (s.state as MemoryNode).mentionCount);
     assert.deepEqual(mentions, [1, 3, 7]);
   });
 
@@ -185,7 +187,7 @@ describe('Temporal: Entity History', () => {
     assert.equal(history.type, 'edge');
     assert.equal(history.snapshots.length, 3);
 
-    const weights = history.snapshots.map(s => (s.state as MemoryEdge).weight);
+    const weights = history.snapshots.map((s) => (s.state as MemoryEdge).weight);
     assert.deepEqual(weights, [0.2, 0.5, 0.9]);
   });
 

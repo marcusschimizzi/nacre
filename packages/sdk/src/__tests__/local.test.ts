@@ -108,10 +108,7 @@ describe('Nacre — local mode', () => {
     });
 
     it('throws for missing memory', async () => {
-      await assert.rejects(
-        () => nacre.feedback('nonexistent', { rating: 1 }),
-        /not found/i,
-      );
+      await assert.rejects(() => nacre.feedback('nonexistent', { rating: 1 }), /not found/i);
     });
   });
 

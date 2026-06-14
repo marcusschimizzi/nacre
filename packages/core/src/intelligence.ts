@@ -22,11 +22,7 @@ function getNeighborSet(adj: AdjacencyMap, nodeId: string): Set<string> {
   return neighbors;
 }
 
-function getSharedNeighborCount(
-  adj: AdjacencyMap,
-  nodeA: string,
-  nodeB: string,
-): number {
+function getSharedNeighborCount(adj: AdjacencyMap, nodeA: string, nodeB: string): number {
   const neighborsA = getNeighborSet(adj, nodeA);
   const neighborsB = getNeighborSet(adj, nodeB);
   let shared = 0;
@@ -63,17 +59,17 @@ export function generateSuggestions(
       targetLabel: tgtNode.label,
       reason: 'pending-near-threshold',
       confidence: Math.min(progress, 0.95),
-      explanation:
-        `Co-occurred ${pe.count}/${threshold} times (${Math.round(progress * 100)}% to auto-link)`,
+      explanation: `Co-occurred ${pe.count}/${threshold} times (${Math.round(progress * 100)}% to auto-link)`,
     });
   }
 
   const nodeIds = Object.keys(graph.nodes);
   const existingEdges = new Set<string>();
   for (const edge of Object.values(graph.edges)) {
-    const key = edge.source < edge.target
-      ? `${edge.source}::${edge.target}`
-      : `${edge.target}::${edge.source}`;
+    const key =
+      edge.source < edge.target
+        ? `${edge.source}::${edge.target}`
+        : `${edge.target}::${edge.source}`;
     existingEdges.add(key);
   }
   const pendingKeys = new Set(
@@ -103,10 +99,7 @@ export function generateSuggestions(
       const nodeB = graph.nodes[b];
       if (!nodeA || !nodeB) continue;
 
-      const maxPossible = Math.min(
-        highConnectivity[i].edges,
-        highConnectivity[j].edges,
-      );
+      const maxPossible = Math.min(highConnectivity[i].edges, highConnectivity[j].edges);
       const confidence = Math.min(shared / maxPossible, 0.9) * 0.8;
 
       suggestions.push({
@@ -132,11 +125,8 @@ export function generateSuggestions(
     const srcEdgeCount = adj[src.id]?.length ?? 0;
     const tgtEdgeCount = adj[tgt.id]?.length ?? 0;
 
-    const typeCombo = src.type < tgt.type
-      ? `${src.type}+${tgt.type}`
-      : `${tgt.type}+${src.type}`;
-    const isInteresting =
-      typeCombo.includes('person') || typeCombo.includes('project');
+    const typeCombo = src.type < tgt.type ? `${src.type}+${tgt.type}` : `${tgt.type}+${src.type}`;
+    const isInteresting = typeCombo.includes('person') || typeCombo.includes('project');
 
     if (!isInteresting) continue;
     if (srcEdgeCount < 2 || tgtEdgeCount < 2) continue;
@@ -148,8 +138,7 @@ export function generateSuggestions(
       targetLabel: tgt.label,
       reason: 'type-bridge',
       confidence: Math.min(edge.weight, 0.85),
-      explanation:
-        `${src.type} "${src.label}" and ${tgt.type} "${tgt.label}" strongly co-occur (weight: ${edge.weight.toFixed(2)})`,
+      explanation: `${src.type} "${src.label}" and ${tgt.type} "${tgt.label}" strongly co-occur (weight: ${edge.weight.toFixed(2)})`,
     });
   }
 
@@ -206,9 +195,10 @@ export function labelClusters(graph: NacreGraph): LabeledCluster[] {
         typeLabels.push(`${count} ${type}${count > 1 ? 's' : ''}`);
       }
 
-      const label = members.length <= 3
-        ? members.map((m) => m.label).join(', ')
-        : `${hubLabel} (${typeLabels.join(', ')})`;
+      const label =
+        members.length <= 3
+          ? members.map((m) => m.label).join(', ')
+          : `${hubLabel} (${typeLabels.join(', ')})`;
 
       return {
         hub: hubLabel,
@@ -243,8 +233,7 @@ export function analyzeSignificance(
     return { node, score, edgeCount, daysSinceReinforced };
   });
 
-  const ageDays = (n: ScoredNode) =>
-    daysBetween(n.node.firstSeen, nowStr) || 1;
+  const ageDays = (n: ScoredNode) => daysBetween(n.node.firstSeen, nowStr) || 1;
 
   const emerging = scored
     .filter((s) => {
@@ -263,8 +252,10 @@ export function analyzeSignificance(
   const anchors = scored
     .filter((s) => s.edgeCount >= 5 && s.node.mentionCount >= 3)
     .sort((a, b) => {
-      const scoreA = a.edgeCount * 0.5 + a.node.mentionCount * 0.3 + a.node.reinforcementCount * 0.2;
-      const scoreB = b.edgeCount * 0.5 + b.node.mentionCount * 0.3 + b.node.reinforcementCount * 0.2;
+      const scoreA =
+        a.edgeCount * 0.5 + a.node.mentionCount * 0.3 + a.node.reinforcementCount * 0.2;
+      const scoreB =
+        b.edgeCount * 0.5 + b.node.mentionCount * 0.3 + b.node.reinforcementCount * 0.2;
       return scoreB - scoreA;
     })
     .slice(0, 10);
@@ -276,11 +267,12 @@ export function analyzeSignificance(
       if (s.daysSinceReinforced <= recentDays) return false;
 
       const entries = adj[s.node.id] ?? [];
-      const avgWeight = entries.reduce((sum, entry) => {
-        const edge = graph.edges[entry.edgeId];
-        if (!edge) return sum;
-        return sum + computeCurrentWeight(edge, now, graph.config);
-      }, 0) / (entries.length || 1);
+      const avgWeight =
+        entries.reduce((sum, entry) => {
+          const edge = graph.edges[entry.edgeId];
+          if (!edge) return sum;
+          return sum + computeCurrentWeight(edge, now, graph.config);
+        }, 0) / (entries.length || 1);
 
       return avgWeight < 0.4;
     })
@@ -292,23 +284,25 @@ export function analyzeSignificance(
   const lines: string[] = [];
 
   if (emerging.length > 0) {
-    lines.push(
-      `Emerging: ${emerging.map((s) => s.node.label).join(', ')}.`,
-    );
+    lines.push(`Emerging: ${emerging.map((s) => s.node.label).join(', ')}.`);
   }
   if (anchors.length > 0) {
     lines.push(
-      `Anchors: ${anchors.slice(0, 5).map((s) => `${s.node.label} (${s.edgeCount} connections)`).join(', ')}.`,
+      `Anchors: ${anchors
+        .slice(0, 5)
+        .map((s) => `${s.node.label} (${s.edgeCount} connections)`)
+        .join(', ')}.`,
     );
   }
   if (fadingImportant.length > 0) {
-    lines.push(
-      `Fading but important: ${fadingImportant.map((s) => s.node.label).join(', ')}.`,
-    );
+    lines.push(`Fading but important: ${fadingImportant.map((s) => s.node.label).join(', ')}.`);
   }
   if (clusters.length > 1) {
     lines.push(
-      `${clusters.length} clusters: ${clusters.slice(0, 3).map((c) => c.label).join(' | ')}.`,
+      `${clusters.length} clusters: ${clusters
+        .slice(0, 3)
+        .map((c) => c.label)
+        .join(' | ')}.`,
     );
   }
   if (lines.length === 0) {

@@ -2,9 +2,19 @@ import type { RawEntity } from '@nacre/core';
 import type { Section } from '../parse.js';
 
 const GENERIC_HEADINGS = new Set([
-  'projects', 'tools', 'lessons', 'decisions', 'events', 'notes',
-  'summary', 'overview', 'research', 'implementation', 'architecture',
-  'intro', '(intro)',
+  'projects',
+  'tools',
+  'lessons',
+  'decisions',
+  'events',
+  'notes',
+  'summary',
+  'overview',
+  'research',
+  'implementation',
+  'architecture',
+  'intro',
+  '(intro)',
 ]);
 
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
@@ -17,25 +27,30 @@ const CAUSAL_RE = /(?:led to|because of|resulted in|caused by|due to|which meant
  */
 function isNoisyCodeEntity(text: string): boolean {
   // Skip paths
-  if (text.startsWith('/') || text.startsWith('./') || text.startsWith('../') || text.startsWith('~')) {
+  if (
+    text.startsWith('/') ||
+    text.startsWith('./') ||
+    text.startsWith('../') ||
+    text.startsWith('~')
+  ) {
     return true;
   }
-  
+
   // Skip URLs
   if (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('file://')) {
     return true;
   }
-  
+
   // Skip if contains multiple path segments (like memory/browser-setup-notes.md)
   if (text.includes('/') && text.split('/').length > 1) {
     return true;
   }
-  
+
   // Skip commands with flags (contains " --" or " -" followed by letters)
   if (/\s--/.test(text) || /\s-[a-zA-Z]/.test(text)) {
     return true;
   }
-  
+
   // Skip IP addresses and port patterns
   if (/^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(text)) {
     return true;
@@ -43,19 +58,16 @@ function isNoisyCodeEntity(text: string): boolean {
   if (/127\.0\.0\.1|172\.17\.0\.\d+|localhost:\d+/.test(text)) {
     return true;
   }
-  
+
   // Skip media paths and mount specs
   if (text.startsWith('MEDIA:') || text.includes(':rw') || text.includes(':ro')) {
     return true;
   }
-  
+
   return false;
 }
 
-export function extractStructural(
-  sections: Section[],
-  filePath: string,
-): RawEntity[] {
+export function extractStructural(sections: Section[], filePath: string): RawEntity[] {
   const entities: RawEntity[] = [];
 
   for (const section of sections) {

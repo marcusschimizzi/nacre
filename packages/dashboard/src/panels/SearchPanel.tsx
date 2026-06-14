@@ -32,7 +32,8 @@ export function SearchPanel(props: {
     }
 
     setLoading(true);
-    props.recall(q)
+    props
+      .recall(q)
       .then((r) => {
         if (cancelled) return;
         setResults(r);
@@ -89,11 +90,7 @@ export function SearchPanel(props: {
 
           <div className="results-list">
             {results.slice(0, 8).map((r) => (
-              <button
-                key={r.id}
-                className="result-card"
-                onClick={() => props.onSelect(r)}
-              >
+              <button key={r.id} className="result-card" onClick={() => props.onSelect(r)}>
                 <div className="score">
                   <div className="score-value">{r.score.toFixed(2)}</div>
                   {r.scores && (

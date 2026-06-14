@@ -63,7 +63,11 @@ export class LocalBackend implements Backend {
   constructor(opts: NacreOptions) {
     if (!opts.path) throw new Error('Local mode requires path');
     this.store = SqliteStore.open(opts.path);
-    this.embedder = resolveProvider({ provider: opts.embedder, graphPath: opts.path, allowNull: true });
+    this.embedder = resolveProvider({
+      provider: opts.embedder,
+      graphPath: opts.path,
+      allowNull: true,
+    });
   }
 
   async remember(content: string, opts?: RememberOptions): Promise<Memory> {
@@ -175,9 +179,12 @@ export class LocalBackend implements Backend {
     let text = result.summary;
     if (opts?.focus) {
       const focusLower = opts.focus.toLowerCase();
-      const lines = text.split('\n').filter(
-        (line) => line.toLowerCase().includes(focusLower) || line.startsWith('#') || line.trim() === '',
-      );
+      const lines = text
+        .split('\n')
+        .filter(
+          (line) =>
+            line.toLowerCase().includes(focusLower) || line.startsWith('#') || line.trim() === '',
+        );
       if (lines.length > 2) {
         text = lines.join('\n');
       }

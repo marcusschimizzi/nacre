@@ -3,11 +3,7 @@ import assert from 'node:assert/strict';
 import { extractEpisodes } from '../extract/episode-extractor.js';
 import type { Section } from '../parse.js';
 
-function makeSection(
-  content: string,
-  heading?: string,
-  headingPath?: string,
-): Section {
+function makeSection(content: string, heading?: string, headingPath?: string): Section {
   return {
     heading: heading ?? 'Test',
     headingPath: headingPath ?? '## Test',
@@ -125,6 +121,6 @@ describe('episode type inference', () => {
       makeSection('Conversation about architecture', 'Discussion'),
     ];
     const episodes = extractEpisodes(sections, '/notes/2026-01-15.md');
-    assert.ok(episodes.every(e => e.type !== 'conversation'));
+    assert.ok(episodes.every((e) => e.type !== 'conversation'));
   });
 });

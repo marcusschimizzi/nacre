@@ -5,7 +5,17 @@ import { resolve } from 'node:path';
 import { SqliteStore } from '../store.js';
 import type { NacreGraph } from '../types.js';
 
-const GRAPH_PATH = resolve(import.meta.dirname ?? '.', '..', '..', '..', '..', 'data', 'graphs', 'lobstar', 'graph.json');
+const GRAPH_PATH = resolve(
+  import.meta.dirname ?? '.',
+  '..',
+  '..',
+  '..',
+  '..',
+  'data',
+  'graphs',
+  'lobstar',
+  'graph.json',
+);
 const DB_PATH = '/tmp/nacre-migration-test.db';
 
 describe('JSON → SQLite migration', () => {
@@ -18,7 +28,7 @@ describe('JSON → SQLite migration', () => {
       return;
     }
     if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
-    
+
     graph = JSON.parse(readFileSync(GRAPH_PATH, 'utf-8'));
     store = SqliteStore.open(DB_PATH);
     store.importGraph(graph);
@@ -87,7 +97,7 @@ describe('JSON → SQLite migration', () => {
   it('can query by type', () => {
     if (!graph) return;
     const tools = store.listNodes({ type: 'tool' });
-    const expectedTools = Object.values(graph.nodes).filter(n => n.type === 'tool').length;
+    const expectedTools = Object.values(graph.nodes).filter((n) => n.type === 'tool').length;
     assert.equal(tools.length, expectedTools);
   });
 

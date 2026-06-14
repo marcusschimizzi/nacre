@@ -111,7 +111,8 @@ export function diffSnapshots(store: SqliteStore, fromId: string, toId: string):
       edgesRemoved: removedEdges.length,
       edgesStrengthened: strengthenedEdges.length,
       edgesWeakened: weakenedEdges.length,
-      netChange: (addedNodes.length - removedNodes.length) + (addedEdges.length - removedEdges.length),
+      netChange:
+        addedNodes.length - removedNodes.length + (addedEdges.length - removedEdges.length),
     },
   };
 }

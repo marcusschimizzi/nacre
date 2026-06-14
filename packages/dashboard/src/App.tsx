@@ -33,8 +33,14 @@ function coerceGraphData(value: unknown): NacreGraphData {
   const decayRate = (config as Record<string, unknown>).decayRate;
   const reinforcementBoost = (config as Record<string, unknown>).reinforcementBoost;
   const visibilityThreshold = (config as Record<string, unknown>).visibilityThreshold;
-  if (typeof decayRate !== 'number' || typeof reinforcementBoost !== 'number' || typeof visibilityThreshold !== 'number') {
-    throw new Error('Invalid graph: config missing decayRate/reinforcementBoost/visibilityThreshold');
+  if (
+    typeof decayRate !== 'number' ||
+    typeof reinforcementBoost !== 'number' ||
+    typeof visibilityThreshold !== 'number'
+  ) {
+    throw new Error(
+      'Invalid graph: config missing decayRate/reinforcementBoost/visibilityThreshold',
+    );
   }
   return value as unknown as NacreGraphData;
 }
@@ -55,7 +61,11 @@ function createInitialState(): AppState {
 }
 
 export function App() {
-  const [apiStatus, setApiStatus] = useState<ApiStatus>({ status: 'offline', baseUrl: null, error: 'not checked' });
+  const [apiStatus, setApiStatus] = useState<ApiStatus>({
+    status: 'offline',
+    baseUrl: null,
+    error: 'not checked',
+  });
   const apiRef = useRef<ReturnType<typeof createApiClient> | null>(null);
 
   const [data, setData] = useState<LoadResult | null>(null);
@@ -154,7 +164,9 @@ export function App() {
         <div className="boot-inner">
           <div className="boot-title">Nacre Dashboard</div>
           {error ? (
-            <div className="boot-error">{error} (API: {apiStatus.status})</div>
+            <div className="boot-error">
+              {error} (API: {apiStatus.status})
+            </div>
           ) : (
             <div className="boot-note">Loading...</div>
           )}
@@ -232,7 +244,8 @@ export function App() {
                   key={t}
                   className={`filter-btn ${active ? 'active' : ''}`}
                   onClick={() => {
-                    if (stateRef.current.visibleTypes.has(t)) stateRef.current.visibleTypes.delete(t);
+                    if (stateRef.current.visibleTypes.has(t))
+                      stateRef.current.visibleTypes.delete(t);
                     else stateRef.current.visibleTypes.add(t);
                     graphCtrlRef.current?.refresh();
                     forceUiRefresh((v) => v + 1);
@@ -253,7 +266,8 @@ export function App() {
                   key={t}
                   className={`filter-btn ${active ? 'active' : ''}`}
                   onClick={() => {
-                    if (stateRef.current.visibleEdgeTypes.has(t)) stateRef.current.visibleEdgeTypes.delete(t);
+                    if (stateRef.current.visibleEdgeTypes.has(t))
+                      stateRef.current.visibleEdgeTypes.delete(t);
                     else stateRef.current.visibleEdgeTypes.add(t);
                     graphCtrlRef.current?.refresh();
                     forceUiRefresh((v) => v + 1);
@@ -337,12 +351,16 @@ export function App() {
           />
           <TimelinePanel
             apiOnline={apiOnline}
-            loadEpisodes={async () => apiRef.current ? apiRef.current.episodesList({ limit: 50 }) : []}
+            loadEpisodes={async () =>
+              apiRef.current ? apiRef.current.episodesList({ limit: 50 }) : []
+            }
             onSelectEpisode={async (id) => {
               if (!apiRef.current) return;
               const detail = await apiRef.current.episodeDetail(id);
               const ids = new Set(detail.entities.map((e) => e.id));
-              const linkIds = graphCtrlRef.current ? linkIdSet(graphCtrlRef.current.getLinks(), ids) : new Set<string>();
+              const linkIds = graphCtrlRef.current
+                ? linkIdSet(graphCtrlRef.current.getLinks(), ids)
+                : new Set<string>();
               stateRef.current.pinnedNodes = ids;
               stateRef.current.pinnedLinks = linkIds;
               graphCtrlRef.current?.setPinned(ids, linkIds);
@@ -352,7 +370,7 @@ export function App() {
           />
           <ProceduresPanel
             apiOnline={apiOnline}
-            load={async (opts) => apiRef.current ? apiRef.current.proceduresList(opts) : []}
+            load={async (opts) => (apiRef.current ? apiRef.current.proceduresList(opts) : [])}
             apply={async (id, feedback) => {
               if (!apiRef.current) throw new Error('API offline');
               return apiRef.current.procedureApply(id, feedback);
@@ -360,7 +378,9 @@ export function App() {
           />
           <TemporalDiffPanel
             apiOnline={apiOnline}
-            loadSnapshots={async () => apiRef.current ? apiRef.current.snapshotsList({ limit: 50 }) : []}
+            loadSnapshots={async () =>
+              apiRef.current ? apiRef.current.snapshotsList({ limit: 50 }) : []
+            }
             loadSnapshotGraph={async (id) => {
               if (!apiRef.current) throw new Error('API offline');
               const sg = await apiRef.current.snapshotGraph(id);

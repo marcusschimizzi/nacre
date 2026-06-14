@@ -1,9 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  extractStructural,
-  detectCausalPhrases,
-} from '../extract/structural.js';
+import { extractStructural, detectCausalPhrases } from '../extract/structural.js';
 import { extractNLP } from '../extract/nlp.js';
 import { extractCustom } from '../extract/custom.js';
 import { deduplicateRawEntities } from '../merge.js';
@@ -11,11 +8,7 @@ import { normalize } from '@nacre/core';
 import type { Section } from '../parse.js';
 import type { RawEntity } from '@nacre/core';
 
-function makeSection(
-  content: string,
-  heading?: string,
-  headingPath?: string,
-): Section {
+function makeSection(content: string, heading?: string, headingPath?: string): Section {
   return {
     heading: heading ?? 'Test',
     headingPath: headingPath ?? '## Test',
@@ -115,9 +108,7 @@ describe('extractNLP', () => {
   it('skips stop words', () => {
     const section = makeSection('Marcus reviewed the code');
     const entities = extractNLP([section], 'test.md');
-    const stopWordEntities = entities.filter(
-      (e) => normalize(e.text) === normalize('the'),
-    );
+    const stopWordEntities = entities.filter((e) => normalize(e.text) === normalize('the'));
     assert.equal(stopWordEntities.length, 0);
   });
 
@@ -142,9 +133,7 @@ describe('extractCustom', () => {
   });
 
   it('extracts GitHub URLs', () => {
-    const section = makeSection(
-      'See https://github.com/vasturiano/3d-force-graph',
-    );
+    const section = makeSection('See https://github.com/vasturiano/3d-force-graph');
     const entities = extractCustom([section], 'test.md');
     const ghEntity = entities.find((e) => e.text === 'vasturiano/3d-force-graph');
     assert.ok(ghEntity);

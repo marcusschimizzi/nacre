@@ -8,44 +8,25 @@ export function daysBetween(dateA: string, dateB: string): number {
   return Math.floor(Math.abs(a - b) / msPerDay);
 }
 
-export function calculateStability(
-  reinforcementCount: number,
-  reinforcementBoost: number,
-): number {
+export function calculateStability(reinforcementCount: number, reinforcementBoost: number): number {
   return 1 + reinforcementBoost * Math.log(reinforcementCount + 1);
 }
 
-export function computeCurrentWeight(
-  edge: MemoryEdge,
-  now: Date,
-  config: GraphConfig,
-): number {
+export function computeCurrentWeight(edge: MemoryEdge, now: Date, config: GraphConfig): number {
   const daysSince = daysBetween(edge.lastReinforced, now.toISOString());
-  const stability = calculateStability(
-    edge.reinforcementCount,
-    config.reinforcementBoost,
-  );
-  const weight = edge.baseWeight * Math.exp(
-    -(config.decayRate * daysSince) / stability,
-  );
+  const stability = calculateStability(edge.reinforcementCount, config.reinforcementBoost);
+  const weight = edge.baseWeight * Math.exp(-(config.decayRate * daysSince) / stability);
   return Math.max(weight, 0);
 }
 
-export function decayEdge(
-  graph: NacreGraph,
-  edgeId: string,
-  now: Date,
-): MemoryEdge {
+export function decayEdge(graph: NacreGraph, edgeId: string, now: Date): MemoryEdge {
   const edge = graph.edges[edgeId];
   if (!edge) throw new Error(`Edge not found: ${edgeId}`);
   edge.weight = computeCurrentWeight(edge, now, graph.config);
   return edge;
 }
 
-export function decayAllEdges(
-  graph: NacreGraph,
-  now: Date,
-): { decayed: number; dormant: number } {
+export function decayAllEdges(graph: NacreGraph, now: Date): { decayed: number; dormant: number } {
   let decayed = 0;
   let dormant = 0;
 

@@ -7,7 +7,11 @@ export function formatNumber(n: number, digits: number = 1): string {
   return n.toFixed(digits);
 }
 
-export function formatAgeStats(nodes: ForceNode[]): { avgDays: number; medianDays: number; oldestLabel: string } {
+export function formatAgeStats(nodes: ForceNode[]): {
+  avgDays: number;
+  medianDays: number;
+  oldestLabel: string;
+} {
   const now = Date.now();
   const ages: number[] = [];
 

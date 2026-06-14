@@ -1,11 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { SqliteStore } from '@nacre/core';
-import {
-  ingestConversation,
-  resolveProvider,
-  type IngestOptions,
-} from '@nacre/core';
+import { ingestConversation, resolveProvider, type IngestOptions } from '@nacre/core';
 import { extractFromConversation } from '@nacre/parser';
 
 const messageSchema = z.object({
@@ -19,18 +15,22 @@ const messageSchema = z.object({
 
 const ingestSchema = z.object({
   messages: z.array(messageSchema).min(1),
-  metadata: z.object({
-    sessionId: z.string().optional(),
-    platform: z.string().optional(),
-    topic: z.string().optional(),
-    source: z.string().optional(),
-  }).optional(),
-  options: z.object({
-    embed: z.boolean().optional(),
-    deduplicateBy: z.enum(['sessionId', 'contentHash', 'none']).optional(),
-    maxMessages: z.number().int().positive().optional(),
-    provider: z.string().optional(),
-  }).optional(),
+  metadata: z
+    .object({
+      sessionId: z.string().optional(),
+      platform: z.string().optional(),
+      topic: z.string().optional(),
+      source: z.string().optional(),
+    })
+    .optional(),
+  options: z
+    .object({
+      embed: z.boolean().optional(),
+      deduplicateBy: z.enum(['sessionId', 'contentHash', 'none']).optional(),
+      maxMessages: z.number().int().positive().optional(),
+      provider: z.string().optional(),
+    })
+    .optional(),
 });
 
 export function ingestRoutes(store: SqliteStore, graphPath: string): Hono {
@@ -44,12 +44,15 @@ export function ingestRoutes(store: SqliteStore, graphPath: string): Hono {
 
     const parsed = ingestSchema.safeParse(body);
     if (!parsed.success) {
-      return c.json({
-        error: {
-          message: `Validation error: ${parsed.error.issues.map(i => i.message).join(', ')}`,
-          code: 'VALIDATION_ERROR',
+      return c.json(
+        {
+          error: {
+            message: `Validation error: ${parsed.error.issues.map((i) => i.message).join(', ')}`,
+            code: 'VALIDATION_ERROR',
+          },
         },
-      }, 400);
+        400,
+      );
     }
 
     const { messages, metadata, options } = parsed.data;
@@ -72,9 +75,12 @@ export function ingestRoutes(store: SqliteStore, graphPath: string): Hono {
         });
         if (provider) ingestOpts.provider = provider;
       } catch {
-        return c.json({
-          error: { message: 'Failed to create embedding provider', code: 'PROVIDER_ERROR' },
-        }, 500);
+        return c.json(
+          {
+            error: { message: 'Failed to create embedding provider', code: 'PROVIDER_ERROR' },
+          },
+          500,
+        );
       }
     }
 

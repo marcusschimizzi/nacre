@@ -46,7 +46,11 @@ export function createLabelSprite(text: string): THREE.Sprite {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
-  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const spriteMat = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  });
   const sprite = new THREE.Sprite(spriteMat);
 
   const aspect = canvas.width / canvas.height;

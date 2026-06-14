@@ -82,10 +82,7 @@ describe('consolidation pipeline (integration)', () => {
     const edges = Object.values(graph.edges);
 
     const decayed = edges.filter((e) => e.weight < e.baseWeight);
-    assert.ok(
-      decayed.length > 0,
-      'some edges should have decayed weight < baseWeight',
-    );
+    assert.ok(decayed.length > 0, 'some edges should have decayed weight < baseWeight');
   });
 
   it('records processed files', async () => {
@@ -107,7 +104,10 @@ describe('consolidation pipeline (integration)', () => {
 
   it('persists graph.json and pending-edges.json', async () => {
     assert.ok(existsSync(resolve(OUT_DIR, 'graph.json')), 'graph.json should exist');
-    assert.ok(existsSync(resolve(OUT_DIR, 'pending-edges.json')), 'pending-edges.json should exist');
+    assert.ok(
+      existsSync(resolve(OUT_DIR, 'pending-edges.json')),
+      'pending-edges.json should exist',
+    );
   });
 
   it('generates 16-char hex node IDs', async () => {

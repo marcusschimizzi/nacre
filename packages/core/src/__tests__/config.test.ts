@@ -34,9 +34,12 @@ describe('loadConfig', () => {
 
   it('loads config from directory adjacent to graph file', () => {
     const dir = makeTmpDir();
-    writeFileSync(join(dir, 'nacre.config.json'), JSON.stringify({
-      embeddings: { provider: 'mock' },
-    }));
+    writeFileSync(
+      join(dir, 'nacre.config.json'),
+      JSON.stringify({
+        embeddings: { provider: 'mock' },
+      }),
+    );
     const config = loadConfig(join(dir, 'graph.db'));
     assert.equal(config.embeddings?.provider, 'mock');
   });
@@ -93,7 +96,7 @@ describe('resolveProvider', () => {
       (err: Error) => {
         assert.match(err.message, /Unknown embedding provider.*banana/);
         return true;
-      }
+      },
     );
   });
 
@@ -112,9 +115,12 @@ describe('resolveProvider', () => {
   it('config file used when no CLI flag', () => {
     delete process.env.NACRE_EMBEDDING_PROVIDER;
     const dir = makeTmpDir();
-    writeFileSync(join(dir, 'nacre.config.json'), JSON.stringify({
-      embeddings: { provider: 'mock' },
-    }));
+    writeFileSync(
+      join(dir, 'nacre.config.json'),
+      JSON.stringify({
+        embeddings: { provider: 'mock' },
+      }),
+    );
     const result = resolveProvider({ graphPath: join(dir, 'graph.db') });
     assert.ok(result instanceof MockEmbedder);
   });
@@ -126,7 +132,7 @@ describe('resolveProvider', () => {
       (err: Error) => {
         assert.match(err.message, /No embedding provider configured/);
         return true;
-      }
+      },
     );
   });
 });

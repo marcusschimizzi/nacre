@@ -4,7 +4,9 @@ import { SqliteStore } from '../store.js';
 import { ingestConversation } from '../ingest.js';
 import type { ConversationInput, ConversationChunk } from '../types.js';
 
-function makeConversationInput(overrides: Partial<ConversationInput> & { messages: ConversationInput['messages'] }): ConversationInput {
+function makeConversationInput(
+  overrides: Partial<ConversationInput> & { messages: ConversationInput['messages'] },
+): ConversationInput {
   return {
     metadata: {
       sessionId: 'session-test',
@@ -25,7 +27,7 @@ function makeExtractEntities(nodeCount: number = 1, edgeCount: number = 0, seed:
     })),
     edges: Array.from({ length: edgeCount }, (_, i) => ({
       source: `Entity${i + 1}${seed}`,
-      target: `Entity${(i + 1) % nodeCount + 1}${seed}`,
+      target: `Entity${((i + 1) % nodeCount) + 1}${seed}`,
       type: 'co-occurrence',
       context: `mentioned together in chunk`,
     })),
