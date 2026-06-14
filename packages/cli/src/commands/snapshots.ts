@@ -80,7 +80,9 @@ export default defineCommand({
 
           console.log(`Found ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'}:\n`);
           for (const snap of snapshots) {
-            console.log(`  ${snap.createdAt}  ${snap.trigger}  ${snap.nodeCount} nodes, ${snap.edgeCount} edges, ${snap.episodeCount} episodes`);
+            console.log(
+              `  ${snap.createdAt}  ${snap.trigger}  ${snap.nodeCount} nodes, ${snap.edgeCount} edges, ${snap.episodeCount} episodes`,
+            );
           }
           break;
         }
@@ -92,7 +94,9 @@ export default defineCommand({
             return;
           }
           console.log(`Snapshot created: ${snapshot.id}`);
-          console.log(`  ${snapshot.nodeCount} nodes, ${snapshot.edgeCount} edges, ${snapshot.episodeCount} episodes`);
+          console.log(
+            `  ${snapshot.nodeCount} nodes, ${snapshot.edgeCount} edges, ${snapshot.episodeCount} episodes`,
+          );
           break;
         }
 
@@ -143,9 +147,15 @@ export default defineCommand({
           }
 
           console.log(`Diff: ${diff.fromSnapshot} → ${diff.toSnapshot}\n`);
-          console.log(`  Nodes: +${diff.stats.nodesAdded}, -${diff.stats.nodesRemoved}, ~${diff.stats.nodesChanged}`);
-          console.log(`  Edges: +${diff.stats.edgesAdded}, -${diff.stats.edgesRemoved}, ↑${diff.stats.edgesStrengthened}, ↓${diff.stats.edgesWeakened}`);
-          console.log(`  Net change: ${diff.stats.netChange >= 0 ? '+' : ''}${diff.stats.netChange}`);
+          console.log(
+            `  Nodes: +${diff.stats.nodesAdded}, -${diff.stats.nodesRemoved}, ~${diff.stats.nodesChanged}`,
+          );
+          console.log(
+            `  Edges: +${diff.stats.edgesAdded}, -${diff.stats.edgesRemoved}, ↑${diff.stats.edgesStrengthened}, ↓${diff.stats.edgesWeakened}`,
+          );
+          console.log(
+            `  Net change: ${diff.stats.netChange >= 0 ? '+' : ''}${diff.stats.netChange}`,
+          );
 
           if (diff.nodes.added.length > 0) {
             console.log(`\n  Added nodes:`);

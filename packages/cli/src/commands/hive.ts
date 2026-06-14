@@ -10,7 +10,8 @@ const hiveConsolidate = defineCommand({
   args: {
     agents: {
       type: 'string',
-      description: 'Comma-separated name:path pairs (e.g. "lobstar:/path/lobstar.db,melli:/path/melli.db")',
+      description:
+        'Comma-separated name:path pairs (e.g. "lobstar:/path/lobstar.db,melli:/path/melli.db")',
       required: true,
     },
     out: {
@@ -91,8 +92,10 @@ const hiveBrief = defineCommand({
       const agents: string[] = agentsStr ? JSON.parse(agentsStr) : [];
       const originFactor = store.getMeta('hive_origin_factor') ?? '0.6';
       const provenanceStr = store.getMeta('hive_provenance');
-      const provenance: Record<string, { sourceAgents: string[]; referenceCount: number; endorsements: number }> =
-        provenanceStr ? JSON.parse(provenanceStr) : {};
+      const provenance: Record<
+        string,
+        { sourceAgents: string[]; referenceCount: number; endorsements: number }
+      > = provenanceStr ? JSON.parse(provenanceStr) : {};
 
       const nodes = store.listNodes();
       const edgeCount = store.edgeCount();
@@ -108,7 +111,9 @@ const hiveBrief = defineCommand({
       const top = scored.slice(0, 10);
 
       if ((args.format as string) === 'json') {
-        console.log(formatJSON({ agents, originFactor: factor, nodeCount: nodes.length, edgeCount, top }));
+        console.log(
+          formatJSON({ agents, originFactor: factor, nodeCount: nodes.length, edgeCount, top }),
+        );
         return;
       }
 

@@ -40,7 +40,8 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         // it matches the model the stored vectors were built with. Hardcoding a
         // provider here would mismatch dimensions and silently disable the
         // semantic half of recall. allowNull → graph-only when none is set.
-        const provider = store.embeddingCount() > 0 ? resolveProvider({ graphPath, allowNull: true }) : null;
+        const provider =
+          store.embeddingCount() > 0 ? resolveProvider({ graphPath, allowNull: true }) : null;
         response = await recall(store, provider, {
           query: args.query,
           limit: args.limit,
@@ -66,21 +67,24 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
       }
 
-      const lines = response.results.map((r, i) =>
-        `${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}\n` +
-        `   semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  ` +
-        `recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}` +
-        (r.connections.length > 0
-          ? `\n   connections: ${r.connections.map((c) => `${c.label} (${c.relationship})`).join(', ')}`
-          : ''),
+      const lines = response.results.map(
+        (r, i) =>
+          `${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}\n` +
+          `   semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  ` +
+          `recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}` +
+          (r.connections.length > 0
+            ? `\n   connections: ${r.connections.map((c) => `${c.label} (${c.relationship})`).join(', ')}`
+            : ''),
       );
 
       let text = `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
-      
+
       if (response.procedures.length > 0) {
-        text += `\n\nRelevant Procedures:\n` + response.procedures.map(p => 
-          `• ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})`
-        ).join('\n');
+        text +=
+          `\n\nRelevant Procedures:\n` +
+          response.procedures
+            .map((p) => `• ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})`)
+            .join('\n');
       }
 
       return {
@@ -107,9 +111,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       let text = result.summary;
       if (args.focus) {
         const focusLower = args.focus.toLowerCase();
-        const lines = text.split('\n').filter(
-          (line) => line.toLowerCase().includes(focusLower) || line.startsWith('#') || line.trim() === '',
-        );
+        const lines = text
+          .split('\n')
+          .filter(
+            (line) =>
+              line.toLowerCase().includes(focusLower) || line.startsWith('#') || line.trim() === '',
+          );
         if (lines.length > 2) {
           text = lines.join('\n');
         }
@@ -186,10 +193,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
 
       const linkMsg = linked.length > 0 ? ` Linked to: ${linked.join(', ')}.` : '';
       return {
-        content: [{
-          type: 'text',
-          text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}`,
+          },
+        ],
       };
     },
   );
@@ -214,10 +223,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       store.deleteNode(args.memoryId);
 
       return {
-        content: [{
-          type: 'text',
-          text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
+          },
+        ],
       };
     },
   );
@@ -250,10 +261,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
 
       const direction = args.rating > 0 ? 'reinforced' : args.rating < 0 ? 'weakened' : 'noted';
       return {
-        content: [{
-          type: 'text',
-          text: `Feedback ${direction}: "${existing.label}" (rating: ${args.rating}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Feedback ${direction}: "${existing.label}" (rating: ${args.rating}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
+          },
+        ],
       };
     },
   );
@@ -299,10 +312,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       store.putProcedure(proc);
 
       return {
-        content: [{
-          type: 'text',
-          text: `Procedure recorded: "${proc.statement}" (${proc.type}, id: ${id}, triggers: ${proc.triggerKeywords.join(', ')})`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `Procedure recorded: "${proc.statement}" (${proc.type}, id: ${id}, triggers: ${proc.triggerKeywords.join(', ')})`,
+          },
+        ],
       };
     },
   );
@@ -332,15 +347,19 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
 
       const lines = limited.map((p, i) => {
         const flagged = p.flaggedForReview ? ' [FLAGGED]' : '';
-        return `${i + 1}. ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})${flagged}\n` +
-          `   id: ${p.id}, applied: ${p.applications}x, contradictions: ${p.contradictions}`;
+        return (
+          `${i + 1}. ${p.statement} (${p.type}, confidence: ${p.confidence.toFixed(2)})${flagged}\n` +
+          `   id: ${p.id}, applied: ${p.applications}x, contradictions: ${p.contradictions}`
+        );
       });
 
       return {
-        content: [{
-          type: 'text',
-          text: `${limited.length} procedure${limited.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`,
-        }],
+        content: [
+          {
+            type: 'text',
+            text: `${limited.length} procedure${limited.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`,
+          },
+        ],
       };
     },
   );

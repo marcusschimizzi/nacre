@@ -1,6 +1,11 @@
 import type {
-  NacreGraphData, GraphNode, GraphEdge,
-  RecallResult, RecallProcedureMatch, Procedure, Episode,
+  NacreGraphData,
+  GraphNode,
+  GraphEdge,
+  RecallResult,
+  RecallProcedureMatch,
+  Procedure,
+  Episode,
 } from './types.ts';
 
 export interface GraphStats {
@@ -109,7 +114,7 @@ export class GraphApiClient {
    */
   async fetchGraph(
     onProgress?: ProgressCallback,
-    options: { nodeLimit?: number; edgeLimit?: number } = {}
+    options: { nodeLimit?: number; edgeLimit?: number } = {},
   ): Promise<NacreGraphData> {
     const signal = AbortSignal.timeout(60000); // 60 second timeout
 
@@ -255,7 +260,13 @@ export class GraphApiClient {
   }
 
   async fetchEpisodes(
-    options: { since?: string; until?: string; limit?: number; offset?: number; signal?: AbortSignal } = {},
+    options: {
+      since?: string;
+      until?: string;
+      limit?: number;
+      offset?: number;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<Episode[]> {
     const params = new URLSearchParams();
     if (options.since) params.append('since', options.since);
@@ -277,7 +288,7 @@ export class GraphApiClient {
   async loadGraphWithFallback(
     staticJsonUrl: string,
     onProgress?: ProgressCallback,
-    options?: { nodeLimit?: number; edgeLimit?: number }
+    options?: { nodeLimit?: number; edgeLimit?: number },
   ): Promise<{ data: NacreGraphData; source: 'api' | 'static' }> {
     // Check if API is available
     const apiAvailable = await this.isAvailable();

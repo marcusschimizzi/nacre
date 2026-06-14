@@ -14,9 +14,15 @@ export function memoryRoutes(store: SqliteStore): Hono {
 
     const parsed = memoryCreateSchema.safeParse(body);
     if (!parsed.success) {
-      return c.json({
-        error: { message: parsed.error.issues.map(i => i.message).join('; '), code: 'VALIDATION_ERROR' },
-      }, 400);
+      return c.json(
+        {
+          error: {
+            message: parsed.error.issues.map((i) => i.message).join('; '),
+            code: 'VALIDATION_ERROR',
+          },
+        },
+        400,
+      );
     }
 
     const { content, type, label } = parsed.data;
@@ -60,9 +66,15 @@ export function memoryRoutes(store: SqliteStore): Hono {
 
     const parsed = feedbackSchema.safeParse(body);
     if (!parsed.success) {
-      return c.json({
-        error: { message: parsed.error.issues.map(i => i.message).join('; '), code: 'VALIDATION_ERROR' },
-      }, 400);
+      return c.json(
+        {
+          error: {
+            message: parsed.error.issues.map((i) => i.message).join('; '),
+            code: 'VALIDATION_ERROR',
+          },
+        },
+        400,
+      );
     }
 
     const { memoryId, rating } = parsed.data;

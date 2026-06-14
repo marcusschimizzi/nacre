@@ -87,11 +87,15 @@ export function fromAnthropic(
           toolCallId: block.id,
         });
       } else if (block.type === 'tool_result') {
-        const text = typeof block.content === 'string'
-          ? block.content
-          : Array.isArray(block.content)
-            ? block.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
-            : '';
+        const text =
+          typeof block.content === 'string'
+            ? block.content
+            : Array.isArray(block.content)
+              ? block.content
+                  .filter((c) => c.type === 'text')
+                  .map((c) => c.text)
+                  .join('\n')
+              : '';
         converted.push({
           role: 'tool',
           content: text,
@@ -131,9 +135,9 @@ export function fromClawdbot(
   const converted: ConversationMessage[] = [];
 
   for (const msg of session.messages) {
-    const role = (['user', 'assistant', 'system', 'tool'].includes(msg.role)
-      ? msg.role
-      : 'user') as ConversationMessage['role'];
+    const role = (
+      ['user', 'assistant', 'system', 'tool'].includes(msg.role) ? msg.role : 'user'
+    ) as ConversationMessage['role'];
 
     converted.push({
       role,
@@ -183,9 +187,9 @@ export function fromJSONL(
     const content = parsed.content ?? parsed.text ?? parsed.message ?? '';
     if (!content) continue;
 
-    const role = (['user', 'assistant', 'system', 'tool'].includes(parsed.role ?? '')
-      ? parsed.role
-      : 'user') as ConversationMessage['role'];
+    const role = (
+      ['user', 'assistant', 'system', 'tool'].includes(parsed.role ?? '') ? parsed.role : 'user'
+    ) as ConversationMessage['role'];
 
     converted.push({
       role,
@@ -222,7 +226,9 @@ export function detectFormat(data: unknown): ConversationFormat {
 
     if (Array.isArray(first.content) && typeof first.content !== 'string') {
       const blocks = first.content as Array<Record<string, unknown>>;
-      if (blocks.some(b => b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'text')) {
+      if (
+        blocks.some((b) => b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'text')
+      ) {
         return 'anthropic';
       }
     }

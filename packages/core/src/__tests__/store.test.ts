@@ -18,7 +18,9 @@ function makeNode(overrides: Partial<MemoryNode> & { id: string; label: string }
   };
 }
 
-function makeEdge(overrides: Partial<MemoryEdge> & { id: string; source: string; target: string }): MemoryEdge {
+function makeEdge(
+  overrides: Partial<MemoryEdge> & { id: string; source: string; target: string },
+): MemoryEdge {
   return {
     type: 'co-occurrence',
     directed: false,
@@ -68,7 +70,12 @@ describe('SqliteStore', () => {
     });
 
     it('finds node by alias', () => {
-      const node = makeNode({ id: 'n3', label: 'Node.js', type: 'tool', aliases: ['node', 'nodejs'] });
+      const node = makeNode({
+        id: 'n3',
+        label: 'Node.js',
+        type: 'tool',
+        aliases: ['node', 'nodejs'],
+      });
       store.putNode(node);
       const result = store.findNode('node');
       assert.ok(result);
@@ -81,12 +88,12 @@ describe('SqliteStore', () => {
 
       const tools = store.listNodes({ type: 'tool' });
       assert.ok(tools.length >= 2); // n1 + n4 at minimum
-      assert.ok(tools.every(n => n.type === 'tool'));
+      assert.ok(tools.every((n) => n.type === 'tool'));
     });
 
     it('lists nodes with label filter', () => {
       const results = store.listNodes({ label: 'type' });
-      assert.ok(results.some(n => n.label === 'TypeScript'));
+      assert.ok(results.some((n) => n.label === 'TypeScript'));
     });
 
     it('updates node via put (upsert)', () => {
@@ -131,21 +138,25 @@ describe('SqliteStore', () => {
     });
 
     it('lists edges with source filter', () => {
-      store.putEdge(makeEdge({ id: 'n1--n5--explicit', source: 'n1', target: 'n5', type: 'explicit' }));
+      store.putEdge(
+        makeEdge({ id: 'n1--n5--explicit', source: 'n1', target: 'n5', type: 'explicit' }),
+      );
       const edges = store.listEdges({ source: 'n1' });
       assert.ok(edges.length >= 1);
-      assert.ok(edges.every(e => e.source === 'n1'));
+      assert.ok(edges.every((e) => e.source === 'n1'));
     });
 
     it('lists edges with type filter', () => {
       const explicit = store.listEdges({ type: 'explicit' });
-      assert.ok(explicit.every(e => e.type === 'explicit'));
+      assert.ok(explicit.every((e) => e.type === 'explicit'));
     });
 
     it('lists edges with minWeight filter', () => {
-      store.putEdge(makeEdge({ id: 'n2--n4--co-occurrence', source: 'n2', target: 'n4', weight: 0.1 }));
+      store.putEdge(
+        makeEdge({ id: 'n2--n4--co-occurrence', source: 'n2', target: 'n4', weight: 0.1 }),
+      );
       const heavy = store.listEdges({ minWeight: 0.5 });
-      assert.ok(heavy.every(e => e.weight >= 0.5));
+      assert.ok(heavy.every((e) => e.weight >= 0.5));
     });
 
     it('deletes an edge', () => {
@@ -162,7 +173,11 @@ describe('SqliteStore', () => {
 
   describe('file tracking', () => {
     it('puts and gets file hash', () => {
-      store.putFileHash({ path: '/notes/2026-01-15.md', hash: 'abc123', lastProcessed: '2026-01-15' });
+      store.putFileHash({
+        path: '/notes/2026-01-15.md',
+        hash: 'abc123',
+        lastProcessed: '2026-01-15',
+      });
       const result = store.getFileHash('/notes/2026-01-15.md');
       assert.ok(result);
       assert.equal(result.hash, 'abc123');
@@ -173,7 +188,11 @@ describe('SqliteStore', () => {
     });
 
     it('lists all file hashes', () => {
-      store.putFileHash({ path: '/notes/2026-01-16.md', hash: 'def456', lastProcessed: '2026-01-16' });
+      store.putFileHash({
+        path: '/notes/2026-01-16.md',
+        hash: 'def456',
+        lastProcessed: '2026-01-16',
+      });
       const all = store.listFileHashes();
       assert.ok(all.length >= 2);
     });
@@ -206,17 +225,21 @@ describe('SqliteStore', () => {
 
     it('imports a graph', async () => {
       const fresh = SqliteStore.open();
-      
+
       const graph: NacreGraph = {
         version: 2,
         lastConsolidated: '2026-01-20',
         processedFiles: [{ path: '/test.md', hash: 'xyz', lastProcessed: '2026-01-20' }],
         nodes: {
-          'imp1': makeNode({ id: 'imp1', label: 'Imported', type: 'concept' }),
-          'imp2': makeNode({ id: 'imp2', label: 'Also Imported', type: 'tool' }),
+          imp1: makeNode({ id: 'imp1', label: 'Imported', type: 'concept' }),
+          imp2: makeNode({ id: 'imp2', label: 'Also Imported', type: 'tool' }),
         },
         edges: {
-          'imp1--imp2--co-occurrence': makeEdge({ id: 'imp1--imp2--co-occurrence', source: 'imp1', target: 'imp2' }),
+          'imp1--imp2--co-occurrence': makeEdge({
+            id: 'imp1--imp2--co-occurrence',
+            source: 'imp1',
+            target: 'imp2',
+          }),
         },
         config: DEFAULT_CONFIG,
       };

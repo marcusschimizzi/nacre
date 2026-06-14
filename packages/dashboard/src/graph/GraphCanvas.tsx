@@ -74,7 +74,12 @@ export function GraphCanvas(props: {
   // External refresh when filters change.
   useEffect(() => {
     controllerRef.current?.refresh();
-  }, [props.state.minWeight, props.state.scrubDate, props.state.visibleEdgeTypes, props.state.visibleTypes]);
+  }, [
+    props.state.minWeight,
+    props.state.scrubDate,
+    props.state.visibleEdgeTypes,
+    props.state.visibleTypes,
+  ]);
 
   return <div id="graph" ref={containerRef} />;
 }

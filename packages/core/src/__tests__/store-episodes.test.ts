@@ -83,31 +83,48 @@ describe('SqliteStore — Episodes', () => {
 
   describe('episode filtering', () => {
     before(() => {
-      store.putEpisode(makeEpisode({ id: 'ep-dec', title: 'A Decision', type: 'decision', timestamp: '2026-01-10' }));
-      store.putEpisode(makeEpisode({ id: 'ep-evt', title: 'An Event', type: 'event', timestamp: '2026-01-20' }));
-      store.putEpisode(makeEpisode({ id: 'ep-obs', title: 'An Observation', type: 'observation', timestamp: '2026-01-25', source: '/notes.md' }));
+      store.putEpisode(
+        makeEpisode({
+          id: 'ep-dec',
+          title: 'A Decision',
+          type: 'decision',
+          timestamp: '2026-01-10',
+        }),
+      );
+      store.putEpisode(
+        makeEpisode({ id: 'ep-evt', title: 'An Event', type: 'event', timestamp: '2026-01-20' }),
+      );
+      store.putEpisode(
+        makeEpisode({
+          id: 'ep-obs',
+          title: 'An Observation',
+          type: 'observation',
+          timestamp: '2026-01-25',
+          source: '/notes.md',
+        }),
+      );
     });
 
     it('filters by type', () => {
       const decisions = store.listEpisodes({ type: 'decision' });
       assert.ok(decisions.length >= 1);
-      assert.ok(decisions.every(e => e.type === 'decision'));
+      assert.ok(decisions.every((e) => e.type === 'decision'));
     });
 
     it('filters by since', () => {
       const recent = store.listEpisodes({ since: '2026-01-15' });
-      assert.ok(recent.every(e => e.timestamp >= '2026-01-15'));
+      assert.ok(recent.every((e) => e.timestamp >= '2026-01-15'));
     });
 
     it('filters by until', () => {
       const early = store.listEpisodes({ until: '2026-01-15' });
-      assert.ok(early.every(e => e.timestamp <= '2026-01-15'));
+      assert.ok(early.every((e) => e.timestamp <= '2026-01-15'));
     });
 
     it('filters by source', () => {
       const fromNotes = store.listEpisodes({ source: '/notes.md' });
       assert.ok(fromNotes.length >= 1);
-      assert.ok(fromNotes.every(e => e.source === '/notes.md'));
+      assert.ok(fromNotes.every((e) => e.source === '/notes.md'));
     });
 
     it('returns all with empty filter', () => {
@@ -137,11 +154,11 @@ describe('SqliteStore — Episodes', () => {
       const links = store.getEpisodeEntities('ep-link');
       assert.equal(links.length, 2);
 
-      const participant = links.find(l => l.role === 'participant');
+      const participant = links.find((l) => l.role === 'participant');
       assert.ok(participant);
       assert.equal(participant.nodeId, 'n-marcus');
 
-      const topic = links.find(l => l.role === 'topic');
+      const topic = links.find((l) => l.role === 'topic');
       assert.ok(topic);
       assert.equal(topic.nodeId, 'n-nacre');
     });
@@ -156,19 +173,19 @@ describe('SqliteStore — Episodes', () => {
     it('filters episodes by entity (hasEntity)', () => {
       const episodes = store.listEpisodes({ hasEntity: 'n-marcus' });
       assert.ok(episodes.length >= 1);
-      assert.ok(episodes.some(e => e.id === 'ep-link'));
+      assert.ok(episodes.some((e) => e.id === 'ep-link'));
     });
 
     it('gets episodes for a node', () => {
       const episodes = store.getEntityEpisodes('n-marcus');
       assert.ok(episodes.length >= 1);
-      assert.ok(episodes.some(e => e.id === 'ep-link'));
+      assert.ok(episodes.some((e) => e.id === 'ep-link'));
     });
 
     it('unlinks episode entity', () => {
       store.unlinkEpisodeEntity('ep-link', 'n-nacre', 'topic');
       const links = store.getEpisodeEntities('ep-link');
-      assert.equal(links.filter(l => l.nodeId === 'n-nacre').length, 0);
+      assert.equal(links.filter((l) => l.nodeId === 'n-nacre').length, 0);
     });
 
     it('cascades delete on episode removal', () => {

@@ -19,13 +19,14 @@ export function searchRoutes(store: SqliteStore): Hono {
     const type = c.req.query('type') as EntityType | undefined;
     const limit = parseInt(c.req.query('limit') ?? '20', 10);
     const graph = store.getFullGraph();
-    const terms = q.split(/\s+/).filter(t => t.length > 0);
+    const terms = q.split(/\s+/).filter((t) => t.length > 0);
     const results = searchNodes(graph, terms, { type: type || undefined, now: new Date() });
 
     if (c.req.query('format') === 'text') {
-      const text = results.slice(0, limit).map(r =>
-        `${r.node.label} (${r.node.type}) — score: ${r.matchScore.toFixed(2)}`
-      ).join('\n');
+      const text = results
+        .slice(0, limit)
+        .map((r) => `${r.node.label} (${r.node.type}) — score: ${r.matchScore.toFixed(2)}`)
+        .join('\n');
       return c.text(text || 'No results');
     }
 
@@ -39,7 +40,12 @@ export function searchRoutes(store: SqliteStore): Hono {
     }
 
     if (store.embeddingCount() === 0) {
-      return c.json({ error: { message: 'No embeddings found. Run nacre embed first.', code: 'NO_EMBEDDINGS' } }, 400);
+      return c.json(
+        {
+          error: { message: 'No embeddings found. Run nacre embed first.', code: 'NO_EMBEDDINGS' },
+        },
+        400,
+      );
     }
 
     const providerName = c.req.query('provider') ?? 'ollama';
@@ -70,9 +76,7 @@ export function searchRoutes(store: SqliteStore): Hono {
     const since = c.req.query('since') || undefined;
     const until = c.req.query('until') || undefined;
     const typesRaw = c.req.query('types');
-    const types = typesRaw
-      ? typesRaw.split(',').map((t) => t.trim()) as EntityType[]
-      : undefined;
+    const types = typesRaw ? (typesRaw.split(',').map((t) => t.trim()) as EntityType[]) : undefined;
 
     const provider = resolveProvider({ provider: providerName, allowNull: true });
 

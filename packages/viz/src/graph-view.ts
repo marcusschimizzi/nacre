@@ -11,11 +11,7 @@ import {
 import { createTemporalForce } from './forces.ts';
 import { showNodeDetails, hideDetails } from './details.ts';
 import { BG_COLOR, NACRE_THRESHOLD, VISIBILITY_THRESHOLD } from './theme.ts';
-import {
-  computeWeightAtDate,
-  isNodeVisibleAtDate,
-  isEdgeVisibleAtDate,
-} from './time-scrub.ts';
+import { computeWeightAtDate, isNodeVisibleAtDate, isEdgeVisibleAtDate } from './time-scrub.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Graph = any;
@@ -62,7 +58,7 @@ export function createGraphView(
       if (w < VISIBILITY_THRESHOLD) return false;
       return true;
     })
-    .linkDirectionalArrowLength((link: ForceLink) => link.directed ? 4 : 0)
+    .linkDirectionalArrowLength((link: ForceLink) => (link.directed ? 4 : 0))
     .linkDirectionalArrowRelPos(0.85)
     .linkDirectionalArrowColor((link: ForceLink) => edgeColor(link))
     .linkDirectionalParticles((link: ForceLink) => {
@@ -86,25 +82,29 @@ export function createGraphView(
       mesh.userData.isNacre = true;
       return mesh;
     })
-    .linkPositionUpdate((obj: THREE.Object3D | undefined, coords: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }) => {
-      if (!obj?.userData?.isNacre) return false;
+    .linkPositionUpdate(
+      (
+        obj: THREE.Object3D | undefined,
+        coords: {
+          start: { x: number; y: number; z: number };
+          end: { x: number; y: number; z: number };
+        },
+      ) => {
+        if (!obj?.userData?.isNacre) return false;
 
-      const { start, end } = coords;
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const dz = end.z - start.z;
-      const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const { start, end } = coords;
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const dz = end.z - start.z;
+        const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-      obj.position.set(
-        (start.x + end.x) / 2,
-        (start.y + end.y) / 2,
-        (start.z + end.z) / 2,
-      );
-      obj.scale.set(1, 1, length);
-      obj.lookAt(end.x, end.y, end.z);
+        obj.position.set((start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2);
+        obj.scale.set(1, 1, length);
+        obj.lookAt(end.x, end.y, end.z);
 
-      return true;
-    });
+        return true;
+      },
+    );
 
   graph.d3Force('temporal', createTemporalForce(nodes, now));
 
@@ -164,7 +164,10 @@ const LABEL_VISIBILITY_DISTANCE = 150;
 function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
   function tick() {
     const cam = graph.camera();
-    if (!cam) { requestAnimationFrame(tick); return; }
+    if (!cam) {
+      requestAnimationFrame(tick);
+      return;
+    }
     const camPos = cam.position;
 
     for (const node of nodes) {
@@ -255,7 +258,7 @@ function setupInteraction(
 
   graph.onNodeClick((node: ForceNode) => {
     const now = Date.now();
-    const isDoubleClick = lastClickedNode?.id === node.id && (now - lastClickTime) < 350;
+    const isDoubleClick = lastClickedNode?.id === node.id && now - lastClickTime < 350;
     lastClickedNode = node;
     lastClickTime = now;
 
@@ -306,11 +309,7 @@ function flyToNode(graph: Graph, node: ForceNode): void {
   const dist = Math.hypot(x, y, z) || 1;
   const ratio = 1 + distance / dist;
 
-  graph.cameraPosition(
-    { x: x * ratio, y: y * ratio, z: z * ratio },
-    { x, y, z },
-    1200,
-  );
+  graph.cameraPosition({ x: x * ratio, y: y * ratio, z: z * ratio }, { x, y, z }, 1200);
 }
 
 function flyToCluster(
@@ -329,7 +328,9 @@ function flyToCluster(
     if (tgt === node.id) neighborIds.add(src);
   }
 
-  let cx = 0, cy = 0, cz = 0;
+  let cx = 0,
+    cy = 0,
+    cz = 0;
   let count = 0;
   let maxSpread = 0;
 
@@ -343,14 +344,18 @@ function flyToCluster(
     const nx = n.x ?? 0;
     const ny = n.y ?? 0;
     const nz = n.z ?? 0;
-    cx += nx; cy += ny; cz += nz;
+    cx += nx;
+    cy += ny;
+    cz += nz;
     count++;
     const dist = Math.hypot(nx - centerX, ny - centerY, nz - centerZ);
     if (dist > maxSpread) maxSpread = dist;
   }
 
   if (count === 0) return;
-  cx /= count; cy /= count; cz /= count;
+  cx /= count;
+  cy /= count;
+  cz /= count;
 
   const viewDist = Math.max(maxSpread * 1.5, 80);
   const dist = Math.hypot(cx, cy, cz) || 1;
@@ -403,17 +408,11 @@ function escapeTooltipHtml(text: string): string {
   return el.innerHTML;
 }
 
-export function searchAndFocus(
-  graph: Graph,
-  nodes: ForceNode[],
-  query: string,
-): ForceNode | null {
+export function searchAndFocus(graph: Graph, nodes: ForceNode[], query: string): ForceNode | null {
   const q = query.toLowerCase().trim();
   if (!q) return null;
 
-  const match = nodes.find(
-    (n) => n.label.toLowerCase() === q || n.label.toLowerCase().includes(q),
-  );
+  const match = nodes.find((n) => n.label.toLowerCase() === q || n.label.toLowerCase().includes(q));
 
   if (match) {
     flyToNode(graph, match);

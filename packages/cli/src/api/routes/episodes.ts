@@ -51,7 +51,9 @@ export function episodeRoutes(store: SqliteStore): Hono {
 
     store.touchEpisode(id);
     const updated = store.getEpisode(id)!;
-    return c.json({ data: { id, accessCount: updated.accessCount, lastAccessed: updated.lastAccessed } });
+    return c.json({
+      data: { id, accessCount: updated.accessCount, lastAccessed: updated.lastAccessed },
+    });
   });
 
   return app;

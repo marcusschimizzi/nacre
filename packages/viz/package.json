@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "biome check ."
   },
   "dependencies": {
     "3d-force-graph": "^1.74.0",

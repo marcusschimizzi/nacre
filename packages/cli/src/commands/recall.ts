@@ -1,11 +1,5 @@
 import { defineCommand } from 'citty';
-import {
-  SqliteStore,
-  recall,
-  recallWithHive,
-  resolveProvider,
-  type EntityType,
-} from '@nacre/core';
+import { SqliteStore, recall, recallWithHive, resolveProvider, type EntityType } from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 export default defineCommand({
@@ -78,14 +72,20 @@ export default defineCommand({
     const store = SqliteStore.open(graphPath);
 
     try {
-      const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string, allowNull: true });
+      const provider = resolveProvider({
+        provider: args.provider as string | undefined,
+        graphPath: args.graph as string,
+        allowNull: true,
+      });
 
       if (!provider && store.embeddingCount() > 0) {
-        console.warn('Embeddings exist but no provider available for query embedding. Falling back to graph-only recall.');
+        console.warn(
+          'Embeddings exist but no provider available for query embedding. Falling back to graph-only recall.',
+        );
       }
 
       const types = args.types
-        ? (args.types as string).split(',').map((t) => t.trim()) as EntityType[]
+        ? ((args.types as string).split(',').map((t) => t.trim()) as EntityType[])
         : undefined;
 
       const hivePath = args.hive as string | undefined;
@@ -147,12 +147,16 @@ export default defineCommand({
       }
 
       console.log(`Query: "${args.query}"`);
-      console.log(`Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n`);
+      console.log(
+        `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n`,
+      );
 
       for (let i = 0; i < response.results.length; i++) {
         const r = response.results[i];
         console.log(`  ${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}`);
-        console.log(`     semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}`);
+        console.log(
+          `     semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}`,
+        );
 
         if (r.connections.length > 0) {
           const conns = r.connections

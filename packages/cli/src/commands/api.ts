@@ -48,7 +48,9 @@ export default defineCommand({
     });
 
     const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
-      console.log(`nacre API server running at http://${hostname === '0.0.0.0' ? 'localhost' : hostname}:${info.port}`);
+      console.log(
+        `nacre API server running at http://${hostname === '0.0.0.0' ? 'localhost' : hostname}:${info.port}`,
+      );
       console.log(`Graph: ${graphPath} (${store.nodeCount()} nodes, ${store.edgeCount()} edges)`);
       console.log('');
       console.log('Endpoints:');

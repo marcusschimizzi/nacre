@@ -31,7 +31,7 @@ export interface ResolveProviderOptions {
 
 export function loadConfig(graphPath: string | null): NacreConfig {
   if (!graphPath || graphPath === ':memory:') return {};
-  
+
   const searchDirs = [dirname(graphPath), process.cwd()];
   for (const dir of searchDirs) {
     const configPath = join(dir, 'nacre.config.json');
@@ -49,20 +49,20 @@ export function loadConfig(graphPath: string | null): NacreConfig {
 
 export function resolveProvider(opts?: ResolveProviderOptions): EmbeddingProvider | null {
   let providerName: string | undefined = opts?.provider;
-  
+
   if (!providerName) {
     const config = loadConfig(opts?.graphPath ?? null);
     providerName = config.embeddings?.provider;
   }
-  
+
   if (!providerName) {
     providerName = process.env.NACRE_EMBEDDING_PROVIDER;
   }
-  
+
   if (!providerName) {
     if (opts?.allowNull) return null;
     throw new Error(
-      'No embedding provider configured. Set via --provider flag, nacre.config.json, or NACRE_EMBEDDING_PROVIDER env var. Available: onnx, ollama, openai, mock'
+      'No embedding provider configured. Set via --provider flag, nacre.config.json, or NACRE_EMBEDDING_PROVIDER env var. Available: onnx, ollama, openai, mock',
     );
   }
 
@@ -82,7 +82,7 @@ export function resolveProvider(opts?: ResolveProviderOptions): EmbeddingProvide
       return new MockEmbedder();
     default:
       throw new Error(
-        `Unknown embedding provider: "${providerName}". Available: onnx, ollama, openai, mock`
+        `Unknown embedding provider: "${providerName}". Available: onnx, ollama, openai, mock`,
       );
   }
 }

@@ -47,9 +47,20 @@ describe('Episode API', () => {
     store.putNode(makeNode('n-marcus', 'Marcus', 'person'));
     store.putNode(makeNode('n-nacre', 'Nacre', 'project'));
 
-    store.putEpisode(makeEpisode({ id: 'ep-1', title: 'First Episode', type: 'observation', timestamp: '2026-01-10' }));
-    store.putEpisode(makeEpisode({ id: 'ep-2', title: 'A Decision', type: 'decision', timestamp: '2026-01-15' }));
-    store.putEpisode(makeEpisode({ id: 'ep-3', title: 'An Event', type: 'event', timestamp: '2026-01-20' }));
+    store.putEpisode(
+      makeEpisode({
+        id: 'ep-1',
+        title: 'First Episode',
+        type: 'observation',
+        timestamp: '2026-01-10',
+      }),
+    );
+    store.putEpisode(
+      makeEpisode({ id: 'ep-2', title: 'A Decision', type: 'decision', timestamp: '2026-01-15' }),
+    );
+    store.putEpisode(
+      makeEpisode({ id: 'ep-3', title: 'An Event', type: 'event', timestamp: '2026-01-20' }),
+    );
 
     store.linkEpisodeEntity('ep-1', 'n-marcus', 'participant');
     store.linkEpisodeEntity('ep-2', 'n-nacre', 'topic');

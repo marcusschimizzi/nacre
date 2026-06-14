@@ -120,7 +120,9 @@ export default defineCommand({
           const provider = resolveProvider({ provider: providerName, graphPath });
           if (provider) ingestOpts.provider = provider;
         } catch (err) {
-          console.error(`Failed to create embedding provider: ${err instanceof Error ? err.message : err}`);
+          console.error(
+            `Failed to create embedding provider: ${err instanceof Error ? err.message : err}`,
+          );
         }
       }
 

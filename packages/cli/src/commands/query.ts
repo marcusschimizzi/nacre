@@ -119,7 +119,9 @@ export default defineCommand({
           }
           return;
         }
-        console.error('Provide a search term, or use --brief, --clusters, --fading, --type, or --since');
+        console.error(
+          'Provide a search term, or use --brief, --clusters, --fading, --type, or --since',
+        );
         process.exit(1);
       }
 
@@ -134,7 +136,9 @@ export default defineCommand({
           } else {
             console.log(`Found ${results.length} match${results.length === 1 ? '' : 'es'}:`);
             for (const r of results) {
-              console.log(`  ${r.node.label} (${r.node.type}) — score: ${r.matchScore.toFixed(2)}, mentions: ${r.node.mentionCount}`);
+              console.log(
+                `  ${r.node.label} (${r.node.type}) — score: ${r.matchScore.toFixed(2)}, mentions: ${r.node.mentionCount}`,
+              );
             }
           }
         }

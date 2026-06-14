@@ -20,9 +20,7 @@ describe('extractFromConversation', () => {
     };
 
     const result = extractFromConversation(chunk);
-    const toolLabels = result.nodes
-      .filter((n) => n.type === 'tool')
-      .map((n) => n.label);
+    const toolLabels = result.nodes.filter((n) => n.type === 'tool').map((n) => n.label);
 
     assert.ok(toolLabels.includes('TypeScript'));
     assert.ok(toolLabels.includes('React'));
@@ -71,8 +69,7 @@ describe('extractFromConversation', () => {
       messages: [
         {
           role: 'user',
-          content:
-            'Use `npm` and `Vite` but ignore `/path/to/file` and `./src/index.ts`',
+          content: 'Use `npm` and `Vite` but ignore `/path/to/file` and `./src/index.ts`',
         },
       ],
     };
@@ -158,9 +155,7 @@ describe('extractFromConversation', () => {
     };
 
     const result = extractFromConversation(chunk);
-    const tsNode = result.nodes.find(
-      (n) => n.label === 'TypeScript' && n.type === 'tool',
-    );
+    const tsNode = result.nodes.find((n) => n.label === 'TypeScript' && n.type === 'tool');
 
     assert.ok(tsNode);
     assert.ok(tsNode.mentionedBy.includes('Marcus'));
@@ -223,9 +218,7 @@ describe('extractFromConversation', () => {
     };
 
     const result = extractFromConversation(chunk);
-    const tsNodes = result.nodes.filter(
-      (n) => n.label === 'TypeScript' && n.type === 'tool',
-    );
+    const tsNodes = result.nodes.filter((n) => n.label === 'TypeScript' && n.type === 'tool');
 
     assert.equal(tsNodes.length, 1);
   });
@@ -337,15 +330,11 @@ describe('extractFromConversation', () => {
     };
 
     const result = extractFromConversation(chunk);
-    const tsNode = result.nodes.find(
-      (n) => n.label === 'TypeScript' && n.type === 'tool',
-    );
+    const tsNode = result.nodes.find((n) => n.label === 'TypeScript' && n.type === 'tool');
 
     assert.ok(tsNode);
     assert.ok(tsNode.excerpts.length > 0);
-    assert.ok(
-      tsNode.excerpts[0].toLowerCase().includes('typescript'),
-    );
+    assert.ok(tsNode.excerpts[0].toLowerCase().includes('typescript'));
   });
 
   it('handles multiple speakers mentioning same entity', () => {
@@ -369,9 +358,7 @@ describe('extractFromConversation', () => {
     };
 
     const result = extractFromConversation(chunk);
-    const dockerNode = result.nodes.find(
-      (n) => n.label === 'Docker' && n.type === 'tool',
-    );
+    const dockerNode = result.nodes.find((n) => n.label === 'Docker' && n.type === 'tool');
 
     assert.ok(dockerNode);
     assert.equal(dockerNode.mentionedBy.length, 3);
@@ -463,9 +450,7 @@ describe('extractFromConversation', () => {
     const edges = result.edges;
 
     assert.ok(edges.length > 0);
-    assert.ok(
-      edges.every((e) => e.context.includes('Frontend Development')),
-    );
+    assert.ok(edges.every((e) => e.context.includes('Frontend Development')));
   });
 
   it('handles special characters in bold text', () => {

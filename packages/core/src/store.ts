@@ -1,9 +1,9 @@
 /**
  * GraphStore — persistent storage layer for nacre's knowledge graph.
- * 
+ *
  * Uses SQLite (via better-sqlite3) as the backing store.
  * Synchronous API, direct file writes, no manual save needed.
- * 
+ *
  * A nacre graph is a single .db file on disk.
  */
 
@@ -268,7 +268,7 @@ function rowToEpisode(row: Record<string, unknown>): Episode {
 export interface NodeFilter {
   type?: EntityType;
   label?: string;
-  since?: string;  // ISO date — nodes reinforced after this date
+  since?: string; // ISO date — nodes reinforced after this date
 }
 
 export interface EdgeFilter {
@@ -323,7 +323,13 @@ export interface GraphStore {
   // Embedding operations
   getEmbeddingProvider(): string;
   setEmbeddingProvider(provider: string): void;
-  putEmbedding(id: string, type: string, content: string, vector: Float32Array, provider: string): void;
+  putEmbedding(
+    id: string,
+    type: string,
+    content: string,
+    vector: Float32Array,
+    provider: string,
+  ): void;
   getEmbedding(id: string): EmbeddingRecord | undefined;
   searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[];
   deleteEmbedding(id: string): void;
@@ -400,7 +406,7 @@ export class SqliteStore implements GraphStore {
     }
 
     const db = new Database(resolvedPath);
-    
+
     // Performance settings
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
@@ -410,10 +416,18 @@ export class SqliteStore implements GraphStore {
     db.exec(SCHEMA_SQL);
 
     // Set schema version if new
-    const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+    const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
+      | { value: string }
+      | undefined;
     if (!version) {
-      db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
-      db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run('created_at', new Date().toISOString());
+      db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(
+        'schema_version',
+        String(SCHEMA_VERSION),
+      );
+      db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(
+        'created_at',
+        new Date().toISOString(),
+      );
     } else {
       const ver = parseInt(version.value, 10);
       if (ver < 2) {
@@ -506,12 +520,15 @@ export class SqliteStore implements GraphStore {
       }
       if (ver < 5) {
         // Add hive_exclude column to nodes (for federated hive graph support)
-        const cols = db.prepare("PRAGMA table_info(nodes)").all() as Array<{ name: string }>;
-        if (!cols.some(c => c.name === 'hive_exclude')) {
-          db.exec("ALTER TABLE nodes ADD COLUMN hive_exclude INTEGER NOT NULL DEFAULT 0");
+        const cols = db.prepare('PRAGMA table_info(nodes)').all() as Array<{ name: string }>;
+        if (!cols.some((c) => c.name === 'hive_exclude')) {
+          db.exec('ALTER TABLE nodes ADD COLUMN hive_exclude INTEGER NOT NULL DEFAULT 0');
         }
       }
-      db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run('schema_version', String(SCHEMA_VERSION));
+      db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
+        'schema_version',
+        String(SCHEMA_VERSION),
+      );
     }
 
     return new SqliteStore(db);
@@ -527,22 +544,26 @@ export class SqliteStore implements GraphStore {
   // ── Nodes ─────────────────────────────────────────────────
 
   getNode(id: string): MemoryNode | undefined {
-    const row = this.stmt('SELECT * FROM nodes WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.stmt('SELECT * FROM nodes WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
     return row ? rowToNode(row) : undefined;
   }
 
   findNode(label: string): MemoryNode | undefined {
     const normalized = label.toLowerCase().trim();
-    
+
     // Try exact label match first
-    const exact = this.stmt('SELECT * FROM nodes WHERE LOWER(label) = ?').get(normalized) as Record<string, unknown> | undefined;
+    const exact = this.stmt('SELECT * FROM nodes WHERE LOWER(label) = ?').get(normalized) as
+      | Record<string, unknown>
+      | undefined;
     if (exact) return rowToNode(exact);
 
     // Try alias match — scan all nodes
     const all = this.stmt('SELECT * FROM nodes').all() as Record<string, unknown>[];
     for (const row of all) {
       const aliases: string[] = JSON.parse(row.aliases as string);
-      if (aliases.some(a => a.toLowerCase() === normalized)) {
+      if (aliases.some((a) => a.toLowerCase() === normalized)) {
         return rowToNode(row);
       }
     }
@@ -573,7 +594,7 @@ export class SqliteStore implements GraphStore {
     }
 
     sql += ' ORDER BY mention_count DESC';
-    
+
     const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
     return rows.map(rowToNode);
   }
@@ -582,12 +603,19 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       `INSERT OR REPLACE INTO nodes
        (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      node.id, node.label, node.type, JSON.stringify(node.aliases),
-      node.firstSeen, node.lastReinforced, node.mentionCount,
-      node.reinforcementCount, JSON.stringify(node.sourceFiles),
-      JSON.stringify(node.excerpts), node.hiveExclude ? 1 : 0
+      node.id,
+      node.label,
+      node.type,
+      JSON.stringify(node.aliases),
+      node.firstSeen,
+      node.lastReinforced,
+      node.mentionCount,
+      node.reinforcementCount,
+      JSON.stringify(node.sourceFiles),
+      JSON.stringify(node.excerpts),
+      node.hiveExclude ? 1 : 0,
     );
   }
 
@@ -604,7 +632,9 @@ export class SqliteStore implements GraphStore {
   // ── Edges ─────────────────────────────────────────────────
 
   getEdge(id: string): MemoryEdge | undefined {
-    const row = this.stmt('SELECT * FROM edges WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.stmt('SELECT * FROM edges WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
     return row ? rowToEdge(row) : undefined;
   }
 
@@ -635,7 +665,7 @@ export class SqliteStore implements GraphStore {
     }
 
     sql += ' ORDER BY weight DESC';
-    
+
     const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
     return rows.map(rowToEdge);
   }
@@ -644,12 +674,20 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       `INSERT OR REPLACE INTO edges
        (id, source, target, type, directed, weight, base_weight, reinforcement_count, first_formed, last_reinforced, stability, evidence)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      edge.id, edge.source, edge.target, edge.type,
-      edge.directed ? 1 : 0, edge.weight, edge.baseWeight,
-      edge.reinforcementCount, edge.firstFormed, edge.lastReinforced,
-      edge.stability, JSON.stringify(edge.evidence)
+      edge.id,
+      edge.source,
+      edge.target,
+      edge.type,
+      edge.directed ? 1 : 0,
+      edge.weight,
+      edge.baseWeight,
+      edge.reinforcementCount,
+      edge.firstFormed,
+      edge.lastReinforced,
+      edge.stability,
+      JSON.stringify(edge.evidence),
     );
   }
 
@@ -677,25 +715,43 @@ export class SqliteStore implements GraphStore {
     this.setMeta('embedding_provider', provider);
   }
 
-  putEmbedding(id: string, type: string, content: string, vector: Float32Array, provider: string): void {
+  putEmbedding(
+    id: string,
+    type: string,
+    content: string,
+    vector: Float32Array,
+    provider: string,
+  ): void {
     // Only enforce provider check if one has been explicitly set (non-default)
     const active = this.getEmbeddingProvider();
-    const metaHasProvider = this.stmt('SELECT value FROM meta WHERE key = ?').get('embedding_provider') as { value: string } | undefined;
+    const metaHasProvider = this.stmt('SELECT value FROM meta WHERE key = ?').get(
+      'embedding_provider',
+    ) as { value: string } | undefined;
     if (metaHasProvider && provider !== active) {
       throw new Error(
         `Provider "${provider}" is not active. Active provider: "${active}". ` +
-        `Call setEmbeddingProvider() to switch providers.`
+          `Call setEmbeddingProvider() to switch providers.`,
       );
     }
     this.stmt(
       `INSERT OR REPLACE INTO embeddings
        (id, type, content, vector, dimensions, provider, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, type, content, vectorToBuffer(vector), vector.length, provider, new Date().toISOString());
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      type,
+      content,
+      vectorToBuffer(vector),
+      vector.length,
+      provider,
+      new Date().toISOString(),
+    );
   }
 
   getEmbedding(id: string): EmbeddingRecord | undefined {
-    const row = this.stmt('SELECT * FROM embeddings WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.stmt('SELECT * FROM embeddings WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
     if (!row) return undefined;
     return {
       id: row.id as string,
@@ -754,14 +810,18 @@ export class SqliteStore implements GraphStore {
   }
 
   embeddingCountByType(type: string): number {
-    const row = this.stmt('SELECT COUNT(*) as count FROM embeddings WHERE type = ?').get(type) as { count: number };
+    const row = this.stmt('SELECT COUNT(*) as count FROM embeddings WHERE type = ?').get(type) as {
+      count: number;
+    };
     return row.count;
   }
 
   // ── File Tracking ─────────────────────────────────────────
 
   getFileHash(path: string): FileHash | undefined {
-    const row = this.stmt('SELECT * FROM processed_files WHERE path = ?').get(path) as Record<string, unknown> | undefined;
+    const row = this.stmt('SELECT * FROM processed_files WHERE path = ?').get(path) as
+      | Record<string, unknown>
+      | undefined;
     if (!row) return undefined;
     return {
       path: row.path as string,
@@ -772,7 +832,7 @@ export class SqliteStore implements GraphStore {
 
   listFileHashes(): FileHash[] {
     const rows = this.stmt('SELECT * FROM processed_files').all() as Record<string, unknown>[];
-    return rows.map(row => ({
+    return rows.map((row) => ({
       path: row.path as string,
       hash: row.hash as string,
       lastProcessed: row.last_processed as string,
@@ -781,7 +841,7 @@ export class SqliteStore implements GraphStore {
 
   putFileHash(hash: FileHash): void {
     this.stmt(
-      'INSERT OR REPLACE INTO processed_files (path, hash, last_processed) VALUES (?, ?, ?)'
+      'INSERT OR REPLACE INTO processed_files (path, hash, last_processed) VALUES (?, ?, ?)',
     ).run(hash.path, hash.hash, hash.lastProcessed);
   }
 
@@ -792,18 +852,30 @@ export class SqliteStore implements GraphStore {
       `INSERT OR REPLACE INTO episodes
        (id, timestamp, end_timestamp, type, title, summary, content, sequence, parent_id,
         importance, access_count, last_accessed, source, source_type, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      episode.id, episode.timestamp, episode.endTimestamp ?? null,
-      episode.type, episode.title, episode.summary ?? null,
-      episode.content, episode.sequence, episode.parentId ?? null,
-      episode.importance, episode.accessCount, episode.lastAccessed,
-      episode.source, episode.sourceType, new Date().toISOString()
+      episode.id,
+      episode.timestamp,
+      episode.endTimestamp ?? null,
+      episode.type,
+      episode.title,
+      episode.summary ?? null,
+      episode.content,
+      episode.sequence,
+      episode.parentId ?? null,
+      episode.importance,
+      episode.accessCount,
+      episode.lastAccessed,
+      episode.source,
+      episode.sourceType,
+      new Date().toISOString(),
     );
   }
 
   getEpisode(id: string): Episode | undefined {
-    const row = this.stmt('SELECT * FROM episodes WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.stmt('SELECT * FROM episodes WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
     if (!row) return undefined;
     const episode = rowToEpisode(row);
     this.populateEpisodeEntities(episode);
@@ -845,7 +917,7 @@ export class SqliteStore implements GraphStore {
     sql += ' ORDER BY e.timestamp DESC';
 
     const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
-    return rows.map(row => {
+    return rows.map((row) => {
       const episode = rowToEpisode(row);
       this.populateEpisodeEntities(episode);
       return episode;
@@ -863,21 +935,23 @@ export class SqliteStore implements GraphStore {
 
   linkEpisodeEntity(episodeId: string, nodeId: string, role: EpisodeEntityLink['role']): void {
     this.stmt(
-      'INSERT OR REPLACE INTO episode_entities (episode_id, node_id, role) VALUES (?, ?, ?)'
+      'INSERT OR REPLACE INTO episode_entities (episode_id, node_id, role) VALUES (?, ?, ?)',
     ).run(episodeId, nodeId, role);
   }
 
   unlinkEpisodeEntity(episodeId: string, nodeId: string, role: EpisodeEntityLink['role']): void {
-    this.stmt(
-      'DELETE FROM episode_entities WHERE episode_id = ? AND node_id = ? AND role = ?'
-    ).run(episodeId, nodeId, role);
+    this.stmt('DELETE FROM episode_entities WHERE episode_id = ? AND node_id = ? AND role = ?').run(
+      episodeId,
+      nodeId,
+      role,
+    );
   }
 
   getEpisodeEntities(episodeId: string): EpisodeEntityLink[] {
     const rows = this.stmt(
-      'SELECT episode_id, node_id, role FROM episode_entities WHERE episode_id = ?'
+      'SELECT episode_id, node_id, role FROM episode_entities WHERE episode_id = ?',
     ).all(episodeId) as Array<Record<string, unknown>>;
-    return rows.map(row => ({
+    return rows.map((row) => ({
       episodeId: row.episode_id as string,
       nodeId: row.node_id as string,
       role: row.role as EpisodeEntityLink['role'],
@@ -885,13 +959,15 @@ export class SqliteStore implements GraphStore {
   }
 
   getEntityEpisodes(nodeId: string): Episode[] {
-    const rows = this.db.prepare(
-      `SELECT DISTINCT e.* FROM episodes e
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT e.* FROM episodes e
        JOIN episode_entities ee ON e.id = ee.episode_id
        WHERE ee.node_id = ?
-       ORDER BY e.timestamp DESC`
-    ).all(nodeId) as Record<string, unknown>[];
-    return rows.map(row => {
+       ORDER BY e.timestamp DESC`,
+      )
+      .all(nodeId) as Record<string, unknown>[];
+    return rows.map((row) => {
       const episode = rowToEpisode(row);
       this.populateEpisodeEntities(episode);
       return episode;
@@ -900,7 +976,7 @@ export class SqliteStore implements GraphStore {
 
   touchEpisode(id: string): void {
     this.stmt(
-      'UPDATE episodes SET access_count = access_count + 1, last_accessed = ? WHERE id = ?'
+      'UPDATE episodes SET access_count = access_count + 1, last_accessed = ? WHERE id = ?',
     ).run(new Date().toISOString(), id);
   }
 
@@ -923,20 +999,30 @@ export class SqliteStore implements GraphStore {
       `INSERT OR REPLACE INTO procedures
        (id, statement, type, trigger_keywords, trigger_contexts, source_episodes, source_nodes,
         confidence, applications, contradictions, stability, last_applied, created_at, updated_at, flagged_for_review)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      procedure.id, procedure.statement, procedure.type,
-      JSON.stringify(procedure.triggerKeywords), JSON.stringify(procedure.triggerContexts),
-      JSON.stringify(procedure.sourceEpisodes), JSON.stringify(procedure.sourceNodes),
-      procedure.confidence, procedure.applications, procedure.contradictions,
-      procedure.stability, procedure.lastApplied,
-      procedure.createdAt, procedure.updatedAt,
-      procedure.flaggedForReview ? 1 : 0
+      procedure.id,
+      procedure.statement,
+      procedure.type,
+      JSON.stringify(procedure.triggerKeywords),
+      JSON.stringify(procedure.triggerContexts),
+      JSON.stringify(procedure.sourceEpisodes),
+      JSON.stringify(procedure.sourceNodes),
+      procedure.confidence,
+      procedure.applications,
+      procedure.contradictions,
+      procedure.stability,
+      procedure.lastApplied,
+      procedure.createdAt,
+      procedure.updatedAt,
+      procedure.flaggedForReview ? 1 : 0,
     );
   }
 
   getProcedure(id: string): Procedure | undefined {
-    const row = this.stmt('SELECT * FROM procedures WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.stmt('SELECT * FROM procedures WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
     return row ? rowToProcedure(row) : undefined;
   }
 
@@ -968,15 +1054,11 @@ export class SqliteStore implements GraphStore {
 
     if (filter?.hasKeyword) {
       const kw = filter.hasKeyword.toLowerCase();
-      return procedures.filter(p =>
-        p.triggerKeywords.some(k => k.toLowerCase().includes(kw))
-      );
+      return procedures.filter((p) => p.triggerKeywords.some((k) => k.toLowerCase().includes(kw)));
     }
     if (filter?.hasContext) {
       const ctx = filter.hasContext.toLowerCase();
-      return procedures.filter(p =>
-        p.triggerContexts.some(c => c.toLowerCase() === ctx)
-      );
+      return procedures.filter((p) => p.triggerContexts.some((c) => c.toLowerCase() === ctx));
     }
 
     return procedures;
@@ -1013,21 +1095,37 @@ export class SqliteStore implements GraphStore {
     const insertAll = this.db.transaction(() => {
       this.stmt(
         `INSERT INTO snapshots (id, created_at, trigger, node_count, edge_count, episode_count, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(id, now, trigger, nodes.length, edges.length, epCount, metadata ? JSON.stringify(metadata) : null);
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        id,
+        now,
+        trigger,
+        nodes.length,
+        edges.length,
+        epCount,
+        metadata ? JSON.stringify(metadata) : null,
+      );
 
       for (const node of nodes) {
         this.stmt(
           `INSERT INTO snapshot_nodes (snapshot_id, node_id, label, type, mention_count, data)
-           VALUES (?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?)`,
         ).run(id, node.id, node.label, node.type, node.mentionCount, JSON.stringify(node));
       }
 
       for (const edge of edges) {
         this.stmt(
           `INSERT INTO snapshot_edges (snapshot_id, edge_id, source, target, weight, stability, data)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run(id, edge.id, edge.source, edge.target, edge.weight, edge.stability, JSON.stringify(edge));
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          id,
+          edge.id,
+          edge.source,
+          edge.target,
+          edge.weight,
+          edge.stability,
+          JSON.stringify(edge),
+        );
       }
     });
 
@@ -1036,7 +1134,9 @@ export class SqliteStore implements GraphStore {
   }
 
   getSnapshot(id: string): Snapshot | undefined {
-    const row = this.stmt('SELECT * FROM snapshots WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.stmt('SELECT * FROM snapshots WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
     if (!row) return undefined;
     return {
       id: row.id as string,
@@ -1075,7 +1175,7 @@ export class SqliteStore implements GraphStore {
     }
 
     const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
-    return rows.map(row => ({
+    return rows.map((row) => ({
       id: row.id as string,
       createdAt: row.created_at as string,
       trigger: row.trigger as SnapshotTrigger,
@@ -1090,8 +1190,12 @@ export class SqliteStore implements GraphStore {
     const snapshot = this.getSnapshot(id);
     if (!snapshot) throw new Error(`Snapshot not found: ${id}`);
 
-    const nodeRows = this.stmt('SELECT data FROM snapshot_nodes WHERE snapshot_id = ?').all(id) as Array<{ data: string }>;
-    const edgeRows = this.stmt('SELECT data FROM snapshot_edges WHERE snapshot_id = ?').all(id) as Array<{ data: string }>;
+    const nodeRows = this.stmt('SELECT data FROM snapshot_nodes WHERE snapshot_id = ?').all(
+      id,
+    ) as Array<{ data: string }>;
+    const edgeRows = this.stmt('SELECT data FROM snapshot_edges WHERE snapshot_id = ?').all(
+      id,
+    ) as Array<{ data: string }>;
 
     const nodes: Record<string, MemoryNode> = {};
     for (const row of nodeRows) {
@@ -1123,18 +1227,20 @@ export class SqliteStore implements GraphStore {
   }
 
   getNodeHistory(nodeId: string): EntityHistory {
-    const rows = this.db.prepare(
-      `SELECT s.id AS snapshot_id, s.created_at, sn.data
+    const rows = this.db
+      .prepare(
+        `SELECT s.id AS snapshot_id, s.created_at, sn.data
        FROM snapshot_nodes sn
        JOIN snapshots s ON s.id = sn.snapshot_id
        WHERE sn.node_id = ?
-       ORDER BY s.created_at ASC`
-    ).all(nodeId) as Array<{ snapshot_id: string; created_at: string; data: string }>;
+       ORDER BY s.created_at ASC`,
+      )
+      .all(nodeId) as Array<{ snapshot_id: string; created_at: string; data: string }>;
 
     return {
       entityId: nodeId,
       type: 'node',
-      snapshots: rows.map(row => ({
+      snapshots: rows.map((row) => ({
         snapshotId: row.snapshot_id,
         timestamp: row.created_at,
         state: JSON.parse(row.data) as MemoryNode,
@@ -1143,18 +1249,20 @@ export class SqliteStore implements GraphStore {
   }
 
   getEdgeHistory(edgeId: string): EntityHistory {
-    const rows = this.db.prepare(
-      `SELECT s.id AS snapshot_id, s.created_at, se.data
+    const rows = this.db
+      .prepare(
+        `SELECT s.id AS snapshot_id, s.created_at, se.data
        FROM snapshot_edges se
        JOIN snapshots s ON s.id = se.snapshot_id
        WHERE se.edge_id = ?
-       ORDER BY s.created_at ASC`
-    ).all(edgeId) as Array<{ snapshot_id: string; created_at: string; data: string }>;
+       ORDER BY s.created_at ASC`,
+      )
+      .all(edgeId) as Array<{ snapshot_id: string; created_at: string; data: string }>;
 
     return {
       entityId: edgeId,
       type: 'edge',
-      snapshots: rows.map(row => ({
+      snapshots: rows.map((row) => ({
         snapshotId: row.snapshot_id,
         timestamp: row.created_at,
         state: JSON.parse(row.data) as MemoryEdge,
@@ -1229,7 +1337,9 @@ export class SqliteStore implements GraphStore {
   // ── Metadata ──────────────────────────────────────────────
 
   getMeta(key: string): string | undefined {
-    const row = this.stmt('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
+    const row = this.stmt('SELECT value FROM meta WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined;
     return row?.value;
   }
 

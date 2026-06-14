@@ -8,7 +8,8 @@ import { loadGraph, closeGraph } from '../graph-loader.js';
 export default defineCommand({
   meta: {
     name: 'suggest',
-    description: 'Show connection suggestions — co-occurrence patterns, structural holes, type bridges',
+    description:
+      'Show connection suggestions — co-occurrence patterns, structural holes, type bridges',
   },
   args: {
     graph: {
@@ -44,8 +45,8 @@ export default defineCommand({
         }
       } else {
         const graphPath = args.graph as string;
-        const pendingPath = (args.pending as string) ??
-          resolve(dirname(graphPath), 'pending-edges.json');
+        const pendingPath =
+          (args.pending as string) ?? resolve(dirname(graphPath), 'pending-edges.json');
         try {
           if (existsSync(pendingPath)) {
             pendingEdges = JSON.parse(readFileSync(pendingPath, 'utf8')) as PendingEdge[];

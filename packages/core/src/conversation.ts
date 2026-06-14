@@ -36,7 +36,7 @@ function inferTopic(
   metadata?: ConversationInput['metadata'],
 ): string | undefined {
   if (metadata?.topic) return metadata.topic;
-  const firstUser = chunk.find(m => m.role === 'user');
+  const firstUser = chunk.find((m) => m.role === 'user');
   if (!firstUser) return undefined;
   const text = firstUser.content.trim();
   if (text.length <= 80) return text;
@@ -78,7 +78,7 @@ export function chunkConversation(
       const prevTs = getTimestamp(current[current.length - 1]);
       const curTs = getTimestamp(msg);
 
-      if (prevTs !== null && curTs !== null && (curTs - prevTs) > TIME_GAP_MS) {
+      if (prevTs !== null && curTs !== null && curTs - prevTs > TIME_GAP_MS) {
         flushChunk();
       }
     }
@@ -86,7 +86,11 @@ export function chunkConversation(
     if (current.length >= maxMessages) {
       // Keep user-assistant pairs together: if the current message is an
       // assistant reply, include it before splitting
-      if (msg.role === 'assistant' && current.length > 0 && current[current.length - 1].role === 'user') {
+      if (
+        msg.role === 'assistant' &&
+        current.length > 0 &&
+        current[current.length - 1].role === 'user'
+      ) {
         current.push(msg);
         flushChunk();
         continue;
@@ -95,7 +99,11 @@ export function chunkConversation(
     }
 
     if (current.length > 0 && estimateTokens([...current, msg]) > maxTokens) {
-      if (msg.role === 'assistant' && current.length > 0 && current[current.length - 1].role === 'user') {
+      if (
+        msg.role === 'assistant' &&
+        current.length > 0 &&
+        current[current.length - 1].role === 'user'
+      ) {
         current.push(msg);
         flushChunk();
         continue;
@@ -112,7 +120,7 @@ export function chunkConversation(
 
 function formatMessagesAsContent(messages: ConversationMessage[]): string {
   return messages
-    .map(m => {
+    .map((m) => {
       const speaker = m.name ?? m.role;
       return `[${speaker}]: ${m.content}`;
     })
@@ -120,20 +128,22 @@ function formatMessagesAsContent(messages: ConversationMessage[]): string {
 }
 
 function generateChunkSummary(messages: ConversationMessage[]): string {
-  const userMessages = messages.filter(m => m.role === 'user');
-  const assistantMessages = messages.filter(m => m.role === 'assistant');
+  const userMessages = messages.filter((m) => m.role === 'user');
+  const assistantMessages = messages.filter((m) => m.role === 'assistant');
   const parts: string[] = [];
 
   if (userMessages.length > 0) {
     parts.push(`${userMessages.length} user message${userMessages.length > 1 ? 's' : ''}`);
   }
   if (assistantMessages.length > 0) {
-    parts.push(`${assistantMessages.length} assistant response${assistantMessages.length > 1 ? 's' : ''}`);
+    parts.push(
+      `${assistantMessages.length} assistant response${assistantMessages.length > 1 ? 's' : ''}`,
+    );
   }
 
-  const toolMessages = messages.filter(m => m.role === 'tool');
+  const toolMessages = messages.filter((m) => m.role === 'tool');
   if (toolMessages.length > 0) {
-    const toolNames = [...new Set(toolMessages.map(m => m.toolName).filter(Boolean))];
+    const toolNames = [...new Set(toolMessages.map((m) => m.toolName).filter(Boolean))];
     parts.push(`tools: ${toolNames.join(', ') || 'unnamed'}`);
   }
 
@@ -146,17 +156,14 @@ export function chunkToEpisode(
 ): Episode {
   const now = new Date().toISOString();
   const participants = [
-    ...new Set(
-      chunk.messages
-        .filter(m => m.name && m.role === 'user')
-        .map(m => m.name!)
-    ),
+    ...new Set(chunk.messages.filter((m) => m.name && m.role === 'user').map((m) => m.name!)),
   ];
 
-  const title = chunk.topic
-    ?? metadata?.topic
-    ?? chunk.messages.find(m => m.role === 'user')?.content.slice(0, 80)
-    ?? 'Untitled conversation';
+  const title =
+    chunk.topic ??
+    metadata?.topic ??
+    chunk.messages.find((m) => m.role === 'user')?.content.slice(0, 80) ??
+    'Untitled conversation';
 
   return {
     id: `ep_conv_${randomUUID().slice(0, 12)}`,

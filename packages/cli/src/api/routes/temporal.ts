@@ -61,7 +61,10 @@ export function temporalRoutes(store: SqliteStore): Hono {
 
     const fromSnap = store.getSnapshot(fromId);
     if (!fromSnap) {
-      return c.json({ error: { message: `Snapshot not found: ${fromId}`, code: 'NOT_FOUND' } }, 404);
+      return c.json(
+        { error: { message: `Snapshot not found: ${fromId}`, code: 'NOT_FOUND' } },
+        404,
+      );
     }
 
     const toSnap = store.getSnapshot(toId);

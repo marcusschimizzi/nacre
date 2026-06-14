@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 export const memoryCreateSchema = z.object({
   content: z.string().min(1),
-  type: z.enum(['person', 'project', 'tool', 'concept', 'decision', 'event', 'lesson', 'place', 'tag']).optional().default('concept'),
+  type: z
+    .enum(['person', 'project', 'tool', 'concept', 'decision', 'event', 'lesson', 'place', 'tag'])
+    .optional()
+    .default('concept'),
   label: z.string().min(1).optional(),
 });
 

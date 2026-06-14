@@ -86,7 +86,7 @@ export default defineCommand({
         console.log(`  Importance: ${episode.importance}`);
         console.log(`  Accessed: ${episode.accessCount} times`);
         if (entities.length > 0) {
-          console.log(`  Entities: ${entities.map(e => `${e.nodeId} (${e.role})`).join(', ')}`);
+          console.log(`  Entities: ${entities.map((e) => `${e.nodeId} (${e.role})`).join(', ')}`);
         }
         console.log(`\n${episode.content}`);
         return;
@@ -123,11 +123,15 @@ export default defineCommand({
         return;
       }
 
-      console.log(`Found ${episodes.length} episode${episodes.length === 1 ? '' : 's'}${episodes.length > limit ? ` (showing ${limit})` : ''}:\n`);
+      console.log(
+        `Found ${episodes.length} episode${episodes.length === 1 ? '' : 's'}${episodes.length > limit ? ` (showing ${limit})` : ''}:\n`,
+      );
 
       for (const ep of limited) {
         const entityCount = ep.participants.length + ep.topics.length;
-        console.log(`  [${ep.type}] ${ep.title} (${ep.timestamp})${entityCount > 0 ? ` — ${entityCount} entities` : ''}`);
+        console.log(
+          `  [${ep.type}] ${ep.title} (${ep.timestamp})${entityCount > 0 ? ` — ${entityCount} entities` : ''}`,
+        );
       }
     } finally {
       store.close();

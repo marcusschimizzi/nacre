@@ -89,8 +89,8 @@ export const DEFAULT_CONFIG: GraphConfig = {
     explicit: 1.0,
     coOccurrence: 0.3,
     temporal: 0.1,
-    causal: 0.8
-  }
+    causal: 0.8,
+  },
 };
 
 // === Pipeline Types ===
@@ -365,9 +365,9 @@ export interface EntityHistory {
 export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  timestamp?: string;       // ISO date
-  name?: string;            // participant name (for multi-party)
-  toolName?: string;        // for tool messages
+  timestamp?: string; // ISO date
+  name?: string; // participant name (for multi-party)
+  toolName?: string; // for tool messages
   toolCallId?: string;
 }
 
@@ -375,9 +375,9 @@ export interface ConversationInput {
   messages: ConversationMessage[];
   metadata?: {
     sessionId?: string;
-    platform?: string;      // 'slack', 'discord', 'cli', 'openai', etc.
+    platform?: string; // 'slack', 'discord', 'cli', 'openai', etc.
     topic?: string;
-    source?: string;        // file path or URL
+    source?: string; // file path or URL
   };
 }
 
@@ -385,7 +385,7 @@ export interface ConversationChunk {
   messages: ConversationMessage[];
   startTime?: string;
   endTime?: string;
-  topic?: string;           // inferred or from metadata
+  topic?: string; // inferred or from metadata
   summary?: string;
 }
 

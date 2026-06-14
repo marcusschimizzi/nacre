@@ -20,7 +20,11 @@ function makeNode(id: string, label: string, type: MemoryNode['type'] = 'concept
   };
 }
 
-function makeEdge(source: string, target: string, type: MemoryEdge['type'] = 'co-occurrence'): MemoryEdge {
+function makeEdge(
+  source: string,
+  target: string,
+  type: MemoryEdge['type'] = 'co-occurrence',
+): MemoryEdge {
   const now = new Date().toISOString();
   return {
     id: `${source}-${target}`,

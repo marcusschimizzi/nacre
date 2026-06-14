@@ -1,8 +1,5 @@
 import { defineCommand } from 'citty';
-import {
-  SqliteStore,
-  resolveProvider,
-} from '@nacre/core';
+import { SqliteStore, resolveProvider } from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 export default defineCommand({
@@ -52,7 +49,10 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const provider = resolveProvider({ provider: args.provider as string | undefined, graphPath: args.graph as string });
+    const provider = resolveProvider({
+      provider: args.provider as string | undefined,
+      graphPath: args.graph as string,
+    });
     if (!provider) {
       console.error(
         'No embedding provider configured. Set one via --provider, nacre.config.json, or NACRE_EMBEDDING_PROVIDER.',
