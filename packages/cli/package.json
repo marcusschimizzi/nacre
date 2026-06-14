@@ -21,6 +21,6 @@
     "build": "tsup",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test",
-    "lint": "echo 'no lint yet'"
+    "lint": "biome check ."
   }
 }
