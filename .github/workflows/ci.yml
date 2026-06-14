@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   verify:
-    name: build · lint · test (node ${{ matrix.node-version }})
+    name: build · lint · typecheck · test (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,31 +36,7 @@ jobs:
         run: npm run lint
 
       - name: Typecheck
-        # cli/sdk/dashboard have pre-existing type errors (see the strict-typecheck
-        # job and docs/REVIEW-2026-06.md). Gate on the packages that are green today.
-        run: npm run typecheck -w @nacre/core -w @nacre/parser -w @nacre/viz
+        run: npm run typecheck
 
       - name: Test
         run: npm test
-
-  typecheck-strict:
-    # Full typecheck across every package. Allowed to fail: @nacre/cli (~24 errors,
-    # also OOMs tsc at the default heap), @nacre/sdk (1), and @nacre/dashboard (does
-    # not compile — REVIEW-2026-06.md UX-1) are tracked follow-ups. This job keeps
-    # those failures visible; tighten `verify` to require it once they are fixed.
-    name: typecheck (full, non-blocking)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.x'
-          cache: npm
-
-      - name: Install
-        run: npm ci
-
-      - name: Typecheck all packages
-        run: NODE_OPTIONS=--max-old-space-size=6144 npm run typecheck
