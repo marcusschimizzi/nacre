@@ -233,45 +233,60 @@ export async function consolidate(opts: ConsolidateOptions): Promise<Consolidati
   let newEmbeddings = 0;
   if (opts.embeddingProvider && useSqlite && store) {
     const provider = opts.embeddingProvider;
+    const EMBED_CHUNK = 64;
+
+    // Collect the items that actually need (re)embedding, keeping the existing
+    // skip checks (unchanged content is not re-embedded).
+    const work: Array<{ id: string; type: 'node' | 'episode'; text: string }> = [];
     for (const node of Object.values(graph.nodes)) {
       const text = node.label + ' — ' + node.excerpts.map((e) => e.text).join('. ');
       const existing = store.getEmbedding(node.id);
       if (existing && existing.content === text) continue;
-
-      try {
-        const vector = await provider.embed(text);
-        store.putEmbedding(node.id, 'node', text, vector, provider.name);
-        newEmbeddings++;
-      } catch {
-        // Embedding failure is non-fatal — node still exists in graph
-      }
+      work.push({ id: node.id, type: 'node', text });
     }
-
     for (const episode of storedEpisodes) {
       const text = episode.title + ' — ' + episode.content;
       const existing = store.getEmbedding(episode.id);
       if (existing && existing.content === text) continue;
+      work.push({ id: episode.id, type: 'episode', text });
+    }
 
+    // Embed in batches (one HTTP call + one transaction per chunk) instead of a
+    // serial call + autocommit per item. A failed chunk is skipped, non-fatal.
+    for (let i = 0; i < work.length; i += EMBED_CHUNK) {
+      const chunk = work.slice(i, i + EMBED_CHUNK);
       try {
-        const vector = await provider.embed(text);
-        store.putEmbedding(episode.id, 'episode', text, vector, provider.name);
-        newEmbeddings++;
+        const vectors = await provider.embedBatch(chunk.map((w) => w.text));
+        store.putEmbeddingsBatch(
+          chunk.map((w, j) => ({
+            id: w.id,
+            type: w.type,
+            content: w.text,
+            vector: vectors[j],
+            provider: provider.name,
+          })),
+        );
+        newEmbeddings += chunk.length;
       } catch {
-        // Embedding failure is non-fatal
+        // Embedding failure is non-fatal — these items remain unembedded.
       }
     }
   }
 
   if (useSqlite && store) {
-    store.importGraph(graph);
+    // Delta upsert (no DELETE-all rewrite); the graph is a superset of the store.
+    store.upsertGraph(graph);
     store.setMeta('pending_edges', JSON.stringify(pendingEdges));
     store.save();
 
     const snapshotConfig = loadConfig(outDir).snapshots;
     const snapshotsEnabled = snapshotConfig?.enabled !== false;
     const triggers = snapshotConfig?.triggers ?? ['consolidation'];
+    // Only snapshot when this run actually changed something — avoids a full
+    // node/edge copy (and unbounded snapshot growth) on no-op consolidations.
+    const changedThisRun = toProcess.length > 0 || decayed > 0;
 
-    if (snapshotsEnabled && triggers.includes('consolidation')) {
+    if (snapshotsEnabled && triggers.includes('consolidation') && changedThisRun) {
       store.createSnapshot('consolidation');
 
       if (snapshotConfig?.retention) {

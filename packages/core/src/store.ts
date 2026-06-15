@@ -300,6 +300,14 @@ export interface SimilaritySearchOptions {
   minSimilarity?: number;
 }
 
+export interface EmbeddingWrite {
+  id: string;
+  type: string;
+  content: string;
+  vector: Float32Array;
+  provider: string;
+}
+
 export interface GraphStore {
   // Node operations
   getNode(id: string): MemoryNode | undefined;
@@ -331,6 +339,7 @@ export interface GraphStore {
     vector: Float32Array,
     provider: string,
   ): void;
+  putEmbeddingsBatch(records: EmbeddingWrite[]): void;
   getEmbedding(id: string): EmbeddingRecord | undefined;
   searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[];
   deleteEmbedding(id: string): void;
@@ -371,6 +380,7 @@ export interface GraphStore {
   getFullGraph(): NacreGraph;
   getAdjacencyMap(): AdjacencyMap;
   importGraph(graph: NacreGraph): void;
+  upsertGraph(graph: NacreGraph): void;
 
   // Metadata
   getMeta(key: string): string | undefined;
@@ -807,6 +817,17 @@ export class SqliteStore implements GraphStore {
       provider,
       new Date().toISOString(),
     );
+  }
+
+  /** Write many embeddings in a single transaction (one fsync instead of N). */
+  putEmbeddingsBatch(records: EmbeddingWrite[]): void {
+    if (records.length === 0) return;
+    const apply = this.db.transaction(() => {
+      for (const r of records) {
+        this.putEmbedding(r.id, r.type, r.content, r.vector, r.provider);
+      }
+    });
+    apply();
   }
 
   getEmbedding(id: string): EmbeddingRecord | undefined {
@@ -1473,6 +1494,26 @@ export class SqliteStore implements GraphStore {
     });
 
     importAll();
+    this.invalidateCaches();
+  }
+
+  /**
+   * Apply an in-memory graph as a delta: upsert every node/edge/file-hash and
+   * refresh metadata, WITHOUT importGraph's DELETE-all rewrite. Intended for the
+   * consolidation path, where the graph is seeded from getFullGraph() and only
+   * grows/mutates (decay touches edge weights; merge only adds) — never deletes —
+   * so a full upsert reproduces importGraph's result without the churn.
+   */
+  upsertGraph(graph: NacreGraph): void {
+    const apply = this.db.transaction(() => {
+      for (const node of Object.values(graph.nodes)) this.putNode(node);
+      for (const edge of Object.values(graph.edges)) this.putEdge(edge);
+      for (const fh of graph.processedFiles) this.putFileHash(fh);
+      this.setMeta('config', JSON.stringify(graph.config));
+      this.setMeta('last_consolidated', graph.lastConsolidated);
+      this.setMeta('graph_version', String(graph.version));
+    });
+    apply();
     this.invalidateCaches();
   }
 
