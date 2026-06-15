@@ -1,3 +1,4 @@
+import { isAbsolute, relative, resolve } from 'node:path';
 import { Hono } from 'hono';
 import {
   generateBrief,
@@ -10,7 +11,17 @@ import {
 import { consolidate } from '@nacre/parser';
 import { consolidateSchema } from '../schemas.js';
 
-export function intelligenceRoutes(store: SqliteStore, graphPath: string): Hono {
+/** True if `target` resolves to a path inside `root` (no traversal / absolute escape). */
+function isWithin(root: string, target: string): boolean {
+  const rel = relative(root, resolve(root, target));
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+export function intelligenceRoutes(
+  store: SqliteStore,
+  graphPath: string,
+  consolidateRoot: string,
+): Hono {
   const app = new Hono();
 
   app.get('/brief', (c) => {
@@ -67,6 +78,24 @@ export function intelligenceRoutes(store: SqliteStore, graphPath: string): Hono 
     }
 
     const { inputs, outDir } = parsed.data;
+
+    // Confine filesystem access to the configured root so a remote caller can't
+    // read/write arbitrary paths (e.g. /etc, ../../secrets) via this endpoint.
+    const escapes =
+      inputs.some((p) => !isWithin(consolidateRoot, p)) ||
+      (outDir !== undefined && !isWithin(consolidateRoot, outDir));
+    if (escapes) {
+      return c.json(
+        {
+          error: {
+            message: 'inputs/outDir must stay within the server’s allowed directory',
+            code: 'FORBIDDEN_PATH',
+          },
+        },
+        400,
+      );
+    }
+
     const result = await consolidate({
       inputs,
       outDir: outDir ?? graphPath,
