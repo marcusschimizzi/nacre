@@ -1,5 +1,6 @@
 import type {
   NacreGraph,
+  MemoryEdge,
   RecallOptions,
   RecallResult,
   RecallResponse,
@@ -230,14 +231,16 @@ export async function recall(
   }
 
   let graph: NacreGraph;
-  // For the live graph, reuse the store's memoized adjacency map; for an asOf
-  // snapshot graph, leave `adj` undefined so graphWalk builds it from that graph.
-  let adj: AdjacencyMap | undefined;
+  // Adjacency for the graph walk AND connection-building below. For the live
+  // graph, reuse the store's memoized adjacency map; for an asOf snapshot graph,
+  // build it from that snapshot (the store's cache is the live graph's).
+  let adj: AdjacencyMap;
 
   if (opts.asOf) {
     const snapshots = store.listSnapshots({ until: opts.asOf, limit: 1 });
     if (snapshots.length > 0) {
       graph = store.getSnapshotGraph(snapshots[0].id);
+      adj = buildAdjacencyMap(graph);
     } else {
       console.warn(
         `No snapshot found before ${opts.asOf}. Using live graph instead. Run 'nacre snapshots create' to create one.`,
@@ -322,16 +325,26 @@ export async function recall(
   const top = scored.slice(0, limit);
 
   const results: RecallResult[] = [];
+  // Batch every candidate's episode lookup into two queries instead of an N+1
+  // (one getEntityEpisodes + a per-episode links query) per result.
+  const episodesByNode = store.getEntityEpisodesBatch(top.map((c) => c.id));
 
   for (const candidate of top) {
     const node = graph.nodes[candidate.id]!;
 
+    // Build connections from the in-memory adjacency map — the full edge set is
+    // already loaded into graph.edges — instead of two store.listEdges queries
+    // per candidate.
     const connections: RecallConnection[] = [];
-    const sourceEdges = store.listEdges({ source: candidate.id });
-    const targetEdges = store.listEdges({ target: candidate.id });
-    const allEdges = [...sourceEdges, ...targetEdges]
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 5);
+    const seenEdge = new Set<string>();
+    const incidentEdges: MemoryEdge[] = [];
+    for (const { edgeId } of adj[candidate.id] ?? []) {
+      if (seenEdge.has(edgeId)) continue; // undirected self-loops appear twice in adjacency
+      seenEdge.add(edgeId);
+      const edge = graph.edges[edgeId];
+      if (edge) incidentEdges.push(edge);
+    }
+    const allEdges = incidentEdges.sort((a, b) => b.weight - a.weight).slice(0, 5);
 
     for (const edge of allEdges) {
       const neighborId = edge.source === candidate.id ? edge.target : edge.source;
@@ -347,7 +360,7 @@ export async function recall(
     }
 
     let episodes: Episode[] | undefined;
-    const nodeEpisodes = store.getEntityEpisodes(candidate.id);
+    const nodeEpisodes = episodesByNode.get(candidate.id) ?? [];
     const hitEpisodes = episodeHits.get(candidate.id) ?? [];
 
     const allEpisodes = new Map<string, Episode>();

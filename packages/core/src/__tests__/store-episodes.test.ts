@@ -250,3 +250,46 @@ describe('SqliteStore — Episodes', () => {
     });
   });
 });
+
+describe('getEntityEpisodesBatch equivalence', () => {
+  let store: SqliteStore;
+
+  before(() => {
+    store = SqliteStore.open();
+    for (const [id, label] of [
+      ['a', 'Alpha'],
+      ['b', 'Beta'],
+      ['c', 'Gamma'],
+    ] as const) {
+      store.putNode(makeNode(id, label));
+    }
+    // Distinct timestamps to exercise DESC ordering; varied roles + shared episodes.
+    store.putEpisode(makeEpisode({ id: 'e1', title: 'One', timestamp: '2026-03-01' }));
+    store.putEpisode(makeEpisode({ id: 'e2', title: 'Two', timestamp: '2026-03-03' }));
+    store.putEpisode(makeEpisode({ id: 'e3', title: 'Three', timestamp: '2026-03-02' }));
+    store.linkEpisodeEntity('e1', 'a', 'participant');
+    store.linkEpisodeEntity('e1', 'b', 'topic');
+    store.linkEpisodeEntity('e2', 'a', 'participant');
+    store.linkEpisodeEntity('e2', 'c', 'outcome');
+    store.linkEpisodeEntity('e3', 'b', 'participant');
+  });
+
+  after(() => {
+    store.close();
+  });
+
+  it('matches per-node getEntityEpisodes for every node (episodes, order, roles)', () => {
+    const batch = store.getEntityEpisodesBatch(['a', 'b', 'c']);
+    for (const id of ['a', 'b', 'c']) {
+      assert.deepEqual(
+        batch.get(id),
+        store.getEntityEpisodes(id),
+        `batch result for ${id} must equal getEntityEpisodes(${id})`,
+      );
+    }
+  });
+
+  it('returns an empty map for no node ids', () => {
+    assert.equal(store.getEntityEpisodesBatch([]).size, 0);
+  });
+});

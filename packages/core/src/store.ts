@@ -348,6 +348,7 @@ export interface GraphStore {
   unlinkEpisodeEntity(episodeId: string, nodeId: string, role: EpisodeEntityLink['role']): void;
   getEpisodeEntities(episodeId: string): EpisodeEntityLink[];
   getEntityEpisodes(nodeId: string): Episode[];
+  getEntityEpisodesBatch(nodeIds: string[]): Map<string, Episode[]>;
   touchEpisode(id: string): void;
 
   // Procedure operations
@@ -1032,6 +1033,68 @@ export class SqliteStore implements GraphStore {
       this.populateEpisodeEntities(episode);
       return episode;
     });
+  }
+
+  /**
+   * Batched getEntityEpisodes: returns a nodeId -> Episode[] map for many nodes
+   * in two queries total (episodes + entity links) instead of the per-node N+1
+   * that getEntityEpisodes + populateEpisodeEntities incurs. Output is identical:
+   * each node's episodes are timestamp-DESC and fully populated.
+   */
+  getEntityEpisodesBatch(nodeIds: string[]): Map<string, Episode[]> {
+    const result = new Map<string, Episode[]>();
+    const unique = [...new Set(nodeIds)];
+    if (unique.length === 0) return result;
+    for (const id of unique) result.set(id, []);
+
+    const placeholders = unique.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT e.*, ee.node_id AS _match_node FROM episodes e
+       JOIN episode_entities ee ON e.id = ee.episode_id
+       WHERE ee.node_id IN (${placeholders})
+       ORDER BY e.timestamp DESC`,
+      )
+      .all(...unique) as Record<string, unknown>[];
+
+    // One Episode object per distinct episode id, populated once via a single
+    // links query; the per-node lists reference the shared (read-only) objects.
+    const byId = new Map<string, Episode>();
+    for (const row of rows) {
+      const id = row.id as string;
+      if (!byId.has(id)) byId.set(id, rowToEpisode(row));
+    }
+    this.populateEpisodesBatch(byId);
+
+    for (const row of rows) {
+      const ep = byId.get(row.id as string);
+      const list = result.get(row._match_node as string);
+      if (ep && list) list.push(ep);
+    }
+    return result;
+  }
+
+  /** Fill participants/topics/outcomes for many episodes in one query. */
+  private populateEpisodesBatch(byId: Map<string, Episode>): void {
+    if (byId.size === 0) return;
+    const ids = [...byId.keys()];
+    const placeholders = ids.map(() => '?').join(', ');
+    const links = this.db
+      .prepare(
+        `SELECT episode_id, node_id, role FROM episode_entities WHERE episode_id IN (${placeholders})`,
+      )
+      .all(...ids) as Record<string, unknown>[];
+    for (const link of links) {
+      const ep = byId.get(link.episode_id as string);
+      if (!ep) continue;
+      const nodeId = link.node_id as string;
+      if (link.role === 'participant') ep.participants.push(nodeId);
+      else if (link.role === 'topic') ep.topics.push(nodeId);
+      else if (link.role === 'outcome') {
+        if (!ep.outcomes) ep.outcomes = [];
+        ep.outcomes.push(nodeId);
+      }
+    }
   }
 
   touchEpisode(id: string): void {
