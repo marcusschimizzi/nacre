@@ -34,6 +34,7 @@ import type {
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { cosineSimilarity, bufferToVector, vectorToBuffer } from './embeddings.js';
+import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
@@ -367,6 +368,7 @@ export interface GraphStore {
 
   // Bulk operations
   getFullGraph(): NacreGraph;
+  getAdjacencyMap(): AdjacencyMap;
   importGraph(graph: NacreGraph): void;
 
   // Metadata
@@ -386,8 +388,48 @@ export class SqliteStore implements GraphStore {
   // Prepared statements (lazily cached for performance)
   private _stmts: Record<string, BetterSqlite3.Statement> = {};
 
+  // In-memory read caches for the live graph, rebuilt lazily. They turn the
+  // per-recall full-graph hydration + adjacency build + findNode alias scan into
+  // a one-time cost between writes. Invalidated explicitly on our own writes, and
+  // automatically when another connection/process commits (PRAGMA data_version).
+  private _graphCache: NacreGraph | null = null;
+  private _adjCache: AdjacencyMap | null = null;
+  private _aliasIndex: Map<string, string> | null = null;
+  private _cacheDataVersion = -1;
+
   private constructor(db: BetterSqlite3.Database) {
     this.db = db;
+  }
+
+  /**
+   * SQLite's data_version changes when a DIFFERENT connection commits to this
+   * database (it does NOT change for this connection's own writes). We use it to
+   * drop caches when another nacre instance/process (e.g. a separate `consolidate`)
+   * has written underneath us.
+   */
+  private currentDataVersion(): number {
+    return this.db.pragma('data_version', { simple: true }) as number;
+  }
+
+  /** Drop caches if an external connection has written since we last built them. */
+  private syncCacheVersion(): void {
+    const v = this.currentDataVersion();
+    if (v !== this._cacheDataVersion) {
+      this._graphCache = null;
+      this._adjCache = null;
+      this._aliasIndex = null;
+      this._cacheDataVersion = v;
+    }
+  }
+
+  /** Drop the live-graph read caches. Called by every node/edge write path. */
+  private invalidateCaches(): void {
+    this._graphCache = null;
+    this._adjCache = null;
+    this._aliasIndex = null;
+    // Our own writes don't bump data_version; keep it current so the next
+    // syncCacheVersion() doesn't mistake this for an external write.
+    this._cacheDataVersion = this.currentDataVersion();
   }
 
   /**
@@ -553,22 +595,36 @@ export class SqliteStore implements GraphStore {
   findNode(label: string): MemoryNode | undefined {
     const normalized = label.toLowerCase().trim();
 
-    // Try exact label match first
+    // Try exact label match first (indexed via LOWER(label)).
     const exact = this.stmt('SELECT * FROM nodes WHERE LOWER(label) = ?').get(normalized) as
       | Record<string, unknown>
       | undefined;
     if (exact) return rowToNode(exact);
 
-    // Try alias match — scan all nodes
-    const all = this.stmt('SELECT * FROM nodes').all() as Record<string, unknown>[];
-    for (const row of all) {
-      const aliases: string[] = JSON.parse(row.aliases as string);
-      if (aliases.some((a) => a.toLowerCase() === normalized)) {
-        return rowToNode(row);
+    // Fall back to a memoized normalized-alias index instead of scanning every
+    // node + JSON.parse-ing aliases on each call.
+    const id = this.aliasIndex().get(normalized);
+    return id ? this.getNode(id) : undefined;
+  }
+
+  /** normalized-alias -> node id, built once per write generation. */
+  private aliasIndex(): Map<string, string> {
+    this.syncCacheVersion();
+    if (this._aliasIndex) return this._aliasIndex;
+    const index = new Map<string, string>();
+    const rows = this.stmt('SELECT id, aliases FROM nodes').all() as {
+      id: string;
+      aliases: string;
+    }[];
+    for (const row of rows) {
+      const aliases: string[] = JSON.parse(row.aliases);
+      for (const alias of aliases) {
+        const key = alias.toLowerCase().trim();
+        if (!index.has(key)) index.set(key, row.id); // first-writer-wins, stable across runs
       }
     }
-
-    return undefined;
+    this._aliasIndex = index;
+    return index;
   }
 
   listNodes(filter?: NodeFilter): MemoryNode[] {
@@ -617,11 +673,13 @@ export class SqliteStore implements GraphStore {
       JSON.stringify(node.excerpts),
       node.hiveExclude ? 1 : 0,
     );
+    this.invalidateCaches();
   }
 
   deleteNode(id: string): void {
     this.stmt('DELETE FROM nodes WHERE id = ?').run(id);
     this.stmt('DELETE FROM edges WHERE source = ? OR target = ?').run(id, id);
+    this.invalidateCaches();
   }
 
   nodeCount(): number {
@@ -689,10 +747,12 @@ export class SqliteStore implements GraphStore {
       edge.stability,
       JSON.stringify(edge.evidence),
     );
+    this.invalidateCaches();
   }
 
   deleteEdge(id: string): void {
     this.stmt('DELETE FROM edges WHERE id = ?').run(id);
+    this.invalidateCaches();
   }
 
   edgeCount(): number {
@@ -1276,6 +1336,9 @@ export class SqliteStore implements GraphStore {
    * Export the entire graph as a NacreGraph object.
    */
   getFullGraph(): NacreGraph {
+    this.syncCacheVersion();
+    if (this._graphCache) return this._graphCache;
+
     const nodes: Record<string, MemoryNode> = {};
     const edges: Record<string, MemoryEdge> = {};
 
@@ -1289,7 +1352,7 @@ export class SqliteStore implements GraphStore {
     const configStr = this.getMeta('config');
     const config: GraphConfig = configStr ? JSON.parse(configStr) : DEFAULT_CONFIG;
 
-    return {
+    const graph: NacreGraph = {
       version: 2,
       lastConsolidated: this.getMeta('last_consolidated') ?? '',
       processedFiles: this.listFileHashes(),
@@ -1297,6 +1360,21 @@ export class SqliteStore implements GraphStore {
       edges,
       config,
     };
+    this._graphCache = graph;
+    return graph;
+  }
+
+  /**
+   * Adjacency map for the live graph. Memoized alongside getFullGraph and
+   * invalidated on any node/edge write, so repeated recalls between writes
+   * don't rebuild it.
+   */
+  getAdjacencyMap(): AdjacencyMap {
+    this.syncCacheVersion();
+    if (!this._adjCache) {
+      this._adjCache = buildAdjacencyMap(this.getFullGraph());
+    }
+    return this._adjCache;
   }
 
   /**
@@ -1332,6 +1410,7 @@ export class SqliteStore implements GraphStore {
     });
 
     importAll();
+    this.invalidateCaches();
   }
 
   // ── Metadata ──────────────────────────────────────────────

@@ -12,7 +12,7 @@ import type {
 import { DEFAULT_RECALL_WEIGHTS } from './types.js';
 import type { EmbeddingProvider } from './embeddings.js';
 import type { SqliteStore } from './store.js';
-import { buildAdjacencyMap } from './graph.js';
+import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 import { computeCurrentWeight, daysBetween } from './decay.js';
 import { normalize } from './resolve.js';
 import { findNode, searchNodes } from './query.js';
@@ -132,9 +132,9 @@ export function graphWalk(
   seedIds: string[],
   hops: number,
   now: Date,
+  adj: AdjacencyMap = buildAdjacencyMap(graph),
 ): Map<string, number> {
   const scores = new Map<string, number>();
-  const adj = buildAdjacencyMap(graph);
 
   for (const id of seedIds) {
     if (graph.nodes[id]) {
@@ -230,6 +230,9 @@ export async function recall(
   }
 
   let graph: NacreGraph;
+  // For the live graph, reuse the store's memoized adjacency map; for an asOf
+  // snapshot graph, leave `adj` undefined so graphWalk builds it from that graph.
+  let adj: AdjacencyMap | undefined;
 
   if (opts.asOf) {
     const snapshots = store.listSnapshots({ until: opts.asOf, limit: 1 });
@@ -240,9 +243,11 @@ export async function recall(
         `No snapshot found before ${opts.asOf}. Using live graph instead. Run 'nacre snapshots create' to create one.`,
       );
       graph = store.getFullGraph();
+      adj = store.getAdjacencyMap();
     }
   } else {
     graph = store.getFullGraph();
+    adj = store.getAdjacencyMap();
   }
 
   const terms = extractQueryTerms(opts.query);
@@ -261,7 +266,7 @@ export async function recall(
   }
 
   const graphMap =
-    seedIds.length > 0 ? graphWalk(graph, seedIds, hops, now) : new Map<string, number>();
+    seedIds.length > 0 ? graphWalk(graph, seedIds, hops, now, adj) : new Map<string, number>();
 
   const candidateIds = new Set<string>([...semanticMap.keys(), ...graphMap.keys()]);
 
