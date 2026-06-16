@@ -28,26 +28,30 @@ export type GraphViewController = {
   destroy: () => void;
 };
 
-/** Recursively dispose geometries, materials, and their textures under an object. */
-function disposeObject3D(root: THREE.Object3D): void {
+type Disposable = { dispose: () => void };
+
+/**
+ * Collect (but don't yet dispose) every geometry, material, and texture under an
+ * object. The caller disposes these AFTER stopping the render loop, so nothing
+ * renders freed GPU resources.
+ */
+function collectDisposables(root: THREE.Object3D): Disposable[] {
+  const items: Disposable[] = [];
   root.traverse((child) => {
     const mesh = child as Partial<THREE.Mesh> & {
       geometry?: THREE.BufferGeometry;
       material?: THREE.Material | THREE.Material[];
     };
-    mesh.geometry?.dispose();
+    if (mesh.geometry) items.push(mesh.geometry);
     const mat = mesh.material;
-    if (Array.isArray(mat)) {
-      for (const m of mat) disposeMaterial(m);
-    } else if (mat) {
-      disposeMaterial(mat);
+    const mats = Array.isArray(mat) ? mat : mat ? [mat] : [];
+    for (const m of mats) {
+      const map = (m as THREE.Material & { map?: THREE.Texture | null }).map;
+      if (map) items.push(map);
+      items.push(m);
     }
   });
-}
-
-function disposeMaterial(material: THREE.Material): void {
-  (material as THREE.Material & { map?: THREE.Texture | null }).map?.dispose();
-  material.dispose();
+  return items;
 }
 
 export function createGraphView(
@@ -169,9 +173,14 @@ export function createGraphView(
   function destroy(): void {
     stopLabelLoop();
     disposeInteraction();
+    // Snapshot the GPU resources while they're still attached, then let the
+    // library tear down (its _destructor stops the render loop and frees the
+    // renderer), and only THEN dispose — so the loop never renders freed
+    // resources and _destructor never runs over already-disposed objects.
     const scene = graph.scene();
-    if (scene) disposeObject3D(scene);
+    const disposables = scene ? collectDisposables(scene) : [];
     (graph as unknown as { _destructor?: () => void })._destructor?.();
+    for (const d of disposables) d.dispose();
   }
 
   function refresh(): void {
@@ -232,7 +241,11 @@ const LABEL_VISIBILITY_DISTANCE = 150;
 
 function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): () => void {
   let rafId = 0;
+  let stopped = false;
   function tick() {
+    // Guard every entry: once stopped, never touch the graph or reschedule, even
+    // if a frame was already queued before the stopper ran.
+    if (stopped) return;
     const cam = graph.camera();
     if (!cam) {
       rafId = requestAnimationFrame(tick);
@@ -251,7 +264,10 @@ function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): () => void 
     rafId = requestAnimationFrame(tick);
   }
   rafId = requestAnimationFrame(tick);
-  return () => cancelAnimationFrame(rafId);
+  return () => {
+    stopped = true;
+    cancelAnimationFrame(rafId);
+  };
 }
 
 function setupInteraction(
