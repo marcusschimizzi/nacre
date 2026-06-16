@@ -34,6 +34,24 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   return dot / denom;
 }
 
+/** L2 (Euclidean) norm of a vector. */
+export function vectorNorm(v: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < v.length; i++) sum += v[i] * v[i];
+  return Math.sqrt(sum);
+}
+
+/**
+ * Dot product of two equal-length vectors. With precomputed norms,
+ * `dot(a, b) / (normA * normB)` equals cosine similarity without the per-call
+ * sqrt + self-products that cosineSimilarity recomputes.
+ */
+export function dot(a: Float32Array, b: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
+  return sum;
+}
+
 // ── Serialization Helpers ────────────────────────────────────────
 
 /** Convert Float32Array to Buffer for SQLite BLOB storage. */
