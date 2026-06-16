@@ -5,6 +5,8 @@ import {
   reinforceEdge,
   generateEdgeId,
   resolveEntity,
+  buildEntityIndex,
+  addNodeToIndex,
   normalize,
   type NacreGraph,
   type EntityMap,
@@ -61,6 +63,11 @@ export function processFileExtractions(
     sectionEntities.set(key, list);
   }
 
+  // Build an entity index once from the current graph and keep it in sync as new
+  // nodes are added below, so resolveEntity does O(1) exact/alias lookups instead
+  // of re-scanning + re-normalizing every node for every entity.
+  const entityIndex = buildEntityIndex(graph);
+
   const allResolvedBySection = new Map<string, string[]>();
 
   for (const [sectionKey, entities] of sectionEntities) {
@@ -69,12 +76,12 @@ export function processFileExtractions(
     const wikilinkIds = new Set<string>();
 
     for (const raw of deduped) {
-      const resolved = resolveEntity(raw, graph, entityMap);
+      const resolved = resolveEntity(raw, graph, entityMap, entityIndex);
       if (!resolved) continue;
 
       if (resolved.isNew) {
         stats.newNodes++;
-        addNode(graph, {
+        const added = addNode(graph, {
           label: resolved.canonicalLabel,
           aliases: [],
           type: resolved.type,
@@ -85,6 +92,7 @@ export function processFileExtractions(
           sourceFiles: [filePath],
           excerpts: [{ file: filePath, text: raw.text, date: fileDate }],
         });
+        addNodeToIndex(entityIndex, added);
       } else {
         stats.reinforcedNodes++;
         reinforceNode(graph, resolved.nodeId, filePath, fileDate, {

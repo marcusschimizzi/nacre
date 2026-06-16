@@ -6,6 +6,8 @@ import {
   fuzzyMatch,
   loadEntityMap,
   resolveEntity,
+  buildEntityIndex,
+  addNodeToIndex,
 } from '../resolve.js';
 import { createGraph, addNode } from '../graph.js';
 import type { EntityMap, RawEntity } from '../types.js';
@@ -237,5 +239,64 @@ describe('resolveEntity', () => {
       entityMap,
     );
     assert.equal(result, null);
+  });
+});
+
+describe('resolveEntity with EntityIndex', () => {
+  const entityMap: EntityMap = { aliases: {}, ignore: [] };
+
+  function node(label: string, aliases: string[] = []) {
+    return {
+      label,
+      aliases,
+      type: 'concept' as const,
+      firstSeen: '2026-01-01',
+      lastReinforced: '2026-01-01',
+      mentionCount: 1,
+      reinforcementCount: 0,
+      sourceFiles: [],
+      excerpts: [],
+    };
+  }
+  function raw(text: string): RawEntity {
+    return {
+      text,
+      type: 'concept',
+      confidence: 0.9,
+      source: 'structural',
+      position: { file: 't.md', section: 's', line: 0 },
+    };
+  }
+
+  it('exact-label match wins over an earlier alias-only node (global priority)', () => {
+    const graph = createGraph();
+    addNode(graph, node('something else', ['vite'])); // inserted first, alias-only match
+    addNode(graph, node('vite')); // inserted later, exact-label match
+    const index = buildEntityIndex(graph);
+
+    const result = resolveEntity(raw('Vite'), graph, entityMap, index);
+    assert.ok(result);
+    assert.equal(result.canonicalLabel, 'vite', 'exact-label node must win over earlier alias');
+  });
+
+  it('matches the non-indexed path and resolves freshly-added same-run nodes', () => {
+    const graph = createGraph();
+    const index = buildEntityIndex(graph);
+
+    // First mention creates a node and indexes it.
+    const first = resolveEntity(raw('GraphDB'), graph, entityMap, index);
+    assert.ok(first?.isNew);
+    addNode(graph, { ...node('graphdb'), id: first.nodeId });
+    addNodeToIndex(index, graph.nodes[first.nodeId]);
+
+    // Second mention in the same run must resolve to the just-created node.
+    const second = resolveEntity(raw('GraphDB'), graph, entityMap, index);
+    assert.ok(second);
+    assert.equal(second.isNew, false);
+    assert.equal(second.nodeId, first.nodeId);
+
+    // Indexed result equals the non-indexed result for the same query.
+    const noIndex = resolveEntity(raw('GraphDB'), graph, entityMap);
+    assert.deepEqual(second, noIndex);
   });
 });
