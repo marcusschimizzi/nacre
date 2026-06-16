@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { EntityMap, EntityType, NacreGraph, RawEntity } from './types.js';
+import type { EntityMap, EntityType, MemoryNode, NacreGraph, RawEntity } from './types.js';
 import { generateNodeId } from './graph.js';
 
 export function normalize(text: string): string {
@@ -63,10 +63,41 @@ export function loadEntityMap(path: string): EntityMap {
   }
 }
 
+/**
+ * Pre-built lookup over a graph's nodes for O(1) exact/alias entity resolution,
+ * with an insertion-ordered list for the fuzzy fallback. Maps are first-writer-
+ * wins to reproduce resolveEntity's iteration-order tie behavior.
+ */
+export interface EntityIndex {
+  labelMap: Map<string, string>; // normalized label -> node id
+  aliasMap: Map<string, string>; // normalized alias -> node id
+  fuzzy: Array<{ id: string; label: string }>; // raw labels, in insertion order
+}
+
+export function buildEntityIndex(graph: NacreGraph): EntityIndex {
+  const index: EntityIndex = { labelMap: new Map(), aliasMap: new Map(), fuzzy: [] };
+  for (const node of Object.values(graph.nodes)) {
+    addNodeToIndex(index, node);
+  }
+  return index;
+}
+
+/** Add a node to an EntityIndex (call right after a node is created mid-run). */
+export function addNodeToIndex(index: EntityIndex, node: MemoryNode): void {
+  const normLabel = normalize(node.label);
+  if (!index.labelMap.has(normLabel)) index.labelMap.set(normLabel, node.id);
+  for (const alias of node.aliases) {
+    const normAlias = normalize(alias);
+    if (!index.aliasMap.has(normAlias)) index.aliasMap.set(normAlias, node.id);
+  }
+  index.fuzzy.push({ id: node.id, label: node.label });
+}
+
 export function resolveEntity(
   raw: RawEntity,
   graph: NacreGraph,
   entityMap: EntityMap,
+  index?: EntityIndex,
 ): { nodeId: string; isNew: boolean; canonicalLabel: string; type: EntityType } | null {
   const normalized = normalize(raw.text);
 
@@ -82,36 +113,32 @@ export function resolveEntity(
     canonical = normalize(entityMap.aliases[normalized]);
   }
 
-  for (const node of Object.values(graph.nodes)) {
-    if (normalize(node.label) === canonical) {
-      return {
-        nodeId: node.id,
-        isNew: false,
-        canonicalLabel: node.label,
-        type: node.type,
-      };
-    }
-  }
+  const hit = (id: string) => {
+    const node = graph.nodes[id];
+    return { nodeId: node.id, isNew: false, canonicalLabel: node.label, type: node.type };
+  };
 
-  for (const node of Object.values(graph.nodes)) {
-    if (node.aliases.some((a) => normalize(a) === canonical)) {
-      return {
-        nodeId: node.id,
-        isNew: false,
-        canonicalLabel: node.label,
-        type: node.type,
-      };
-    }
-  }
+  if (index) {
+    // Indexed path: exact label, then alias, then fuzzy — same global priority,
+    // but the first two tiers are O(1) instead of full scans.
+    const labelHit = index.labelMap.get(canonical);
+    if (labelHit !== undefined) return hit(labelHit);
 
-  for (const node of Object.values(graph.nodes)) {
-    if (fuzzyMatch(canonical, node.label)) {
-      return {
-        nodeId: node.id,
-        isNew: false,
-        canonicalLabel: node.label,
-        type: node.type,
-      };
+    const aliasHit = index.aliasMap.get(canonical);
+    if (aliasHit !== undefined) return hit(aliasHit);
+
+    for (const cand of index.fuzzy) {
+      if (fuzzyMatch(canonical, cand.label)) return hit(cand.id);
+    }
+  } else {
+    for (const node of Object.values(graph.nodes)) {
+      if (normalize(node.label) === canonical) return hit(node.id);
+    }
+    for (const node of Object.values(graph.nodes)) {
+      if (node.aliases.some((a) => normalize(a) === canonical)) return hit(node.id);
+    }
+    for (const node of Object.values(graph.nodes)) {
+      if (fuzzyMatch(canonical, node.label)) return hit(node.id);
     }
   }
 
