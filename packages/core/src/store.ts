@@ -33,12 +33,12 @@ import type {
   EntityHistory,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
-import { cosineSimilarity, bufferToVector, vectorToBuffer } from './embeddings.js';
+import { bufferToVector, vectorToBuffer, vectorNorm, dot } from './embeddings.js';
 import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS embeddings (
   vector     BLOB NOT NULL,
   dimensions INTEGER NOT NULL,
   provider   TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  vector_norm REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
@@ -578,6 +579,14 @@ export class SqliteStore implements GraphStore {
           db.exec('ALTER TABLE nodes ADD COLUMN hive_exclude INTEGER NOT NULL DEFAULT 0');
         }
       }
+      if (ver < 6) {
+        // Precomputed L2 norm for dot-product similarity. Existing rows keep NULL
+        // and fall back to normalize-on-read until they are next re-embedded.
+        const cols = db.prepare('PRAGMA table_info(embeddings)').all() as Array<{ name: string }>;
+        if (!cols.some((c) => c.name === 'vector_norm')) {
+          db.exec('ALTER TABLE embeddings ADD COLUMN vector_norm REAL');
+        }
+      }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
         'schema_version',
         String(SCHEMA_VERSION),
@@ -806,8 +815,8 @@ export class SqliteStore implements GraphStore {
     }
     this.stmt(
       `INSERT OR REPLACE INTO embeddings
-       (id, type, content, vector, dimensions, provider, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (id, type, content, vector, dimensions, provider, created_at, vector_norm)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       type,
@@ -816,6 +825,7 @@ export class SqliteStore implements GraphStore {
       vector.length,
       provider,
       new Date().toISOString(),
+      vectorNorm(vector),
     );
   }
 
@@ -847,8 +857,11 @@ export class SqliteStore implements GraphStore {
   searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[] {
     const limit = opts?.limit ?? 10;
     const minSimilarity = opts?.minSimilarity ?? 0;
+    // Compute the query norm once; per-row similarity is then a plain dot product
+    // divided by the precomputed norms (no per-row sqrt or self-products).
+    const queryNorm = vectorNorm(query);
 
-    let sql = 'SELECT id, type, content, vector FROM embeddings';
+    let sql = 'SELECT id, type, content, vector, vector_norm FROM embeddings';
     const params: unknown[] = [];
 
     if (opts?.type) {
@@ -862,7 +875,10 @@ export class SqliteStore implements GraphStore {
     for (const row of rows) {
       const vec = bufferToVector(row.vector as Buffer);
       if (vec.length !== query.length) continue;
-      const sim = cosineSimilarity(query, vec);
+      // Pre-6 rows have NULL vector_norm — fall back to normalizing on read.
+      const stored = row.vector_norm as number | null;
+      const rowNorm = stored ?? vectorNorm(vec);
+      const sim = queryNorm > 0 && rowNorm > 0 ? dot(query, vec) / (queryNorm * rowNorm) : 0;
       if (sim >= minSimilarity) {
         scored.push({
           id: row.id as string,

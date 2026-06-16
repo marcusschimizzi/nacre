@@ -478,3 +478,50 @@ describe('OpenAIEmbedder', () => {
     assert.equal(embedder.name, 'openai/text-embedding-3-small');
   });
 });
+
+describe('searchSimilar dot-product scoring', () => {
+  let store: SqliteStore;
+
+  before(() => {
+    store = SqliteStore.open();
+  });
+  after(() => {
+    store.close();
+  });
+
+  it('matches cosineSimilarity for non-unit-length vectors', () => {
+    // Deliberately non-unit vectors (norms 5 and ~7.07).
+    const stored = new Float32Array([3, 4, 0]);
+    const query = new Float32Array([5, 0, 5]);
+    store.putEmbedding('nu1', 'node', 'non-unit', stored, 'mock');
+
+    const results = store.searchSimilar(query, { minSimilarity: -1 });
+    const hit = results.find((r) => r.id === 'nu1');
+    assert.ok(hit, 'should find the embedding');
+    assert.ok(
+      Math.abs(hit.similarity - cosineSimilarity(query, stored)) < 1e-5,
+      `dot-scored ${hit.similarity} should equal cosine ${cosineSimilarity(query, stored)}`,
+    );
+  });
+
+  it('leaves the stored vector bytes un-normalized (getEmbedding roundtrip)', () => {
+    const stored = new Float32Array([3, 4, 0]);
+    store.putEmbedding('nu2', 'node', 'raw bytes', stored, 'mock');
+    const got = store.getEmbedding('nu2');
+    assert.ok(got);
+    assert.deepEqual(Array.from(got.vector), [3, 4, 0]);
+  });
+
+  it('falls back to normalize-on-read for pre-6 rows (NULL vector_norm)', () => {
+    const stored = new Float32Array([3, 4, 0]);
+    const query = new Float32Array([3, 4, 0]);
+    store.putEmbedding('nu3', 'node', 'old row', stored, 'mock');
+    // Simulate a row written before the vector_norm column existed.
+    store.raw.prepare('UPDATE embeddings SET vector_norm = NULL WHERE id = ?').run('nu3');
+
+    const results = store.searchSimilar(query, { minSimilarity: -1 });
+    const hit = results.find((r) => r.id === 'nu3');
+    assert.ok(hit);
+    assert.ok(Math.abs(hit.similarity - 1.0) < 1e-5, 'identical vectors → similarity 1');
+  });
+});
