@@ -69,7 +69,16 @@ export function GraphCanvas(props: {
       getEntityTypes: () => getEntityTypes(ctrl.nodes),
       getEdgeTypes: () => getEdgeTypes(ctrl.links),
     });
-  }, [props]);
+
+    // Create the graph once; tear it down on unmount so the RAF loop, document
+    // listener, and GPU objects don't leak. (Data updates go through ctrl.setData,
+    // so this effect intentionally does not depend on props.)
+    return () => {
+      controllerRef.current?.destroy();
+      controllerRef.current = null;
+    };
+    // biome-ignore lint/correctness/useExhaustiveDependencies: create-once on mount
+  }, []);
 
   // External refresh when filters change.
   useEffect(() => {

@@ -24,7 +24,31 @@ export type GraphViewController = {
   focusNode: (id: string) => ForceNode | null;
   setPinned: (nodeIds: Set<string>, linkIds?: Set<string>) => void;
   setData: (data: LoadResult) => void;
+  /** Tear down: cancel the label RAF loop, remove listeners, dispose GPU objects. */
+  destroy: () => void;
 };
+
+/** Recursively dispose geometries, materials, and their textures under an object. */
+function disposeObject3D(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    const mesh = child as Partial<THREE.Mesh> & {
+      geometry?: THREE.BufferGeometry;
+      material?: THREE.Material | THREE.Material[];
+    };
+    mesh.geometry?.dispose();
+    const mat = mesh.material;
+    if (Array.isArray(mat)) {
+      for (const m of mat) disposeMaterial(m);
+    } else if (mat) {
+      disposeMaterial(mat);
+    }
+  });
+}
+
+function disposeMaterial(material: THREE.Material): void {
+  (material as THREE.Material & { map?: THREE.Texture | null }).map?.dispose();
+  material.dispose();
+}
 
 export function createGraphView(
   container: HTMLElement,
@@ -139,8 +163,16 @@ export function createGraphView(
   graph.cooldownTicks(300);
 
   setupLighting(graph);
-  setupInteraction(graph, state, links, nodeMap, callbacks);
-  startLabelVisibilityLoop(graph, nodes);
+  const disposeInteraction = setupInteraction(graph, state, links, nodeMap, callbacks);
+  const stopLabelLoop = startLabelVisibilityLoop(graph, nodes);
+
+  function destroy(): void {
+    stopLabelLoop();
+    disposeInteraction();
+    const scene = graph.scene();
+    if (scene) disposeObject3D(scene);
+    (graph as unknown as { _destructor?: () => void })._destructor?.();
+  }
 
   function refresh(): void {
     applyHighlightModes(nodeMap, state);
@@ -177,7 +209,7 @@ export function createGraphView(
     refresh();
   }
 
-  return { graph, nodeMap, nodes, links, refresh, focusNode, setPinned, setData };
+  return { graph, nodeMap, nodes, links, refresh, focusNode, setPinned, setData, destroy };
 }
 
 function setupLighting(graph: Graph): void {
@@ -198,11 +230,12 @@ function setupLighting(graph: Graph): void {
 
 const LABEL_VISIBILITY_DISTANCE = 150;
 
-function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
+function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): () => void {
+  let rafId = 0;
   function tick() {
     const cam = graph.camera();
     if (!cam) {
-      requestAnimationFrame(tick);
+      rafId = requestAnimationFrame(tick);
       return;
     }
     const camPos = cam.position;
@@ -215,9 +248,10 @@ function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
         if (child.userData?.isLabel) child.visible = dist < LABEL_VISIBILITY_DISTANCE;
       }
     }
-    requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
+  rafId = requestAnimationFrame(tick);
+  return () => cancelAnimationFrame(rafId);
 }
 
 function setupInteraction(
@@ -226,7 +260,7 @@ function setupInteraction(
   links: ForceLink[],
   nodeMap: Map<string, ForceNode>,
   callbacks: GraphViewCallbacks,
-): void {
+): () => void {
   const tooltip = createTooltip();
 
   graph.onNodeHover((node: ForceNode | null) => {
@@ -319,10 +353,16 @@ function setupInteraction(
     updateHighlights(graph, state);
   });
 
-  document.addEventListener('mousemove', (e) => {
+  const onMouseMove = (e: MouseEvent) => {
     tooltip.style.left = `${e.clientX + 12}px`;
     tooltip.style.top = `${e.clientY + 12}px`;
-  });
+  };
+  document.addEventListener('mousemove', onMouseMove);
+
+  return () => {
+    document.removeEventListener('mousemove', onMouseMove);
+    tooltip.remove();
+  };
 }
 
 function createTooltip(): HTMLElement {
