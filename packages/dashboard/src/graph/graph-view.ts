@@ -24,7 +24,35 @@ export type GraphViewController = {
   focusNode: (id: string) => ForceNode | null;
   setPinned: (nodeIds: Set<string>, linkIds?: Set<string>) => void;
   setData: (data: LoadResult) => void;
+  /** Tear down: cancel the label RAF loop, remove listeners, dispose GPU objects. */
+  destroy: () => void;
 };
+
+type Disposable = { dispose: () => void };
+
+/**
+ * Collect (but don't yet dispose) every geometry, material, and texture under an
+ * object. The caller disposes these AFTER stopping the render loop, so nothing
+ * renders freed GPU resources.
+ */
+function collectDisposables(root: THREE.Object3D): Disposable[] {
+  const items: Disposable[] = [];
+  root.traverse((child) => {
+    const mesh = child as Partial<THREE.Mesh> & {
+      geometry?: THREE.BufferGeometry;
+      material?: THREE.Material | THREE.Material[];
+    };
+    if (mesh.geometry) items.push(mesh.geometry);
+    const mat = mesh.material;
+    const mats = Array.isArray(mat) ? mat : mat ? [mat] : [];
+    for (const m of mats) {
+      const map = (m as THREE.Material & { map?: THREE.Texture | null }).map;
+      if (map) items.push(map);
+      items.push(m);
+    }
+  });
+  return items;
+}
 
 export function createGraphView(
   container: HTMLElement,
@@ -139,8 +167,21 @@ export function createGraphView(
   graph.cooldownTicks(300);
 
   setupLighting(graph);
-  setupInteraction(graph, state, links, nodeMap, callbacks);
-  startLabelVisibilityLoop(graph, nodes);
+  const disposeInteraction = setupInteraction(graph, state, links, nodeMap, callbacks);
+  const stopLabelLoop = startLabelVisibilityLoop(graph, nodes);
+
+  function destroy(): void {
+    stopLabelLoop();
+    disposeInteraction();
+    // Snapshot the GPU resources while they're still attached, then let the
+    // library tear down (its _destructor stops the render loop and frees the
+    // renderer), and only THEN dispose — so the loop never renders freed
+    // resources and _destructor never runs over already-disposed objects.
+    const scene = graph.scene();
+    const disposables = scene ? collectDisposables(scene) : [];
+    (graph as unknown as { _destructor?: () => void })._destructor?.();
+    for (const d of disposables) d.dispose();
+  }
 
   function refresh(): void {
     applyHighlightModes(nodeMap, state);
@@ -177,7 +218,7 @@ export function createGraphView(
     refresh();
   }
 
-  return { graph, nodeMap, nodes, links, refresh, focusNode, setPinned, setData };
+  return { graph, nodeMap, nodes, links, refresh, focusNode, setPinned, setData, destroy };
 }
 
 function setupLighting(graph: Graph): void {
@@ -198,11 +239,16 @@ function setupLighting(graph: Graph): void {
 
 const LABEL_VISIBILITY_DISTANCE = 150;
 
-function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
+function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): () => void {
+  let rafId = 0;
+  let stopped = false;
   function tick() {
+    // Guard every entry: once stopped, never touch the graph or reschedule, even
+    // if a frame was already queued before the stopper ran.
+    if (stopped) return;
     const cam = graph.camera();
     if (!cam) {
-      requestAnimationFrame(tick);
+      rafId = requestAnimationFrame(tick);
       return;
     }
     const camPos = cam.position;
@@ -215,9 +261,13 @@ function startLabelVisibilityLoop(graph: Graph, nodes: ForceNode[]): void {
         if (child.userData?.isLabel) child.visible = dist < LABEL_VISIBILITY_DISTANCE;
       }
     }
-    requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
+  rafId = requestAnimationFrame(tick);
+  return () => {
+    stopped = true;
+    cancelAnimationFrame(rafId);
+  };
 }
 
 function setupInteraction(
@@ -226,7 +276,7 @@ function setupInteraction(
   links: ForceLink[],
   nodeMap: Map<string, ForceNode>,
   callbacks: GraphViewCallbacks,
-): void {
+): () => void {
   const tooltip = createTooltip();
 
   graph.onNodeHover((node: ForceNode | null) => {
@@ -319,10 +369,16 @@ function setupInteraction(
     updateHighlights(graph, state);
   });
 
-  document.addEventListener('mousemove', (e) => {
+  const onMouseMove = (e: MouseEvent) => {
     tooltip.style.left = `${e.clientX + 12}px`;
     tooltip.style.top = `${e.clientY + 12}px`;
-  });
+  };
+  document.addEventListener('mousemove', onMouseMove);
+
+  return () => {
+    document.removeEventListener('mousemove', onMouseMove);
+    tooltip.remove();
+  };
 }
 
 function createTooltip(): HTMLElement {
