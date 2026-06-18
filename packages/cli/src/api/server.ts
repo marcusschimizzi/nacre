@@ -141,7 +141,7 @@ export function createApp(opts: CreateAppOptions): Hono {
 
   app.route('/api/v1', systemRoutes(store));
   app.route('/api/v1', graphRoutes(store));
-  app.route('/api/v1', memoryRoutes(store));
+  app.route('/api/v1', memoryRoutes(store, graphPath));
   app.route('/api/v1', intelligenceRoutes(store, graphPath, consolidateRoot));
   app.route('/api/v1', searchRoutes(store));
   app.route('/api/v1', episodeRoutes(store));
