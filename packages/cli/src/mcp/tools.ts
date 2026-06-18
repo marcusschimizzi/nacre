@@ -11,6 +11,7 @@ import {
   type Procedure,
   type ProcedureType,
 } from '@nacre/core';
+import { embedNodeBestEffort } from '../embed-node.js';
 
 function generateId(content: string): string {
   let hash = 0;
@@ -24,6 +25,10 @@ function generateId(content: string): string {
 const now = () => new Date().toISOString();
 
 export function registerTools(server: McpServer, store: SqliteStore, graphPath: string): void {
+  // Resolve the embedding provider once so its model (e.g. onnx) is loaded lazily
+  // and reused across recall/remember rather than rebuilt on every call.
+  const provider = resolveProvider({ graphPath, allowNull: true });
+
   server.tool(
     'nacre_recall',
     'Retrieve relevant memories using hybrid semantic + graph search',
@@ -40,9 +45,8 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         // it matches the model the stored vectors were built with. Hardcoding a
         // provider here would mismatch dimensions and silently disable the
         // semantic half of recall. allowNull → graph-only when none is set.
-        const provider =
-          store.embeddingCount() > 0 ? resolveProvider({ graphPath, allowNull: true }) : null;
-        response = await recall(store, provider, {
+        const recallProvider = store.embeddingCount() > 0 ? provider : null;
+        response = await recall(store, recallProvider, {
           query: args.query,
           limit: args.limit,
           types: args.types as EntityType[] | undefined,
@@ -139,7 +143,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       importance: z.number().optional().default(0.5).describe('0-1, how important (affects decay)'),
       entities: z.array(z.string()).optional().describe('Related entity names to link'),
     },
-    (args) => {
+    async (args) => {
       const typeMap: Record<string, EntityType> = {
         fact: 'concept',
         event: 'event',
@@ -191,12 +195,16 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         }
       }
 
+      // Embed the new memory so it's immediately recallable by semantic search.
+      const embedded = await embedNodeBestEffort(store, provider, node);
+
       const linkMsg = linked.length > 0 ? ` Linked to: ${linked.join(', ')}.` : '';
+      const searchMsg = embedded ? ' Semantically searchable.' : '';
       return {
         content: [
           {
             type: 'text',
-            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}`,
+            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}${searchMsg}`,
           },
         ],
       };

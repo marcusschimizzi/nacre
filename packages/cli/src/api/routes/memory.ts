@@ -1,10 +1,13 @@
 import { Hono } from 'hono';
 import { randomBytes } from 'node:crypto';
-import type { SqliteStore, MemoryNode } from '@nacre/core';
+import { resolveProvider, type SqliteStore, type MemoryNode } from '@nacre/core';
 import { memoryCreateSchema, feedbackSchema } from '../schemas.js';
+import { embedNodeBestEffort } from '../../embed-node.js';
 
-export function memoryRoutes(store: SqliteStore): Hono {
+export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
   const app = new Hono();
+  // Resolved once so the embedding model (e.g. onnx) is loaded lazily and reused.
+  const provider = resolveProvider({ graphPath, allowNull: true });
 
   app.post('/memories', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -43,7 +46,9 @@ export function memoryRoutes(store: SqliteStore): Hono {
     };
 
     store.putNode(node);
-    return c.json({ data: node }, 201);
+    // Embed best-effort so the memory is immediately recallable by semantic search.
+    const embedded = await embedNodeBestEffort(store, provider, node);
+    return c.json({ data: { ...node, embedded } }, 201);
   });
 
   app.delete('/memories/:id', (c) => {
