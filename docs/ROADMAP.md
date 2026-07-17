@@ -109,6 +109,8 @@ make it trustworthy and used; sync makes it multi-device.
 
 *Commit to "truth in files, indexes derived" everywhere.*
 
+Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17)
+
 - [ ] Durable memories (user/project scopes) serialize to a canonical
       markdown format in a git-managed directory; SQLite becomes a compiled
       view of it.
