@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, resolveProvider } from '@nacre/core';
+import { EncoderMismatchError, SqliteStore, resolveProvider } from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 export default defineCommand({
@@ -70,11 +70,20 @@ export default defineCommand({
       const queryText = args.query as string;
       const queryVec = await provider.embed(queryText);
 
-      const results = store.searchSimilar(queryVec, {
-        limit: parseInt(args.limit as string, 10),
-        minSimilarity: parseFloat(args.threshold as string),
-        type: args.type as string | undefined,
-      });
+      let results: ReturnType<typeof store.searchSimilar>;
+      try {
+        results = store.searchSimilar(queryVec, {
+          limit: parseInt(args.limit as string, 10),
+          minSimilarity: parseFloat(args.threshold as string),
+          type: args.type as string | undefined,
+        });
+      } catch (err) {
+        if (err instanceof EncoderMismatchError) {
+          console.error(err.message);
+          process.exit(1);
+        }
+        throw err;
+      }
 
       if ((args.format as string) === 'json') {
         console.log(formatJSON(results));

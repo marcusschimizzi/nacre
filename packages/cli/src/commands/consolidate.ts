@@ -76,7 +76,9 @@ export default defineCommand({
             `   Salience: ${salience.updated.length} files updated (${salience.unchanged} unchanged)`,
           );
           console.log(
-            `   Compiled: ${compiled.memories} memories, ${compiled.entitiesCreated} new entities, ${compiled.edges} edges`,
+            `   Compiled: ${compiled.memories} memories, ${compiled.entitiesCreated} new entities, ${compiled.edges} edges${
+              compiled.removed > 0 ? `, ${compiled.removed} removed (files deleted)` : ''
+            }`,
           );
           for (const warning of [
             ...promotion.warnings,

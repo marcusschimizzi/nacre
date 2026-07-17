@@ -1,5 +1,6 @@
 import { defineCommand } from 'citty';
 import {
+  EncoderMismatchError,
   SqliteStore,
   readMemorySource,
   recall,
@@ -144,6 +145,14 @@ export default defineCommand({
             asOf: args['as-of'] as string | undefined,
           });
         }
+      } catch (err) {
+        // An encoder switch is a configuration error with a known remedy —
+        // print it, don't crash with a stack trace.
+        if (err instanceof EncoderMismatchError) {
+          console.error(err.message);
+          process.exit(1);
+        }
+        throw err;
       } finally {
         hiveStore?.close();
       }

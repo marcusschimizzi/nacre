@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readCaptureEntries } from '../capture.js';
 import { compileMemoryDir, listMemoryFiles, replayCaptureCandidates } from '../memory-compile.js';
 import { generateNodeId } from '../graph.js';
 import { SqliteStore } from '../store.js';
@@ -146,6 +147,43 @@ describe('compileMemoryDir', () => {
     assert.equal(result.errors.length, 1);
     assert.match(result.errors[0], /broken\.md/);
     assert.equal(result.memories, 2);
+  });
+
+  it('deletes promoted rows whose canonical file was removed (files are truth both ways)', () => {
+    compileMemoryDir(store, root);
+    assert.ok(store.getNode('mem_aaaa11112222'));
+    store.putEmbedding('mem_aaaa11112222', 'node', 'text', new Float32Array(8).fill(0.5), 'mock');
+
+    rmSync(join(root, 'projects/nacre/decisions/sqlite-over-json.md'));
+    const result = compileMemoryDir(store, root);
+
+    assert.equal(result.removed, 1);
+    assert.equal(store.getNode('mem_aaaa11112222'), undefined);
+    assert.equal(store.getEmbedding('mem_aaaa11112222'), undefined);
+    assert.ok(result.warnings.some((w) => w.includes('canonical file removed')));
+    // The other memory is untouched.
+    assert.ok(store.getNode('mem_bbbb33334444'));
+
+    // The removal is tombstoned so the original spool entry cannot re-promote
+    // the memory and recreate the file on a later consolidation.
+    const { tombstones } = readCaptureEntries(root);
+    assert.ok(tombstones.some((t) => t.id === 'mem_aaaa11112222' && t.origin === 'reconcile'));
+    const rerun = compileMemoryDir(store, root);
+    assert.equal(rerun.removed, 0);
+    assert.equal(store.getNode('mem_aaaa11112222'), undefined);
+  });
+
+  it('a parse error does NOT delete the memory the broken file backs', () => {
+    compileMemoryDir(store, root);
+    assert.ok(store.getNode('mem_bbbb33334444'));
+
+    // Corrupt the file in place — the row must survive until the file is fixed.
+    writeFileSync(join(root, 'user/preferences/typescript-strict.md'), 'broken: no frontmatter');
+    const result = compileMemoryDir(store, root);
+
+    assert.equal(result.removed, 0);
+    assert.equal(result.errors.length, 1);
+    assert.ok(store.getNode('mem_bbbb33334444'));
   });
 
   it('replayCaptureCandidates recreates unpromoted spool entries as candidates', () => {

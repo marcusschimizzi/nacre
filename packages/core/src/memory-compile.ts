@@ -1,6 +1,12 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { CAPTURE_DIR, captureFileFor, readCaptureEntries, tombstonedIds } from './capture.js';
+import {
+  CAPTURE_DIR,
+  appendTombstone,
+  captureFileFor,
+  readCaptureEntries,
+  tombstonedIds,
+} from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
 import { canonicalIdFor } from './memory-promote.js';
@@ -23,6 +29,8 @@ export interface CompileMemoryResult {
   entitiesCreated: number;
   /** Explicit memory→entity edges created or reinforced. */
   edges: number;
+  /** Promoted rows deleted because their canonical file no longer exists. */
+  removed: number;
   /** Recoverable issues (per-file, prefixed with the file path). */
   warnings: string[];
   /** Files that failed to parse — reported, never silently skipped. */
@@ -73,10 +81,16 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     memories: 0,
     entitiesCreated: 0,
     edges: 0,
+    removed: 0,
     warnings: [],
     errors: [],
   };
   const forgotten = tombstonedIds(memoryDir);
+  // Canonical paths that still legitimately back a store row this run:
+  // successfully compiled files AND parse-error files (a syntax error must
+  // not delete the memory it backs). Tombstone-skipped files are excluded —
+  // their rows were removed at forget and must stay gone.
+  const backedPaths = new Set<string>();
 
   for (const relPath of listMemoryFiles(memoryDir)) {
     let content: string;
@@ -84,6 +98,7 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
       content = readFileSync(join(memoryDir, relPath), 'utf-8');
     } catch (err) {
       result.errors.push(`${relPath}: ${err instanceof Error ? err.message : String(err)}`);
+      backedPaths.add(relPath);
       continue;
     }
 
@@ -99,6 +114,7 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
         continue;
       }
       result.files++;
+      backedPaths.add(relPath);
       for (const warning of parsed.warnings) {
         result.warnings.push(`${relPath}: ${warning}`);
       }
@@ -106,10 +122,36 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     } catch (err) {
       if (err instanceof MemoryFileError) {
         result.errors.push(`${relPath}: ${err.message}`);
+        backedPaths.add(relPath);
       } else {
         throw err;
       }
     }
+  }
+
+  // Files are the truth in both directions: a promoted row whose canonical
+  // file is gone (deleted by hand or via git sync) must leave the store too,
+  // or deleted memories stay recallable forever. The deletion is tombstoned —
+  // otherwise the original spool entry would re-promote the memory and
+  // recreate the file on the next consolidation, making hand-deletion futile.
+  for (const node of store.listNodes()) {
+    if (node.status !== 'promoted' || !node.canonicalPath) continue;
+    if (backedPaths.has(node.canonicalPath)) continue;
+    store.deleteNode(node.id);
+    store.deleteEmbedding(node.id);
+    if (!forgotten.has(node.id)) {
+      appendTombstone(memoryDir, {
+        op: 'forget',
+        id: node.id,
+        ts: new Date().toISOString(),
+        origin: 'reconcile',
+        reason: `canonical file removed: ${node.canonicalPath}`,
+      });
+    }
+    result.removed++;
+    result.warnings.push(
+      `${node.canonicalPath}: canonical file removed — deleted promoted memory ${node.id} from the store (tombstoned)`,
+    );
   }
 
   return result;

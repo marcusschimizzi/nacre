@@ -80,6 +80,23 @@ export default defineCommand({
         for (const warning of result.warnings) console.log(`  ⚠ ${warning}`);
       }
 
+      // Fail BEFORE embedding: a partial graph must never be stamped with an
+      // encoder fingerprint and left on disk looking complete. Remove the
+      // partial database entirely — this command created it this run.
+      const allErrors = [...result.errors, ...replay.errors];
+      if (allErrors.length > 0) {
+        console.error(`\nErrors (${allErrors.length}) — these files/entries were NOT compiled:`);
+        for (const error of allErrors) console.error(`  ✖ ${error}`);
+        console.error(
+          `\nRebuild is incomplete — removing the partial database (${graphPath}). Fix the files above and re-run.`,
+        );
+        store.close();
+        for (const suffix of ['', '-wal', '-shm']) {
+          rmSync(`${graphPath}${suffix}`, { force: true });
+        }
+        process.exit(1);
+      }
+
       if (args.embed) {
         const provider = resolveProvider({
           provider: args.provider as string | undefined,
@@ -102,14 +119,6 @@ export default defineCommand({
         store.setMeta('embedding_provider', provider.name);
         store.setMeta('embedding_dimensions', String(provider.dimensions));
         console.log(`Embedded ${embedded} nodes (encoder: ${store.getEncoderFingerprint()}).`);
-      }
-
-      const allErrors = [...result.errors, ...replay.errors];
-      if (allErrors.length > 0) {
-        console.error(`\nErrors (${allErrors.length}) — these files/entries were NOT compiled:`);
-        for (const error of allErrors) console.error(`  ✖ ${error}`);
-        console.error('\nRebuild is incomplete until these parse. Fix them and re-run.');
-        process.exit(1);
       }
 
       console.log('\nRebuild complete.');
