@@ -1,8 +1,20 @@
 import { Hono } from 'hono';
-import { randomBytes } from 'node:crypto';
-import { resolveProvider, type SqliteStore, type MemoryNode } from '@nacre/core';
+import {
+  appendCapture,
+  mintMemoryId,
+  resolveMemoryDir,
+  resolveProvider,
+  type MemoryNode,
+  type MemoryObjectType,
+  type SqliteStore,
+} from '@nacre/core';
 import { memoryCreateSchema, feedbackSchema } from '../schemas.js';
 import { embedNodeBestEffort } from '../../embed-node.js';
+
+const ENTITY_TO_MEMORY_TYPE: Record<string, MemoryObjectType> = {
+  decision: 'decision',
+  lesson: 'lesson',
+};
 
 export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
   const app = new Hono();
@@ -29,8 +41,20 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
     }
 
     const { content, type, label } = parsed.data;
-    const id = randomBytes(8).toString('hex');
+    const id = mintMemoryId();
     const now = new Date().toISOString();
+
+    // Two-phase write (V2-1): spool first (the durable act), then compile an
+    // immediately-recallable candidate row. Canonical file at consolidation.
+    const memoryDir = resolveMemoryDir(graphPath);
+    if (memoryDir) {
+      appendCapture(memoryDir, {
+        id,
+        ts: now,
+        origin: 'api',
+        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact' },
+      });
+    }
 
     const node: MemoryNode = {
       id,
@@ -41,8 +65,9 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
       lastReinforced: now,
       mentionCount: 1,
       reinforcementCount: 0,
-      sourceFiles: [],
+      sourceFiles: ['api'],
       excerpts: [{ file: 'api', text: content, date: now.slice(0, 10) }],
+      status: 'candidate',
     };
 
     store.putNode(node);

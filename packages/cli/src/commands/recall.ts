@@ -1,5 +1,13 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, recall, recallWithHive, resolveProvider, type EntityType } from '@nacre/core';
+import {
+  SqliteStore,
+  readMemorySource,
+  recall,
+  recallWithHive,
+  resolveMemoryDir,
+  resolveProvider,
+  type EntityType,
+} from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 export default defineCommand({
@@ -60,6 +68,10 @@ export default defineCommand({
     'hive-only': {
       type: 'boolean',
       description: 'Search hive only, skip private graph',
+    },
+    source: {
+      type: 'boolean',
+      description: 'Include verbatim claim + Source evidence from canonical memory files',
     },
   },
   async run({ args }) {
@@ -151,12 +163,27 @@ export default defineCommand({
         `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n`,
       );
 
+      const memoryDir = args.source ? resolveMemoryDir(graphPath) : null;
+
       for (let i = 0; i < response.results.length; i++) {
         const r = response.results[i];
         console.log(`  ${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}`);
         console.log(
           `     semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}`,
         );
+
+        if (memoryDir) {
+          const canonicalPath = store.getNode(r.id)?.canonicalPath;
+          const verbatim = canonicalPath ? readMemorySource(memoryDir, canonicalPath) : undefined;
+          if (verbatim) {
+            console.log(`     Claim: ${verbatim.claim}`);
+            if (verbatim.source) {
+              for (const line of verbatim.source.split('\n')) {
+                console.log(`     Source: ${line}`);
+              }
+            }
+          }
+        }
 
         if (r.connections.length > 0) {
           const conns = r.connections

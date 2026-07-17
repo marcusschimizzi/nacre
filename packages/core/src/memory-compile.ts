@@ -104,6 +104,27 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
+/**
+ * Verbatim recall: read a promoted memory's claim and `## Source` evidence
+ * straight from its canonical file — exact identifiers survive even when the
+ * compiled label/excerpt truncated them. Undefined if the file is missing or
+ * unparseable (callers degrade to the compiled view).
+ */
+export function readMemorySource(
+  memoryDir: string,
+  canonicalPath: string,
+): { claim: string; source?: string } | undefined {
+  try {
+    const parsed = parseMemoryFile(
+      readFileSync(join(memoryDir, canonicalPath), 'utf-8'),
+      canonicalPath,
+    );
+    return { claim: parsed.claim, source: parsed.source };
+  } catch {
+    return undefined;
+  }
+}
+
 function compileMemory(
   store: SqliteStore,
   parsed: ReturnType<typeof parseMemoryFile>,

@@ -9,6 +9,7 @@ import {
   extractQueryTerms,
   appendCapture,
   mintMemoryId,
+  readMemorySource,
   EncoderMismatchError,
   type EntityType,
   type MemoryNode,
@@ -42,6 +43,11 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       limit: z.number().optional().default(10).describe('Max results'),
       types: z.array(z.string()).optional().describe('Filter by entity types'),
       since: z.string().optional().describe('ISO date — only memories after this'),
+      includeSource: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe('Include verbatim claim + Source evidence from canonical memory files'),
     },
     async (args) => {
       let response;
@@ -94,15 +100,25 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         };
       }
 
-      const lines = response.results.map(
-        (r, i) =>
+      const memoryDir = args.includeSource ? resolveMemoryDir(graphPath) : null;
+      const lines = response.results.map((r, i) => {
+        let line =
           `${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}\n` +
           `   semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  ` +
           `recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}` +
           (r.connections.length > 0
             ? `\n   connections: ${r.connections.map((c) => `${c.label} (${c.relationship})`).join(', ')}`
-            : ''),
-      );
+            : '');
+        if (memoryDir) {
+          const canonicalPath = store.getNode(r.id)?.canonicalPath;
+          const verbatim = canonicalPath ? readMemorySource(memoryDir, canonicalPath) : undefined;
+          if (verbatim) {
+            line += `\n   claim: ${verbatim.claim}`;
+            if (verbatim.source) line += `\n   source: ${verbatim.source.replace(/\n/g, '\n   ')}`;
+          }
+        }
+        return line;
+      });
 
       let text = `${degradedNote}Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
 

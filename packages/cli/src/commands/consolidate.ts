@@ -1,5 +1,11 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, compileMemoryDir, promoteCaptured, resolveMemoryDir } from '@nacre/core';
+import {
+  SqliteStore,
+  compileMemoryDir,
+  promoteCaptured,
+  resolveMemoryDir,
+  writeBackSalience,
+} from '@nacre/core';
 import { consolidate } from '@nacre/parser';
 import { formatConsolidationSummary } from '../output.js';
 
@@ -49,6 +55,10 @@ export default defineCommand({
         const store = SqliteStore.open(outDir);
         try {
           const promotion = promoteCaptured(store, memoryDir);
+          // Write reinforcement accumulated since the last consolidation back
+          // into frontmatter BEFORE compiling, so the files carry it and the
+          // compile below reads it back as truth.
+          const salience = writeBackSalience(store, memoryDir);
           const compiled = compileMemoryDir(store, memoryDir);
 
           console.log('');
@@ -57,12 +67,19 @@ export default defineCommand({
             `   Promoted: ${promotion.promoted.length} captured → canonical (${promotion.skipped} already promoted)`,
           );
           console.log(
+            `   Salience: ${salience.updated.length} files updated (${salience.unchanged} unchanged)`,
+          );
+          console.log(
             `   Compiled: ${compiled.memories} memories, ${compiled.entitiesCreated} new entities, ${compiled.edges} edges`,
           );
-          for (const warning of [...promotion.warnings, ...compiled.warnings]) {
+          for (const warning of [
+            ...promotion.warnings,
+            ...salience.warnings,
+            ...compiled.warnings,
+          ]) {
             console.log(`   ⚠ ${warning}`);
           }
-          const truthErrors = [...promotion.errors, ...compiled.errors];
+          const truthErrors = [...promotion.errors, ...salience.errors, ...compiled.errors];
           if (truthErrors.length > 0) {
             for (const error of truthErrors) console.error(`   ✖ ${error}`);
             console.error('   Truth-layer errors above — these entries/files were not processed.');

@@ -33,6 +33,7 @@ import type {
   EntityHistory,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
+import { generateEdgeId } from './graph.js';
 import {
   bufferToVector,
   vectorToBuffer,
@@ -806,6 +807,38 @@ export class SqliteStore implements GraphStore {
     this.invalidateCaches();
   }
 
+  /**
+   * Rename a node, updating every reference in one transaction: edges (whose
+   * ids embed the endpoint ids and are regenerated), embeddings, and episode
+   * links. Used by canonical export to migrate legacy node ids to mem_ ids.
+   */
+  renameNode(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    const node = this.getNode(oldId);
+    if (!node) throw new Error(`renameNode: node not found: ${oldId}`);
+    if (this.getNode(newId)) throw new Error(`renameNode: target id already exists: ${newId}`);
+
+    const apply = this.db.transaction(() => {
+      this.stmt('UPDATE nodes SET id = ? WHERE id = ?').run(newId, oldId);
+      this.stmt('UPDATE embeddings SET id = ? WHERE id = ?').run(newId, oldId);
+      this.stmt('UPDATE episode_entities SET node_id = ? WHERE node_id = ?').run(newId, oldId);
+
+      const edges = this.db
+        .prepare('SELECT * FROM edges WHERE source = ? OR target = ?')
+        .all(oldId, oldId) as Array<Record<string, unknown>>;
+      for (const row of edges) {
+        const edge = rowToEdge(row);
+        this.stmt('DELETE FROM edges WHERE id = ?').run(edge.id);
+        if (edge.source === oldId) edge.source = newId;
+        if (edge.target === oldId) edge.target = newId;
+        edge.id = generateEdgeId(edge.source, edge.target, edge.type, edge.directed);
+        this.putEdge(edge);
+      }
+    });
+    apply();
+    this.invalidateCaches();
+  }
+
   edgeCount(): number {
     const row = this.stmt('SELECT COUNT(*) as count FROM edges').get() as { count: number };
     return row.count;
@@ -911,7 +944,10 @@ export class SqliteStore implements GraphStore {
     if (stored) {
       const dims = fingerprintDimensions(stored);
       if (Number.isFinite(dims) && dims !== query.length) {
-        throw new EncoderMismatchError(stored, `unknown encoder (query vector has ${query.length} dims)`);
+        throw new EncoderMismatchError(
+          stored,
+          `unknown encoder (query vector has ${query.length} dims)`,
+        );
       }
     }
 

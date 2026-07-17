@@ -121,7 +121,7 @@ function markPromoted(store: SqliteStore, id: string, relPath: string | undefine
  * *different* memory already owns it. Null when a file with this same id
  * already exists (never overwrite — hand edits are truth).
  */
-function resolveTargetPath(memoryDir: string, memory: MemoryObject): string | null {
+export function resolveTargetPath(memoryDir: string, memory: MemoryObject): string | null {
   const base = memoryFilePath(memory);
   const stem = base.slice(0, -'.md'.length);
   for (let i = 1; i < 100; i++) {
@@ -133,7 +133,7 @@ function resolveTargetPath(memoryDir: string, memory: MemoryObject): string | nu
   throw new Error(`Could not find a free filename for ${memory.id} near ${base}`);
 }
 
-function existingPathForId(memoryDir: string, memory: MemoryObject): string | undefined {
+export function existingPathForId(memoryDir: string, memory: MemoryObject): string | undefined {
   const base = memoryFilePath(memory);
   const stem = base.slice(0, -'.md'.length);
   for (let i = 1; i < 100; i++) {

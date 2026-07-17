@@ -10,6 +10,8 @@ export * from './memory-file.js';
 export * from './memory-compile.js';
 export * from './capture.js';
 export * from './memory-promote.js';
+export * from './memory-salience.js';
+export * from './memory-export.js';
 export * from './recall.js';
 export * from './hive.js';
 export * from './procedures.js';

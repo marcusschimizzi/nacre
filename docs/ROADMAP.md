@@ -109,22 +109,25 @@ make it trustworthy and used; sync makes it multi-device.
 
 *Commit to "truth in files, indexes derived" everywhere.*
 
-Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17)
+Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17,
+**implemented** 2026-07-17)
 
-- [ ] Durable memories (user/project scopes) serialize to a canonical
-      markdown format in a git-managed directory; SQLite becomes a compiled
-      view of it.
-- [ ] MCP/API writes (`nacre_remember`, `nacre_lesson`) land in a capture
-      file (raw intake), promoted into canonical markdown by consolidation —
-      never straight into the durable store.
-- [ ] Full round-trip: `nacre export` / rebuild-from-markdown reproduces the
-      graph, embeddings, and indexes on a fresh machine.
-- [ ] Verbatim source recall: every memory can return its exact source text,
-      not just the derived excerpt (Midas pattern; kills the exact-fact
-      corruption failure mode).
-- [ ] Encoder-fingerprint pinning: store the embedding model fingerprint with
-      the vectors; fail loudly on mismatch instead of comparing across
-      spaces.
+- [x] Durable memories serialize to a canonical markdown format in a
+      git-manageable directory; SQLite becomes a compiled view of it
+      (`memory-file.ts`, `compileMemoryDir`, `nacre rebuild`).
+- [x] MCP/API writes (`nacre_remember`, `POST /memories`) land in a capture
+      spool (raw intake), promoted into canonical markdown by consolidation —
+      never straight into the durable store. (`nacre_lesson` → procedures
+      remains SQLite-backed; procedures join the truth layer in V2-3.)
+- [x] Full round-trip: `nacre export --canonical` migrates SQLite-only
+      memories; `nacre rebuild` reproduces the graph and embeddings on a
+      fresh machine from the memory dir alone.
+- [x] Verbatim source recall: `nacre recall --source` / MCP `includeSource`
+      return the exact claim + `## Source` evidence from canonical files.
+- [x] Encoder-fingerprint pinning: vectors pinned to their encoder; loud
+      failure + `nacre embed --rebuild` remediation on mismatch.
+- [x] Salience write-back at consolidation (monotone merge: max count,
+      later date) so reinforcement travels through git.
 
 ### V2-2: Scope model
 

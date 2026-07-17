@@ -1,6 +1,6 @@
 # V2-1 Design — Truth Layer & Capture Path
 
-Status: **accepted** · 2026-07-17
+Status: **implemented** · accepted 2026-07-17 · shipped 2026-07-17 (branch `feat/v2-1-truth-layer`)
 Roadmap: [ROADMAP.md](./ROADMAP.md) → V2-1
 
 > Commit to "truth in files, indexes derived" everywhere. Durable memory is
@@ -288,18 +288,20 @@ nacre rebuild --memory-dir ./memory --out nacre.db
 
 ## Acceptance criteria
 
-- [ ] Fresh machine + memory dir + `nacre rebuild` → recall results
+- [x] Fresh machine + memory dir + `nacre rebuild` → recall results
       equivalent to the origin machine (same encoder).
-- [ ] `rm nacre.db` loses nothing durable.
-- [ ] `nacre_remember` → entry visible in spool file; memory recallable
+- [x] `rm nacre.db` loses nothing durable.
+- [x] `nacre_remember` → entry visible in spool file; memory recallable
       immediately as candidate; canonical file exists after next
       `nacre consolidate`; git diff shows exactly that file.
-- [ ] Editing a canonical file by hand (fix a claim, bump confidence) →
+- [x] Editing a canonical file by hand (fix a claim, bump confidence) →
       next consolidation recompiles it; no drift, no duplicate.
-- [ ] Recall with `includeSource` returns the verbatim `## Source` block.
-- [ ] Swapping embedding provider fails loudly with remediation text;
+- [x] Recall with `includeSource` returns the verbatim `## Source` block
+      (`nacre recall --source`, MCP `includeSource`).
+- [x] Swapping embedding provider fails loudly with remediation text;
       `nacre embed --rebuild` recovers.
-- [ ] Reinforcement counts survive rebuild and travel through git.
+- [x] Reinforcement counts survive rebuild and travel through git
+      (write-back is monotone-merge: max count, later date).
 
 ## Open questions (deferred, tracked)
 
