@@ -6,6 +6,7 @@ import {
   recall,
   generateBrief,
   extractQueryTerms,
+  EncoderMismatchError,
   type EntityType,
   type MemoryNode,
   type Procedure,
@@ -40,6 +41,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
     },
     async (args) => {
       let response;
+      let degradedNote = '';
       try {
         // Embed the query with the graph's configured provider (config/env) so
         // it matches the model the stored vectors were built with. Hardcoding a
@@ -52,8 +54,14 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
           types: args.types as EntityType[] | undefined,
           since: args.since,
         });
-      } catch {
-        // Ollama unavailable or other error — fall back to graph-only recall
+      } catch (err) {
+        // A misconfigured encoder is a persistent configuration error, not an
+        // outage — surface it; a silent graph-only fallback would mask it.
+        if (err instanceof EncoderMismatchError) {
+          return { content: [{ type: 'text', text: err.message }], isError: true };
+        }
+        // Provider unavailable (e.g. Ollama down) — degrade to graph-only
+        // recall, but say so rather than masking the outage.
         try {
           response = await recall(store, null, {
             query: args.query,
@@ -61,14 +69,18 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             types: args.types as EntityType[] | undefined,
             since: args.since,
           });
+          degradedNote =
+            '⚠ Semantic recall unavailable (embedding provider error) — graph-only results.\n\n';
         } catch {
-          // If even graph-only recall fails, return empty results
-          return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
+          return {
+            content: [{ type: 'text', text: 'Recall failed: embedding provider and graph recall both errored.' }],
+            isError: true,
+          };
         }
       }
 
       if (response.results.length === 0) {
-        return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
+        return { content: [{ type: 'text', text: `${degradedNote}No memories found for that query.` }] };
       }
 
       const lines = response.results.map(
@@ -81,7 +93,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             : ''),
       );
 
-      let text = `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
+      let text = `${degradedNote}Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
 
       if (response.procedures.length > 0) {
         text +=

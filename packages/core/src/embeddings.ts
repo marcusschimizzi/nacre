@@ -52,6 +52,44 @@ export function dot(a: Float32Array, b: Float32Array): number {
   return sum;
 }
 
+// ── Encoder Fingerprint ──────────────────────────────────────────
+
+/**
+ * Canonical identity of the encoder that produced a store's vectors, e.g.
+ * "onnx/all-MiniLM-L6-v2:384". Vectors from different fingerprints live in
+ * different spaces and must never be compared.
+ */
+export function makeFingerprint(providerName: string, dimensions: number): string {
+  return `${providerName}:${dimensions}`;
+}
+
+export function encoderFingerprint(provider: EmbeddingProvider): string {
+  return makeFingerprint(provider.name, provider.dimensions);
+}
+
+/** Dimensions are the segment after the last ':' — provider names may themselves contain ':' (e.g. ollama model tags). */
+export function fingerprintDimensions(fingerprint: string): number {
+  return Number.parseInt(fingerprint.slice(fingerprint.lastIndexOf(':') + 1), 10);
+}
+
+/** Thrown when an operation would mix vectors from different embedding spaces. */
+export class EncoderMismatchError extends Error {
+  readonly stored: string;
+  readonly active: string;
+
+  constructor(stored: string, active: string) {
+    super(
+      `Encoder mismatch: this store's vectors were produced by "${stored}" but the active encoder is "${active}". ` +
+        `Vectors from different encoders are not comparable. ` +
+        `Run 'nacre embed --graph <path> --rebuild' to re-embed with the active encoder, ` +
+        `or fix the provider in nacre.config.json to match the store.`,
+    );
+    this.name = 'EncoderMismatchError';
+    this.stored = stored;
+    this.active = active;
+  }
+}
+
 // ── Serialization Helpers ────────────────────────────────────────
 
 /** Convert Float32Array to Buffer for SQLite BLOB storage. */

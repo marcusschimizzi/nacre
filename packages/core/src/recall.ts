@@ -194,13 +194,8 @@ export async function recall(
   if (provider && store.embeddingCount() > 0) {
     const queryVec = await provider.embed(opts.query);
 
-    const storedDims = store.getMeta('embedding_dimensions');
-    if (storedDims && parseInt(storedDims, 10) !== queryVec.length) {
-      console.warn(
-        `Embedding dimension mismatch: stored=${storedDims}, query=${queryVec.length}. Results may be empty. Run 'nacre embed --force' to re-embed.`,
-      );
-    }
-
+    // searchSimilar hard-fails on an encoder-fingerprint mismatch — a wrong
+    // provider must surface as an error, never as silently empty results.
     const nodeHits = store.searchSimilar(queryVec, {
       limit: limit * 3,
       type: 'node',

@@ -1,3 +1,4 @@
+import { encoderFingerprint } from '@nacre/core';
 import type { EmbeddingProvider, MemoryNode, SqliteStore } from '@nacre/core';
 
 /** Text embedded for a node — matches the `nacre embed` / consolidation format so a
@@ -23,6 +24,12 @@ export async function embedNodeBestEffort(
   node: MemoryNode,
 ): Promise<boolean> {
   if (!provider) return false;
+
+  // Never mix embedding spaces: skip if the store is pinned to a different
+  // encoder fingerprint, or configured for a different provider, rather than
+  // clear or corrupt the index.
+  const storedFingerprint = store.getEncoderFingerprint();
+  if (storedFingerprint && storedFingerprint !== encoderFingerprint(provider)) return false;
 
   const storedProvider = store.getMeta('embedding_provider');
   if (storedProvider && storedProvider !== provider.name) return false;

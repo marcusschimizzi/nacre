@@ -33,7 +33,15 @@ import type {
   EntityHistory,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
-import { bufferToVector, vectorToBuffer, vectorNorm, dot } from './embeddings.js';
+import {
+  bufferToVector,
+  vectorToBuffer,
+  vectorNorm,
+  dot,
+  makeFingerprint,
+  fingerprintDimensions,
+  EncoderMismatchError,
+} from './embeddings.js';
 import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
@@ -332,6 +340,7 @@ export interface GraphStore {
 
   // Embedding operations
   getEmbeddingProvider(): string;
+  getEncoderFingerprint(): string | undefined;
   setEmbeddingProvider(provider: string): void;
   putEmbedding(
     id: string,
@@ -795,6 +804,35 @@ export class SqliteStore implements GraphStore {
     this.setMeta('embedding_provider', provider);
   }
 
+  /**
+   * The fingerprint ("provider:dims") of the encoder that produced this store's
+   * vectors. Stamped on the first embedding write; stores created before
+   * pinning are backfilled from an existing embedding row on first read.
+   */
+  getEncoderFingerprint(): string | undefined {
+    const stamped = this.getMeta('encoder_fingerprint');
+    if (stamped) return stamped;
+    const row = this.stmt('SELECT provider, dimensions FROM embeddings LIMIT 1').get() as
+      | { provider: string; dimensions: number }
+      | undefined;
+    if (!row) return undefined;
+    const derived = makeFingerprint(row.provider, row.dimensions);
+    this.setMeta('encoder_fingerprint', derived);
+    return derived;
+  }
+
+  /** Stamp on first write; hard-fail if a different encoder's vectors would enter the store. */
+  private assertEncoder(fingerprint: string): void {
+    const stored = this.getEncoderFingerprint();
+    if (!stored) {
+      this.setMeta('encoder_fingerprint', fingerprint);
+      return;
+    }
+    if (stored !== fingerprint) {
+      throw new EncoderMismatchError(stored, fingerprint);
+    }
+  }
+
   putEmbedding(
     id: string,
     type: string,
@@ -802,17 +840,7 @@ export class SqliteStore implements GraphStore {
     vector: Float32Array,
     provider: string,
   ): void {
-    // Only enforce provider check if one has been explicitly set (non-default)
-    const active = this.getEmbeddingProvider();
-    const metaHasProvider = this.stmt('SELECT value FROM meta WHERE key = ?').get(
-      'embedding_provider',
-    ) as { value: string } | undefined;
-    if (metaHasProvider && provider !== active) {
-      throw new Error(
-        `Provider "${provider}" is not active. Active provider: "${active}". ` +
-          `Call setEmbeddingProvider() to switch providers.`,
-      );
-    }
+    this.assertEncoder(makeFingerprint(provider, vector.length));
     this.stmt(
       `INSERT OR REPLACE INTO embeddings
        (id, type, content, vector, dimensions, provider, created_at, vector_norm)
@@ -855,6 +883,16 @@ export class SqliteStore implements GraphStore {
   }
 
   searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[] {
+    // Refuse to compare vectors across embedding spaces. Silently returning
+    // empty/partial results here would mask an encoder switch as "no matches".
+    const stored = this.getEncoderFingerprint();
+    if (stored) {
+      const dims = fingerprintDimensions(stored);
+      if (Number.isFinite(dims) && dims !== query.length) {
+        throw new EncoderMismatchError(stored, `unknown encoder (query vector has ${query.length} dims)`);
+      }
+    }
+
     const limit = opts?.limit ?? 10;
     const minSimilarity = opts?.minSimilarity ?? 0;
     // Compute the query norm once; per-row similarity is then a plain dot product
@@ -899,6 +937,8 @@ export class SqliteStore implements GraphStore {
 
   clearAllEmbeddings(): number {
     const result = this.db.prepare('DELETE FROM embeddings').run();
+    // An empty store has no embedding space; the next write may stamp a new one.
+    this.stmt('DELETE FROM meta WHERE key = ?').run('encoder_fingerprint');
     return result.changes;
   }
 
