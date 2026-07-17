@@ -1,6 +1,6 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { CAPTURE_DIR, captureFileFor, readCaptureEntries } from './capture.js';
+import { CAPTURE_DIR, captureFileFor, readCaptureEntries, tombstonedIds } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
 import { canonicalIdFor } from './memory-promote.js';
@@ -43,6 +43,9 @@ const EXCERPT_MAX = 200;
 
 /** Recursively list canonical memory files, sorted for deterministic compile order. */
 export function listMemoryFiles(memoryDir: string, subdir = ''): string[] {
+  // A configured-but-not-yet-created memory dir is an empty truth layer,
+  // not a crash.
+  if (!existsSync(join(memoryDir, subdir))) return [];
   const result: string[] = [];
   const entries = readdirSync(join(memoryDir, subdir), { withFileTypes: true });
   for (const entry of entries) {
@@ -73,6 +76,7 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     warnings: [],
     errors: [],
   };
+  const forgotten = tombstonedIds(memoryDir);
 
   for (const relPath of listMemoryFiles(memoryDir)) {
     let content: string;
@@ -85,6 +89,15 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
 
     try {
       const parsed = parseMemoryFile(content, relPath);
+      // A tombstoned memory whose file reappeared (e.g. synced back in from
+      // another device after a local forget) must not be resurrected. The
+      // stray file is surfaced for the human to delete.
+      if (forgotten.has(parsed.memory.id)) {
+        result.warnings.push(
+          `${relPath}: memory ${parsed.memory.id} was forgotten (tombstoned) — file skipped; remove it`,
+        );
+        continue;
+      }
       result.files++;
       for (const warning of parsed.warnings) {
         result.warnings.push(`${relPath}: ${warning}`);
@@ -127,13 +140,20 @@ export function replayCaptureCandidates(
   memoryDir: string,
 ): ReplayCaptureResult {
   const result: ReplayCaptureResult = { candidates: 0, skipped: 0, edges: 0, errors: [] };
-  const { entries, errors } = readCaptureEntries(memoryDir);
+  const { entries, tombstones, errors } = readCaptureEntries(memoryDir);
   result.errors.push(...errors);
+  const forgotten = new Set(tombstones.map((t) => t.id));
 
   for (const entry of entries) {
     // Same id normalization as promotion, so a rebuilt candidate and its
     // eventual canonical file share one identity even for malformed spool ids.
     const id = canonicalIdFor(entry);
+
+    // Explicitly forgotten — a rebuild must not resurrect it.
+    if (forgotten.has(id)) {
+      result.skipped++;
+      continue;
+    }
 
     // Promoted entries were compiled from their canonical file (same id);
     // already-replayed ones are equally present. Never double-create.

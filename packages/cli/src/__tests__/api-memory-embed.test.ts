@@ -56,6 +56,37 @@ describe('POST /memories auto-embed', () => {
     }
   });
 
+  it('DELETE tombstones the spool so the memory cannot be resurrected', async () => {
+    delete process.env.NACRE_EMBEDDING_PROVIDER;
+    const memoryDir = mkdtempSync(join(tmpdir(), 'nacre-api-forget-'));
+    process.env.NACRE_MEMORY_DIR = memoryDir;
+    const store = SqliteStore.open(':memory:');
+    try {
+      const app = createApp({ store, graphPath: ':memory:' });
+      const created = await app.request('/api/v1/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'Memory to delete', type: 'concept' }),
+      });
+      const { data } = (await created.json()) as { data: { id: string } };
+
+      const res = await app.request(`/api/v1/memories/${data.id}`, { method: 'DELETE' });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { data: { tombstoned: boolean }; warning?: string };
+      assert.equal(body.data.tombstoned, true);
+      assert.equal(body.warning, undefined);
+
+      const { tombstones } = readCaptureEntries(memoryDir);
+      assert.equal(tombstones.length, 1);
+      assert.equal(tombstones[0].id, data.id);
+      assert.equal(store.getNode(data.id), undefined);
+    } finally {
+      delete process.env.NACRE_MEMORY_DIR;
+      rmSync(memoryDir, { recursive: true, force: true });
+      store.close();
+    }
+  });
+
   it('two-phase write: spools to the capture dir and marks the node candidate', async () => {
     delete process.env.NACRE_EMBEDDING_PROVIDER;
     const memoryDir = mkdtempSync(join(tmpdir(), 'nacre-api-capture-'));

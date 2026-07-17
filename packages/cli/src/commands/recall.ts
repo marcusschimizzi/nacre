@@ -117,7 +117,7 @@ export default defineCommand({
         hiveStore = SqliteStore.open(hivePath);
       }
 
-      let response;
+      let response: Awaited<ReturnType<typeof recall>>;
       try {
         if (hiveStore) {
           response = await recallWithHive(store, hiveStore, provider, {

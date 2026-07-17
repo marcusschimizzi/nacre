@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   appendCapture,
+  forgetMemory,
   mintMemoryId,
   resolveMemoryDir,
   resolveProvider,
@@ -96,9 +97,25 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
       return c.json({ error: { message: 'Memory not found', code: 'NOT_FOUND' } }, 404);
     }
 
-    store.deleteNode(id);
-    store.deleteEmbedding(id);
-    return c.json({ data: { deleted: id } });
+    // Truth-layer forget: row + embedding + canonical file + spool tombstone,
+    // so consolidate/rebuild cannot resurrect the memory.
+    const result = forgetMemory(store, resolveMemoryDir(graphPath), id, {
+      ts: new Date().toISOString(),
+      origin: 'api',
+    });
+    return c.json({
+      data: {
+        deleted: id,
+        fileDeleted: result.fileDeleted ?? null,
+        tombstoned: result.tombstoned,
+      },
+      ...(result.tombstoned
+        ? {}
+        : {
+            warning:
+              'No memory directory configured — if this memory exists in a spool or canonical file elsewhere, it may return on consolidate/rebuild.',
+          }),
+    });
   });
 
   app.post('/feedback', async (c) => {

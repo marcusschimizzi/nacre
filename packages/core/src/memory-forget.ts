@@ -1,0 +1,67 @@
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { appendTombstone } from './capture.js';
+import type { SqliteStore } from './store.js';
+
+// ── Truth-layer-aware forgetting (V2-1) ──────────────────────────
+//
+// Forgetting is a truth-layer operation, not a row delete. A forgotten memory
+// must be verifiably absent after any consolidate or rebuild, so forgetting
+// removes every representation: the store row, the embedding, the canonical
+// file (a git-visible deletion), and — because spool entries are append-only
+// and may be git-synced from other devices — an appended tombstone that
+// promotion, replay, and compile all honor.
+
+export interface ForgetOptions {
+  /** ISO timestamp of the forget action. */
+  ts: string;
+  origin: string;
+  reason?: string;
+}
+
+export interface ForgetResult {
+  nodeDeleted: boolean;
+  embeddingDeleted: boolean;
+  /** Canonical file removed, if the memory was promoted. */
+  fileDeleted?: string;
+  /** Whether a tombstone was appended (false when no memory dir is configured). */
+  tombstoned: boolean;
+}
+
+export function forgetMemory(
+  store: SqliteStore,
+  memoryDir: string | null,
+  id: string,
+  opts: ForgetOptions,
+): ForgetResult {
+  const node = store.getNode(id);
+  const result: ForgetResult = {
+    nodeDeleted: Boolean(node),
+    embeddingDeleted: Boolean(store.getEmbedding(id)),
+    tombstoned: false,
+  };
+
+  if (memoryDir && node?.canonicalPath) {
+    const abs = join(memoryDir, node.canonicalPath);
+    if (existsSync(abs)) {
+      rmSync(abs);
+      result.fileDeleted = node.canonicalPath;
+    }
+  }
+
+  if (node) store.deleteNode(id);
+  store.deleteEmbedding(id);
+
+  if (memoryDir) {
+    appendTombstone(memoryDir, {
+      op: 'forget',
+      id,
+      ts: opts.ts,
+      origin: opts.origin,
+      ...(opts.reason ? { reason: opts.reason } : {}),
+    });
+    result.tombstoned = true;
+  }
+
+  return result;
+}

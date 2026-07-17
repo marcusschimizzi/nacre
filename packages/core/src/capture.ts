@@ -33,6 +33,21 @@ export interface CaptureEntry {
   };
 }
 
+/**
+ * A forget record. Appended (never edited in place — the spool stays
+ * append-only) when a memory is explicitly forgotten, so promotion, replay,
+ * and compile can never resurrect it from earlier spool entries or synced
+ * canonical files. Forgetting correctness: absence must survive rebuilds.
+ */
+export interface CaptureTombstone {
+  op: 'forget';
+  /** The forgotten memory's id (canonical mem_ id). */
+  id: string;
+  ts: string;
+  origin: string;
+  reason?: string;
+}
+
 /** Spool filename (relative to the capture dir) for a given ISO timestamp. */
 export function captureFileFor(ts: string): string {
   return `${ts.slice(0, 10)}.jsonl`;
@@ -51,16 +66,27 @@ export function appendCapture(memoryDir: string, entry: CaptureEntry): string {
   return file;
 }
 
+/** Append a forget tombstone to the spool. */
+export function appendTombstone(memoryDir: string, tombstone: CaptureTombstone): string {
+  const dir = join(memoryDir, CAPTURE_DIR);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, captureFileFor(tombstone.ts));
+  appendFileSync(file, `${JSON.stringify(tombstone)}\n`, 'utf-8');
+  return file;
+}
+
 export interface ReadCaptureResult {
   entries: CaptureEntry[];
+  /** Forget records — ids that must never be promoted, replayed, or compiled. */
+  tombstones: CaptureTombstone[];
   /** Unparseable spool lines, reported as '<file>:<line>: <reason>' — never silently dropped. */
   errors: string[];
 }
 
-/** Read every spool entry in chronological order (file name, then line order). */
+/** Read every spool entry and tombstone in chronological order (file name, then line order). */
 export function readCaptureEntries(memoryDir: string): ReadCaptureResult {
   const dir = join(memoryDir, CAPTURE_DIR);
-  const result: ReadCaptureResult = { entries: [], errors: [] };
+  const result: ReadCaptureResult = { entries: [], tombstones: [], errors: [] };
   if (!existsSync(dir)) return result;
 
   const files = readdirSync(dir)
@@ -73,16 +99,25 @@ export function readCaptureEntries(memoryDir: string): ReadCaptureResult {
       const line = lines[i].trim();
       if (!line) continue;
       try {
-        const parsed = JSON.parse(line) as CaptureEntry;
+        const parsed = JSON.parse(line) as CaptureEntry | CaptureTombstone;
+        if ('op' in parsed && parsed.op === 'forget') {
+          if (typeof parsed.id !== 'string' || typeof parsed.ts !== 'string') {
+            result.errors.push(`${file}:${i + 1}: tombstone missing id/ts`);
+            continue;
+          }
+          result.tombstones.push(parsed);
+          continue;
+        }
+        const entry = parsed as CaptureEntry;
         if (
-          typeof parsed.id !== 'string' ||
-          typeof parsed.ts !== 'string' ||
-          typeof parsed.payload?.content !== 'string'
+          typeof entry.id !== 'string' ||
+          typeof entry.ts !== 'string' ||
+          typeof entry.payload?.content !== 'string'
         ) {
           result.errors.push(`${file}:${i + 1}: missing id/ts/payload.content`);
           continue;
         }
-        result.entries.push(parsed);
+        result.entries.push(entry);
       } catch (err) {
         result.errors.push(`${file}:${i + 1}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -90,4 +125,9 @@ export function readCaptureEntries(memoryDir: string): ReadCaptureResult {
   }
 
   return result;
+}
+
+/** The set of forgotten ids — consumed by promotion, replay, and compile. */
+export function tombstonedIds(memoryDir: string): Set<string> {
+  return new Set(readCaptureEntries(memoryDir).tombstones.map((t) => t.id));
 }

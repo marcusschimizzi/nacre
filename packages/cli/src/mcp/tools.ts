@@ -8,6 +8,7 @@ import {
   generateBrief,
   extractQueryTerms,
   appendCapture,
+  forgetMemory,
   mintMemoryId,
   readMemorySource,
   EncoderMismatchError,
@@ -50,7 +51,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         .describe('Include verbatim claim + Source evidence from canonical memory files'),
     },
     async (args) => {
-      let response;
+      let response: Awaited<ReturnType<typeof recall>>;
       let degradedNote = '';
       try {
         // Embed the query with the graph's configured provider (config/env) so
@@ -296,13 +297,24 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       }
 
       const label = existing.label;
-      store.deleteNode(args.memoryId);
+      // Forgetting is a truth-layer operation: remove the row, embedding, and
+      // canonical file, and tombstone the spool so no consolidate/rebuild can
+      // resurrect the memory.
+      const result = forgetMemory(store, resolveMemoryDir(graphPath), args.memoryId, {
+        ts: now(),
+        origin: 'mcp',
+        reason: args.reason,
+      });
 
+      const fileMsg = result.fileDeleted ? ` Canonical file removed: ${result.fileDeleted}.` : '';
+      const durabilityMsg = result.tombstoned
+        ? ' Tombstoned — will not return on consolidate or rebuild.'
+        : ' ⚠ No memory directory configured — if this memory exists in a spool or canonical file elsewhere, it may return.';
       return {
         content: [
           {
             type: 'text',
-            text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
+            text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}.` : ''}${fileMsg}${durabilityMsg}`,
           },
         ],
       };

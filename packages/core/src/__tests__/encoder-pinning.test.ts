@@ -61,7 +61,10 @@ describe('encoder pinning in SqliteStore', () => {
 
   it('rejects a write with the same provider name but different dimensions', () => {
     store.putEmbedding('n1', 'node', 'text', vec(64), 'mock');
-    assert.throws(() => store.putEmbedding('n2', 'node', 'text', vec(128), 'mock'), EncoderMismatchError);
+    assert.throws(
+      () => store.putEmbedding('n2', 'node', 'text', vec(128), 'mock'),
+      EncoderMismatchError,
+    );
   });
 
   it('accepts subsequent writes from the same encoder', () => {
@@ -118,7 +121,13 @@ describe('encoder pinning in SqliteStore', () => {
     assert.throws(() =>
       store.putEmbeddingsBatch([
         { id: 'n2', type: 'node', content: 'a', vector: vec(64), provider: 'mock' },
-        { id: 'n3', type: 'node', content: 'b', vector: vec(768), provider: 'ollama/nomic-embed-text' },
+        {
+          id: 'n3',
+          type: 'node',
+          content: 'b',
+          vector: vec(768),
+          provider: 'ollama/nomic-embed-text',
+        },
       ]),
     );
     // The failing batch must not have partially applied.

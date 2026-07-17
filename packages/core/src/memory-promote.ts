@@ -49,12 +49,18 @@ export function canonicalIdFor(entry: CaptureEntry): string {
 
 export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteResult {
   const result: PromoteResult = { promoted: [], skipped: 0, warnings: [], errors: [] };
-  const { entries, errors } = readCaptureEntries(memoryDir);
+  const { entries, tombstones, errors } = readCaptureEntries(memoryDir);
   result.errors.push(...errors);
+  const forgotten = new Set(tombstones.map((t) => t.id));
 
   for (const entry of entries) {
     try {
       const id = canonicalIdFor(entry);
+      // Explicitly forgotten — never resurrect from the spool.
+      if (forgotten.has(id)) {
+        result.skipped++;
+        continue;
+      }
       if (id !== entry.id) {
         result.warnings.push(`${entry.id}: malformed capture id — promoting as ${id}`);
         if (store.getNode(entry.id) && !store.getNode(id)) {
