@@ -40,17 +40,23 @@ export default defineCommand({
     console.log(`💾 Output: ${outDir} (${outDir.endsWith('.db') ? 'SQLite' : 'JSON'})`);
     console.log('');
 
+    // The canonical memory dir is compiled by its own deterministic path
+    // below — exclude it from raw ingestion so overlapping sources don't
+    // create duplicate/conflicting nodes for the same files.
+    const truthDir = outDir.endsWith('.db') ? resolveMemoryDir(outDir) : null;
+
     const result = await consolidate({
       inputs,
       outDir,
       entityMapPath: args['entity-map'] as string,
+      ignore: truthDir ? [truthDir] : undefined,
     });
 
     // V2-1 truth layer: promote spooled capture entries to canonical memory
     // files, then compile the canonical directory into the store. This is the
     // only path from capture (Tier 1) into durable memory (Tier 2).
     if (outDir.endsWith('.db')) {
-      const memoryDir = resolveMemoryDir(outDir);
+      const memoryDir = truthDir;
       if (memoryDir) {
         const store = SqliteStore.open(outDir);
         try {

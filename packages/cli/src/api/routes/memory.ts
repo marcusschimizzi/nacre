@@ -73,7 +73,20 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
     store.putNode(node);
     // Embed best-effort so the memory is immediately recallable by semantic search.
     const embedded = await embedNodeBestEffort(store, provider, node);
-    return c.json({ data: { ...node, embedded } }, 201);
+    // Clients must be able to tell a truth-layer-captured memory from a
+    // database-only one — a missing memory dir is not silently durable.
+    return c.json(
+      {
+        data: { ...node, embedded, captured: Boolean(memoryDir) },
+        ...(memoryDir
+          ? {}
+          : {
+              warning:
+                'No memory directory configured — this memory is database-only and will not survive a rebuild. Configure memory.dir in nacre.config.json.',
+            }),
+      },
+      201,
+    );
   });
 
   app.delete('/memories/:id', (c) => {

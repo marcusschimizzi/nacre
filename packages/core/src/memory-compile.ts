@@ -1,7 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { CAPTURE_DIR, captureFileFor, readCaptureEntries } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
+import { canonicalIdFor } from './memory-promote.js';
 import type { SqliteStore } from './store.js';
 import type { EntityType, MemoryNode } from './types.js';
 
@@ -102,6 +104,87 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+export interface ReplayCaptureResult {
+  /** Candidate nodes recreated from unpromoted spool entries. */
+  candidates: number;
+  /** Entries already present in the store (promoted or previously replayed). */
+  skipped: number;
+  /** Explicit edges recreated from capture links. */
+  edges: number;
+  errors: string[];
+}
+
+/**
+ * Replay unpromoted capture entries as candidate rows. Together with
+ * compileMemoryDir this completes the rebuild contract: canonical files plus
+ * the spool are the only durable state, so a rebuilt store must contain
+ * candidates for every entry that has not yet been promoted to a file.
+ */
+export function replayCaptureCandidates(
+  store: SqliteStore,
+  memoryDir: string,
+): ReplayCaptureResult {
+  const result: ReplayCaptureResult = { candidates: 0, skipped: 0, edges: 0, errors: [] };
+  const { entries, errors } = readCaptureEntries(memoryDir);
+  result.errors.push(...errors);
+
+  for (const entry of entries) {
+    // Same id normalization as promotion, so a rebuilt candidate and its
+    // eventual canonical file share one identity even for malformed spool ids.
+    const id = canonicalIdFor(entry);
+
+    // Promoted entries were compiled from their canonical file (same id);
+    // already-replayed ones are equally present. Never double-create.
+    if (store.getNode(id)) {
+      result.skipped++;
+      continue;
+    }
+
+    const spoolFile = `${CAPTURE_DIR}/${captureFileFor(entry.ts)}`;
+    const date = entry.ts.slice(0, 10);
+    store.putNode({
+      id,
+      label: truncate(entry.payload.content, LABEL_MAX),
+      aliases: [],
+      type: MEMORY_TYPE_TO_ENTITY[entry.payload.type] ?? 'concept',
+      firstSeen: entry.ts,
+      lastReinforced: entry.ts,
+      mentionCount: 1,
+      reinforcementCount: 0,
+      sourceFiles: [spoolFile],
+      excerpts: [{ file: spoolFile, text: entry.payload.content, date }],
+      status: 'candidate',
+    });
+    result.candidates++;
+
+    for (const target of entry.payload.links ?? []) {
+      const entity = store.findNode(target);
+      if (!entity) continue;
+      const edgeId = generateEdgeId(id, entity.id, 'explicit');
+      if (store.getEdge(edgeId)) continue;
+      store.putEdge({
+        id: edgeId,
+        source: id,
+        target: entity.id,
+        type: 'explicit',
+        directed: false,
+        weight: 0.8,
+        baseWeight: 0.8,
+        reinforcementCount: 1,
+        firstFormed: date,
+        lastReinforced: date,
+        stability: 1.0,
+        evidence: [
+          { file: spoolFile, date, context: truncate(entry.payload.content, EXCERPT_MAX) },
+        ],
+      });
+      result.edges++;
+    }
+  }
+
+  return result;
 }
 
 /**

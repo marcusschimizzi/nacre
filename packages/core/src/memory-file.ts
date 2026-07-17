@@ -80,6 +80,11 @@ export function mintMemoryId(): string {
 
 const MEMORY_ID_RE = /^mem_[0-9a-f]{6,}$/;
 
+/** Whether a string is a well-formed canonical memory id. */
+export function isMemoryId(id: string): boolean {
+  return MEMORY_ID_RE.test(id);
+}
+
 /** Human-readable filename slug derived from the claim. Not an identity — renames are safe. */
 export function memorySlug(claim: string, maxLength = 60): string {
   const slug = claim

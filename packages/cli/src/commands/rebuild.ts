@@ -1,6 +1,11 @@
 import { existsSync, rmSync } from 'node:fs';
 import { defineCommand } from 'citty';
-import { SqliteStore, compileMemoryDir, resolveProvider } from '@nacre/core';
+import {
+  SqliteStore,
+  compileMemoryDir,
+  replayCaptureCandidates,
+  resolveProvider,
+} from '@nacre/core';
 
 export default defineCommand({
   meta: {
@@ -57,11 +62,18 @@ export default defineCommand({
     const store = SqliteStore.open(graphPath);
     try {
       const result = compileMemoryDir(store, memoryDir);
+      // The rebuild contract covers BOTH durable tiers: canonical files and
+      // the unpromoted capture spool. Replay after compile so promoted
+      // entries (same id as their file) are recognized and skipped.
+      const replay = replayCaptureCandidates(store, memoryDir);
 
       console.log(`Compiled ${result.files} memory files from ${memoryDir}:`);
       console.log(`  Memories:        ${result.memories}`);
       console.log(`  Entities created: ${result.entitiesCreated}`);
       console.log(`  Edges:           ${result.edges}`);
+      console.log(
+        `  Capture replay:  ${replay.candidates} unpromoted candidates (${replay.skipped} already promoted)`,
+      );
 
       if (result.warnings.length > 0) {
         console.log(`\nWarnings (${result.warnings.length}):`);
@@ -92,10 +104,11 @@ export default defineCommand({
         console.log(`Embedded ${embedded} nodes (encoder: ${store.getEncoderFingerprint()}).`);
       }
 
-      if (result.errors.length > 0) {
-        console.error(`\nErrors (${result.errors.length}) — these files were NOT compiled:`);
-        for (const error of result.errors) console.error(`  ✖ ${error}`);
-        console.error('\nRebuild is incomplete until these files parse. Fix them and re-run.');
+      const allErrors = [...result.errors, ...replay.errors];
+      if (allErrors.length > 0) {
+        console.error(`\nErrors (${allErrors.length}) — these files/entries were NOT compiled:`);
+        for (const error of allErrors) console.error(`  ✖ ${error}`);
+        console.error('\nRebuild is incomplete until these parse. Fix them and re-run.');
         process.exit(1);
       }
 

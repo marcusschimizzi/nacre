@@ -140,6 +140,40 @@ describe('promoteCaptured', () => {
     assert.equal(parsed.memory.scope, 'agent');
   });
 
+  it('normalizes malformed capture ids deterministically (never writes an unparseable file)', () => {
+    appendCapture(root, makeEntry({ id: 'mem_notvalidhex' }));
+    const first = promoteCaptured(store, root);
+    assert.equal(first.promoted.length, 1);
+    assert.ok(first.warnings.some((w) => w.includes('malformed capture id')));
+
+    const parsed = parseMemoryFile(readFileSync(join(root, first.promoted[0]), 'utf-8'));
+    assert.match(parsed.memory.id, /^mem_[0-9a-f]{12}$/);
+
+    // Deterministic: a re-run (even against a fresh store) converges on the
+    // same file instead of minting a new id and a -2 duplicate.
+    const fresh = SqliteStore.open(':memory:');
+    const second = promoteCaptured(fresh, root);
+    assert.equal(second.promoted.length, 0);
+    assert.equal(second.skipped, 1);
+    fresh.close();
+  });
+
+  it('an unparseable existing file at the target path is an error, not a -2 duplicate', () => {
+    appendCapture(root, makeEntry());
+    const first = promoteCaptured(store, root);
+    const abs = join(root, first.promoted[0]);
+    writeFileSync(abs, 'corrupted — no frontmatter');
+
+    const fresh = SqliteStore.open(':memory:');
+    const rerun = promoteCaptured(fresh, root);
+    assert.equal(rerun.promoted.length, 0);
+    assert.equal(rerun.errors.length, 1);
+    assert.match(rerun.errors[0], /unparseable/);
+    // No duplicate file was created.
+    assert.ok(!existsSync(`${abs.slice(0, -3)}-2.md`));
+    fresh.close();
+  });
+
   it('promote → compile round-trip: the compiled node is promoted and file-backed', () => {
     appendCapture(root, makeEntry());
     store.putNode(makeCandidate('mem_0011aabbccdd'));

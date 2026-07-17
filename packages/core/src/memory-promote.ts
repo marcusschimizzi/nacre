@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { captureFileFor, readCaptureEntries } from './capture.js';
+import { captureFileFor, readCaptureEntries, type CaptureEntry } from './capture.js';
 import {
   MEMORY_OBJECT_TYPES,
+  MemoryFileError,
+  isMemoryId,
   isValidScope,
   memoryFilePath,
   parseMemoryFile,
@@ -33,6 +36,17 @@ export interface PromoteResult {
 /** Fallback when a capture entry has no scope: agent-local, the narrowest durable scope. */
 const DEFAULT_SCOPE = 'agent';
 
+/**
+ * The id a spool entry promotes under. Well-formed ids pass through; a
+ * malformed id (a canonical file must never be written unparseable) maps to a
+ * DETERMINISTIC replacement — hash of old id + timestamp — so repeated
+ * consolidations converge on one file instead of minting fresh ids per run.
+ */
+export function canonicalIdFor(entry: CaptureEntry): string {
+  if (isMemoryId(entry.id)) return entry.id;
+  return `mem_${createHash('sha256').update(`${entry.id}|${entry.ts}`).digest('hex').slice(0, 12)}`;
+}
+
 export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteResult {
   const result: PromoteResult = { promoted: [], skipped: 0, warnings: [], errors: [] };
   const { entries, errors } = readCaptureEntries(memoryDir);
@@ -40,7 +54,14 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
 
   for (const entry of entries) {
     try {
-      const node = store.getNode(entry.id);
+      const id = canonicalIdFor(entry);
+      if (id !== entry.id) {
+        result.warnings.push(`${entry.id}: malformed capture id — promoting as ${id}`);
+        if (store.getNode(entry.id) && !store.getNode(id)) {
+          store.renameNode(entry.id, id);
+        }
+      }
+      const node = store.getNode(id);
 
       if (node?.status === 'promoted' && node.canonicalPath) {
         result.skipped++;
@@ -72,7 +93,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       }
 
       const memory: MemoryObject = {
-        id: entry.id,
+        id,
         type,
         scope,
         confidence: 1,
@@ -91,7 +112,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       if (relPath === null) {
         // A canonical file with this id already exists — the file is the truth.
         result.skipped++;
-        markPromoted(store, entry.id, existingPathForId(memoryDir, memory));
+        markPromoted(store, id, existingPathForId(memoryDir, memory));
         continue;
       }
 
@@ -99,7 +120,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       mkdirSync(dirname(absPath), { recursive: true });
       writeFileSync(absPath, serializeMemoryFile(memory), 'utf-8');
       result.promoted.push(relPath);
-      markPromoted(store, entry.id, relPath);
+      markPromoted(store, id, relPath);
     } catch (err) {
       result.errors.push(`${entry.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -119,7 +140,10 @@ function markPromoted(store: SqliteStore, id: string, relPath: string | undefine
 /**
  * Where to write the canonical file: the slug path, or a -2/-3 suffix when a
  * *different* memory already owns it. Null when a file with this same id
- * already exists (never overwrite — hand edits are truth).
+ * already exists (never overwrite — hand edits are truth). An existing file
+ * that fails to parse is a hard error: silently suffixing past it would pile
+ * up duplicate files on every consolidation while the broken file stays
+ * invisible.
  */
 export function resolveTargetPath(memoryDir: string, memory: MemoryObject): string | null {
   const base = memoryFilePath(memory);
@@ -128,7 +152,7 @@ export function resolveTargetPath(memoryDir: string, memory: MemoryObject): stri
     const candidate = i === 1 ? base : `${stem}-${i}.md`;
     const abs = join(memoryDir, candidate);
     if (!existsSync(abs)) return candidate;
-    if (fileOwnedById(abs, candidate, memory.id)) return null;
+    if (fileIdAt(abs, candidate) === memory.id) return null;
   }
   throw new Error(`Could not find a free filename for ${memory.id} near ${base}`);
 }
@@ -140,15 +164,22 @@ export function existingPathForId(memoryDir: string, memory: MemoryObject): stri
     const candidate = i === 1 ? base : `${stem}-${i}.md`;
     const abs = join(memoryDir, candidate);
     if (!existsSync(abs)) return undefined;
-    if (fileOwnedById(abs, candidate, memory.id)) return candidate;
+    try {
+      if (fileIdAt(abs, candidate) === memory.id) return candidate;
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
 }
 
-function fileOwnedById(absPath: string, relPath: string, id: string): boolean {
+/** The id owning an existing canonical file. Unparseable → MemoryFileError. */
+function fileIdAt(absPath: string, relPath: string): string {
   try {
-    return parseMemoryFile(readFileSync(absPath, 'utf-8'), relPath).memory.id === id;
-  } catch {
-    return false;
+    return parseMemoryFile(readFileSync(absPath, 'utf-8'), relPath).memory.id;
+  } catch (err) {
+    throw new MemoryFileError(
+      `existing file ${relPath} is unparseable (${err instanceof Error ? err.message : String(err)}) — fix or remove it before promotion can proceed`,
+    );
   }
 }

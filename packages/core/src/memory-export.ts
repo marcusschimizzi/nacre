@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+  isMemoryId,
   mintMemoryId,
   serializeMemoryFile,
   type MemoryObject,
@@ -28,8 +29,6 @@ export interface ExportCanonicalResult {
   warnings: string[];
   errors: string[];
 }
-
-const MEMORY_ID_RE = /^mem_[0-9a-f]{6,}$/;
 
 const ENTITY_TO_MEMORY_TYPE: Partial<Record<EntityType, MemoryObjectType>> = {
   decision: 'decision',
@@ -70,7 +69,7 @@ export function exportCanonical(store: SqliteStore, memoryDir: string): ExportCa
         node.label;
 
       let id = node.id;
-      if (!MEMORY_ID_RE.test(id)) {
+      if (!isMemoryId(id)) {
         id = mintMemoryId();
       }
 

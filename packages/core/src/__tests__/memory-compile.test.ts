@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileMemoryDir, listMemoryFiles } from '../memory-compile.js';
+import { compileMemoryDir, listMemoryFiles, replayCaptureCandidates } from '../memory-compile.js';
 import { generateNodeId } from '../graph.js';
 import { SqliteStore } from '../store.js';
 
@@ -146,6 +146,33 @@ describe('compileMemoryDir', () => {
     assert.equal(result.errors.length, 1);
     assert.match(result.errors[0], /broken\.md/);
     assert.equal(result.memories, 2);
+  });
+
+  it('replayCaptureCandidates recreates unpromoted spool entries as candidates', () => {
+    writeFileSync(
+      join(root, '.capture/2026-07-17.jsonl'),
+      `${JSON.stringify({
+        id: 'mem_9999ffff0000',
+        ts: '2026-07-17T11:00:00Z',
+        origin: 'mcp',
+        payload: { content: 'Unpromoted spooled memory.', type: 'decision', links: ['nacre'] },
+      })}\n`,
+    );
+    compileMemoryDir(store, root);
+    const replay = replayCaptureCandidates(store, root);
+    assert.deepEqual(replay.errors, []);
+    assert.equal(replay.candidates, 1);
+    assert.equal(replay.edges, 1);
+
+    const node = store.getNode('mem_9999ffff0000');
+    assert.equal(node?.status, 'candidate');
+    assert.equal(node?.type, 'decision');
+    assert.deepEqual(node?.sourceFiles, ['.capture/2026-07-17.jsonl']);
+
+    // Idempotent, and promoted entries (compiled from their file) are skipped.
+    const second = replayCaptureCandidates(store, root);
+    assert.equal(second.candidates, 0);
+    assert.equal(second.skipped, 1);
   });
 
   it('surfaces per-file warnings with the file path attached', () => {
