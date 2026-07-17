@@ -88,16 +88,24 @@ export function searchRoutes(store: SqliteStore): Hono {
 
     const provider = resolveProvider({ provider: providerName, allowNull: true });
 
-    const response = await recall(store, provider, {
-      query: q,
-      limit,
-      types,
-      since,
-      until,
-      hops,
-    });
-
-    return c.json({ data: response.results, procedures: response.procedures });
+    try {
+      const response = await recall(store, provider, {
+        query: q,
+        limit,
+        types,
+        since,
+        until,
+        hops,
+      });
+      return c.json({ data: response.results, procedures: response.procedures });
+    } catch (err) {
+      // Same contract as /similar: an encoder/fingerprint mismatch is a
+      // configuration error with a known remedy — a 409, not a 500.
+      if (err instanceof EncoderMismatchError) {
+        return c.json({ error: { message: err.message, code: 'ENCODER_MISMATCH' } }, 409);
+      }
+      throw err;
+    }
   });
 
   return app;
