@@ -1,75 +1,89 @@
 # Nacre — Roadmap
 
-> From personal memory graph to Memory-as-a-Service.
+> From personal memory graph to cross-agent memory substrate.
 
-Last updated: 2026-06-08
+Last updated: 2026-07-16
 
 ---
 
 ## Where We Are Today
 
-Nacre has grown well past its original "produce a graph.json from markdown" goal.
-It's now a full memory engine with SQLite storage, embeddings, hybrid recall,
+Nacre is a full memory engine with SQLite storage, embeddings, hybrid recall,
 episodic + procedural memory, temporal queries, a REST API, an MCP server, a
-TypeScript SDK, and a federated multi-agent ("hive") layer.
+TypeScript SDK, and a federated multi-agent ("hive") layer. The June 2026
+review-and-remediation sprint (REVIEW-2026-06.md → commits of Jun 14–19)
+hardened the API, added CI and Biome, eliminated the recall N+1, cached store
+reads, delta-upserted consolidation, indexed entity resolution, and made MCP
+writes auto-embed.
 
-**What exists and works:**
+In July 2026 we assessed nacre against the agentic-memory research corpus
+(~60 systems and papers, maintained in `radar/notes/Agentic Memory/`). The
+verdict shapes everything below.
 
-- **Core graph engine** — typed nodes/edges, Ebbinghaus decay math, entity
-  resolution (Levenshtein fuzzy matching), query engine, intelligence layer
-  (connection suggestions, labeled clusters, significance analysis, structural
-  holes).
-- **SQLite store** (`@nacre/core` `SqliteStore`) — `better-sqlite3`, WAL mode,
-  schema v5 with in-place migrations, snapshot tables. JSON import/export kept
-  for portability and viz.
-- **Parser pipeline** — file discovery (SHA-256 change detection), markdown→AST
-  (unified/remark), four extraction layers (structural + NLP + custom + optional
-  LLM), merge pipeline with co-occurrence thresholds.
-- **Embeddings** — pluggable providers (`mock`, `onnx`, `ollama`, `openai`);
-  embeddings generated during consolidation for nodes and episodes.
-- **Hybrid recall** — semantic (vector) + graph-walk + recency + importance
-  score fusion, with tunable weights, time filters, and `--asOf` point-in-time
-  queries.
-- **Episodic memory** — first-class episodes with entity links, extracted from
-  markdown and conversations.
-- **Procedural memory** — lessons / preferences / skills / antipatterns /
-  heuristics with confidence, contradiction tracking, and trigger matching.
-- **Temporal queries** — snapshots on consolidation, point-in-time recall, node
-  and edge history.
-- **Conversation ingestion** — chunking + extraction + episode creation, with
-  format adapters.
-- **REST API** — Hono server (`nacre api`) exposing graph, memory, intelligence,
-  search, episodes, procedures, temporal, and ingest routes.
-- **MCP server** — `nacre mcp` exposes `nacre_recall`, `nacre_brief`,
-  `nacre_remember`, `nacre_forget`, `nacre_feedback`, `nacre_lesson`,
-  `nacre_procedures`.
-- **TypeScript SDK** — `@nacre/sdk` with local (embedded) and remote (HTTP)
-  backends behind one interface.
-- **Hive graph** — federated multi-agent consolidation (`nacre hive`) merging
-  several agents' graphs with provenance tracking and origin-factor discounting.
-- **Visualization** — 3D force graph (Three.js, custom iridescent shader), time
-  scrub, search, cluster zoom, node details.
-- **CLI** — 21 subcommands (consolidate, query, brief, alerts, suggest,
-  insights, recall, similar, embed, episodes, procedures, snapshots, history,
-  ingest, api, mcp, viz, dashboard, hive, migrate).
+---
 
-**Health (verified 2026-06-08, after `npm install && npm run build`):**
+## The V2 Thesis
 
-- Tests: 485 / 486 passing (the one failure is `OnnxEmbedder`, which needs the
-  optional `@huggingface/transformers` package).
-- Typecheck: clean across all workspaces.
-- Build: clean.
+Nacre was designed before the research corpus existed. Measured against it:
+
+**What nacre got right — and should keep:**
+
+- **The salience engine.** Ebbinghaus decay with reinforcement-based
+  stability, weighted emergent edges, threshold-gated link formation. The
+  corpus confirms no other tool does this ("all tools model graphs as
+  unweighted — no decay, no reinforcement"). This is nacre's rare part.
+- **No-LLM hot path.** Deterministic extraction, optional LLM layer, batch
+  consolidation off the hot path — exactly the "Low-LLM Memory Writes"
+  prescription. The sleep/wake cycle is the "quarantined capture queue +
+  background archivist" pattern.
+- **Closed ontology.** Nine node types, four edge types. The corpus is
+  emphatic that free-typed LLM extraction invents duplicate types.
+- **Temporal snapshots + `--asOf`** — a real step toward bi-temporal memory.
+- **Hive federation with origin discounting** — anticipates the
+  cross-agent-fleet trend and the provenance-gated admission pattern.
+
+**What the corpus says is missing (ranked):**
+
+1. **No scope model.** One global graph per agent. Cross-agent memory needs
+   explicit scopes — user / project / agent / session, shared-durable vs.
+   local scratch — with different defaults and permissions.
+2. **Entities aren't beliefs.** Nacre's atom is an entity with excerpts; the
+   field's atom is a memory object — a claim with source, confidence,
+   sensitivity, trust, and supersession/correction lineage. Nacre models
+   *salience* but not *belief lifecycle*.
+3. **No receipts, no admission layer.** `nacre_brief` injects context without
+   recording what was included, rejected, or why; recall gates on similarity
+   only, not appropriateness (scope, freshness, sensitivity).
+4. **No memory eval harness.** Good unit tests, zero memory-quality evals
+   (forgetting-absence, P@k, module-level failure attribution).
+5. **Truth-layer ambiguity.** Markdown-ingested memory follows
+   "human-editable truth, derived index" — but MCP writes live only in
+   SQLite, with no human-editable, git-diffable existence.
+6. **Exact-fact fidelity.** ~100-char excerpts risk the
+   "summarization corrupts UUIDs/paths/IDs" failure mode; recall should be
+   able to return verbatim source.
+
+**Verdict: keep the engine, re-architect the memory model on top of it.**
+Not a rewrite — the gaps are additive layers around a good core, and the
+parts nacre has are the ones you can't get anywhere else.
+
+**Two load-bearing decisions locked in for V2:**
+
+1. **Truth layer**: git-synced markdown is authoritative for durable memory;
+   SQLite (graph, embeddings, indexes) is a derived, rebuildable view.
+2. **Scope model**: `user / project / agent / session`, where user and
+   project scopes are shared-durable (they travel via git) and agent/session
+   scopes are local-operational (they live with the agent host).
 
 ---
 
 ## Completed Milestones
 
-The detailed implementation plans for these now live in the code itself; this is
-the historical record of what shipped.
+Historical record of what shipped (detailed plans live in the code).
 
 | # | Milestone | Notes |
 |---|-----------|-------|
-| M0 | Repo cleanup & OSS prep | LICENSE (Apache-2.0), README rewrite, package metadata. CI still pending — see below. |
+| M0 | Repo cleanup & OSS prep | LICENSE (Apache-2.0), README rewrite, package metadata. |
 | M1 | SQLite migration | `SqliteStore`, schema + migrations, JSON import/export. |
 | M2 | Embedding layer | mock / onnx / ollama / openai providers. |
 | M3 | API server | Hono, `nacre api`, route groups + zod validation. |
@@ -80,124 +94,172 @@ the historical record of what shipped.
 | M8 | Procedural memory | lessons/preferences/skills/antipatterns/heuristics. |
 | M9 | Conversation ingester | chunking + episodes + format adapters. |
 | M10 | Temporal queries | snapshots, point-in-time recall, history. |
-| M11 | Hive graph (unplanned bonus) | federated multi-agent consolidation. |
+| M11 | Hive graph | federated multi-agent consolidation. |
+| — | June 2026 hardening sprint | CI, Biome, API hardening, perf fixes, MCP auto-embed. |
+
+---
+
+## V2 Milestones
+
+Ordered by dependency: the truth layer and scope model are foundations; the
+memory-object layer is the centerpiece; receipts, evals, and integrations
+make it trustworthy and used; sync makes it multi-device.
+
+### V2-1: Truth layer & capture path
+
+*Commit to "truth in files, indexes derived" everywhere.*
+
+Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17)
+
+- [ ] Durable memories (user/project scopes) serialize to a canonical
+      markdown format in a git-managed directory; SQLite becomes a compiled
+      view of it.
+- [ ] MCP/API writes (`nacre_remember`, `nacre_lesson`) land in a capture
+      file (raw intake), promoted into canonical markdown by consolidation —
+      never straight into the durable store.
+- [ ] Full round-trip: `nacre export` / rebuild-from-markdown reproduces the
+      graph, embeddings, and indexes on a fresh machine.
+- [ ] Verbatim source recall: every memory can return its exact source text,
+      not just the derived excerpt (Midas pattern; kills the exact-fact
+      corruption failure mode).
+- [ ] Encoder-fingerprint pinning: store the embedding model fingerprint with
+      the vectors; fail loudly on mismatch instead of comparing across
+      spaces.
+
+### V2-2: Scope model
+
+*Make "whose memory is this and where may it go" a first-class property.*
+
+- [ ] `scope` field on nodes, memories, episodes, procedures: `user`,
+      `project`, `agent`, `session`.
+- [ ] Scope-aware defaults on every read/write surface (CLI, API, MCP, SDK) —
+      visible and overridable, per the "explicit scope parameter" pattern.
+- [ ] Per-scope policy: sync eligibility, sensitivity ceiling, retention.
+      Session scratch never syncs; secrets never persist (zero-retention
+      class).
+- [ ] Scope isolation tests: project memories don't leak into global recall;
+      agent-local memory doesn't sync to other devices.
+
+### V2-3: Memory-object layer (belief lifecycle)
+
+*The centerpiece: add beliefs alongside entities.*
+
+- [ ] New `Memory` object: typed claim/preference/decision/fact with
+      `source`, `confidence`, `sensitivity`, `trust_level`, `scope`,
+      `last_confirmed`, `superseded_by`.
+- [ ] Closed `semanticType` enum on edges (`supersedes`, `contradicts`,
+      `part_of`, `led_to`, `about`, `derived_from`) alongside the existing
+      mechanism types (explicit/co-occurrence/temporal/causal). Mechanism =
+      how the link was found; semantics = what it means. No free-typed edges.
+- [ ] Entities become the associative index *over* memories; decay and
+      reinforcement govern memory salience (this subsumes the old
+      "nodes never decay" issue).
+- [ ] Candidate → promotion pipeline inside consolidation: raw capture →
+      candidate → durable memory, with contradiction detection and
+      supersession chains instead of silent overwrite.
+- [ ] Correction and deletion as product operations (correct, retire, forget)
+      with lineage — deleted/superseded facts must be verifiably absent from
+      recall.
+
+### V2-4: Receipts & admission
+
+*Make injection trustworthy and debuggable.*
+
+- [ ] Receipts on `brief` and `recall`: query, filters, included memories,
+      rejected memories (and why), score breakdowns, token cost. Persisted
+      and inspectable (`nacre receipts`).
+- [ ] Admission layer between candidate retrieval and context assembly:
+      gate on scope, freshness, sensitivity, and supersession state — not
+      just similarity ("similarity is not appropriateness").
+- [ ] Provenance guard: superseded or low-trust memories cannot authorize
+      destructive/external actions.
+- [ ] Outage contract: recall degrades loudly when embeddings/index are
+      unavailable — never masks failure as an empty result.
+
+### V2-5: Memory eval harness
+
+*Our research edge, turned into CI.*
+
+- [ ] Replay corpus: recorded conversations/sessions with probe points.
+- [ ] Retrieval QA: P@k, R@k, NDCG, latency on a fixed query set.
+- [ ] Forgetting-absence scoring: corrected/retired facts must not resurface
+      (Memora/FAMA pattern) — explicit credit for current values, explicit
+      penalty for leaking stale ones.
+- [ ] Module-level failure attribution: label failures as extraction,
+      storage, retrieval, or use (MemTrace pattern).
+- [ ] Context-tokens-per-turn reported alongside recall quality — token
+      economy is the value proposition.
+- [ ] Runs in CI; the score goes up, never down.
+
+### V2-6: Agent integration glue
+
+*A memory an agent doesn't consult is a write-only archive.*
+
+- [ ] **nacre-claude**: Claude Code hooks — SessionStart (brief injection),
+      PreCompact (forced capture before lossy compression), Stop (throttled
+      autosave). Capture via spool file + detached drainer; never block the
+      hot path.
+- [ ] **nacre-openclaw / Hermes provider**: heartbeat-driven consolidation,
+      brief at session start, capture at turn boundaries.
+- [ ] **nacre-opencode** wrapper.
+- [ ] Consultation instructions: shippable CLAUDE.md/AGENTS.md snippets so
+      agents proactively query before repeating decisions.
+
+### V2-7: Multi-device sync
+
+*Multi-device without building a cloud product.*
+
+- [ ] Shared-durable scopes (user/project) sync via the git-managed markdown
+      truth layer; each device rebuilds its SQLite index + embeddings
+      locally (V2-1 makes this possible).
+- [ ] Policy-gated sync: sensitivity labels and scope policy decide what
+      leaves the device (Budgeted Memory Governance SHARE gate).
+- [ ] "M18-lite": document running `nacre api` on the always-on agent host
+      as the live endpoint for other devices via the SDK's `RemoteBackend`
+      (already built) — network reachability via Tailscale or similar.
+- [ ] Hive merge as the reconciliation path when devices diverge.
+
+---
+
+## Superseded / Deprioritized (old M12–M18)
+
+| Old | Disposition |
+|-----|-------------|
+| M12 Visualization dashboard | **Parked.** Do the frontend consolidation as tech debt (keep `dashboard`, retire `viz`); polish only after V2-4. The viz is the cherry, not the cake. |
+| M13 Integrations | **Superseded by V2-6** (promoted and reshaped around hooks + capture). |
+| M14 Documentation & launch | **Deferred** until after V2-5/V2-6 — launch with evals and integrations, not before. |
+| M15 Python SDK | **Deferred.** Revisit on demand. |
+| M16 Inference engine | **Deferred until V2-5 exists** — build the differentiator only when we can measure it. |
+| M17 Multi-graph | **Partially subsumed by V2-2 scopes**; revisit what remains after. |
+| M18 Cloud option | **Replaced by V2-7** for personal multi-device. Hosted product only if nacre goes commercial. |
 
 ---
 
 ## Known Issues & Tech Debt
 
-Tracked here so they don't get lost. Several are small but user-visible.
-
-- [ ] **CI**: no GitHub Actions yet. Tests need `npm install && npm run build`
-      first (cross-package tests import `@nacre/core`/`@nacre/parser` by name →
-      resolve to `dist/`). Add CI + consider tsconfig path aliases so tests can
-      run against `src/` without a build step.
-- [ ] **Web-session setup**: add a SessionStart hook so Claude Code web sessions
-      auto-install and build.
-- [ ] **MCP recall uses the mock embedder**: `nacre_recall` resolves the `mock`
-      provider when embeddings exist, causing a dimension mismatch with real
-      stored vectors (semantic scores come back empty → graph-only recall). It
-      should read the store's actual provider.
-- [ ] **Brute-force vector search**: `searchSimilar()` loads every embedding and
-      computes cosine in JS (O(n) per query). Integrate `sqlite-vec` for scale.
-- [ ] **Nodes never decay**: only edges follow the Ebbinghaus curve; nodes
-      accumulate forever. Add node-level dormancy to deliver on "intelligent
-      forgetting."
-- [ ] **Two viz frontends**: `@nacre/viz` (vanilla TS) and `@nacre/dashboard`
-      (React 19) overlap. Pick one and retire the other.
-- [ ] **Dependency audit**: `npm install` reports vulnerabilities; run an audit
-      pass.
-- [ ] **Default embedding provider mismatch**: store defaults to `ollama`; README
-      says `onnx` is the local default. Reconcile.
-- [ ] **`sql.js` dependency** appears unused now that `better-sqlite3` is the
-      store — confirm and remove if dead.
-
----
-
-## Remaining Milestones
-
-### M12: Visualization Dashboard
-*Polish the secret weapon — turn the viz from a dev tool into a product feature.*
-
-**Depends on:** M3 (API, for live data), M5 (recall, for search)
-**Scope:** medium-large (5-7 days)
-
-The viz exists and looks great, but the dashboard still reads a static
-`public/graph.json` rather than the live API.
-
-- [ ] **Live data**: fetch from the API instead of static JSON
-- [ ] **Consolidate frontends**: settle on one of `viz` / `dashboard`
-- [ ] **Memory health dashboard**: decay rates, reinforcement frequency, graph
-      density, memory age distribution
-- [ ] **Search integration**: type a query, see matching nodes highlight
-      (powered by hybrid recall)
-- [ ] **Episodic timeline**: scrollable timeline of episodes alongside the graph
-- [ ] **Procedural memory panel**: view lessons, preferences, skills in a sidebar
-- [ ] **Consolidation visualization**: animate the sleep cycle — nodes
-      strengthen, edges decay, new connections form
-- [ ] **Diff view**: compare graph state at two points in time
-- [ ] **Responsive layout**: desktop and tablet
-- [ ] **Embeddable mode**: `<iframe>` snippet for docs/blog/demos
-- [ ] **Fallback for no-WebGL**: 2D force graph (d3-force) for headless/sandbox
-
-**Demo:** open the dashboard, see memory as a living 3D graph, search and watch
-related memories light up, scrub through time, show health metrics. This is the
-screenshot/GIF that sells nacre.
-
-### M13: Integrations
-*Bridge nacre to coding agents.*
-
-**Depends on:** M6 (MCP), M7 (SDK), M9 (conversation ingester)
-**Scope:** small (1-2 days each)
-
-Lightweight integration packages for popular agent frameworks:
-
-- [ ] **nacre-opencode** — wrapper for OpenCode
-- [ ] **nacre-claude** — wrapper for Claude Code
-- [ ] **nacre-openclaw** — wrapper for OpenClaw agents
-- [ ] **nacre-langchain** — LangChain integration
-
-Each provides CLI commands (e.g. `opencode-nacre remember "X"`), a programmatic
-API wrapping the SDK/CLI, and memory hooks for automatic persistence during
-coding sessions.
-
-### M14: Documentation & Launch
-*Make it real for other people.*
-
-**Depends on:** M6, M7
-
-- [ ] Landing page (positioning, key features, demo GIF/video)
-- [ ] Quick start guide (install → first memory → recall in <5 min)
-- [ ] Guides: "Add memory to Claude Desktop" (MCP), "…to your LangChain agent"
-      (SDK), "…to your custom agent" (API), "Using nacre with Obsidian"
-- [ ] API reference (auto-generated from OpenAPI spec)
-- [ ] SDK reference (auto-generated from TypeScript types)
-- [ ] Architecture overview (adapted from VISION.md)
-- [ ] Configuration reference
-- [ ] npm publish: `@nacre/core`, `@nacre/sdk`, `@nacre/cli`
-
-### M15: Python SDK
-- [ ] Python wrapper around the REST API
-- [ ] PyPI publish
-- [ ] Examples for LangChain, CrewAI, AutoGen
-
-### M16: Inference Engine
-*The biggest differentiator — nobody else does this well.*
-
-- [ ] Pattern discovery in graph structure
-- [ ] Higher-order concept generation during consolidation
-- [ ] **Automated procedure extraction** from episodic patterns (the schema
-      already tracks `confidence`, `contradictions`, `flaggedForReview`)
-
-### M17: Multi-Graph
-- [ ] Multiple named graphs in one nacre instance
-- [ ] Per-graph config (decay rates, embedding providers)
-- [ ] Graph federation / cross-graph queries (the hive layer is a first step)
-
-### M18: Cloud Option
-- [ ] Hosted nacre-as-a-service
-- [ ] User auth, billing, usage limits
-- [ ] Managed consolidation (scheduled, not heartbeat-dependent)
+- [x] ~~CI~~ — `.github/workflows/ci.yml` shipped in the June sprint.
+- [x] ~~MCP recall uses the mock embedder~~ — `mcp/tools.ts` now resolves the
+      graph's configured provider.
+- [ ] **Two viz frontends**: keep `@nacre/dashboard`, retire `@nacre/viz`
+      (~7k LOC of drifting duplication).
+- [ ] **API + MCP live inside the CLI package**: extract `@nacre/api` and
+      `@nacre/mcp`.
+- [ ] **Hand-mirrored types** across viz/dashboard/sdk (`RecallScores` has
+      already diverged): share DTOs from `@nacre/core`.
+- [ ] **Dead `GraphStore` abstraction**: either use the interface or delete
+      it; everything couples to `SqliteStore`.
+- [ ] **Brute-force vector search**: O(n) cosine scan; integrate `sqlite-vec`
+      for scale.
+- [ ] **Nodes never decay**: subsumed by V2-3 (salience moves to memory
+      objects).
+- [ ] **`sql.js`** still in the root `package.json` — confirmed unused,
+      remove.
+- [ ] **Dependency version drift** across workspaces (better-sqlite3 11/12,
+      zod 3/4, hono 4.7/4.11).
+- [ ] **Default embedding provider mismatch**: store defaults to `ollama`,
+      README says `onnx`. Reconcile.
+- [ ] **Web-session setup**: SessionStart hook so cloud sessions auto-install
+      and build.
 
 ---
 
@@ -208,10 +270,20 @@ coding sessions.
 3. **Tests aren't optional.** The passing-test count goes up, never down.
 4. **Keep it local-first.** Cloud is always optional; the default needs zero
    external services.
-5. **API before UI.** Every feature works via CLI/API before it gets a visual
-   treatment. The viz is the cherry, not the cake.
-6. **Boring technology.** SQLite, TypeScript, Hono, ONNX. The interesting parts
-   are the algorithms, not the stack.
+5. **API before UI.** Every feature works via CLI/API before it gets a
+   visual treatment.
+6. **Boring technology.** SQLite, TypeScript, Hono, ONNX. The interesting
+   parts are the algorithms, not the stack.
+7. **No LLM on the hot path.** Deterministic writes; spend LLM calls on
+   gated, batched consolidation.
+8. **Truth in files, indexes derived.** Durable memory is human-editable and
+   git-diffable; SQLite/vectors are rebuildable views.
+9. **Receipts everywhere.** Every injection and recall can explain what it
+   included, what it rejected, and why.
+10. **Closed ontologies.** Node types, edge semantics, and scopes are enums,
+    not free text.
+11. **Evals before intelligence.** No new "smart" feature without a metric
+    that can catch it regressing.
 
 ---
 
