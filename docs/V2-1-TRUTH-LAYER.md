@@ -115,7 +115,7 @@ memory/
 
 ```markdown
 ---
-id: mem_a1b2c3d4            # stable, generated at promotion, never reused
+id: mem_a1b2c3d4            # stable, minted at capture, never reused
 type: decision              # claim | preference | decision | fact | lesson
 scope: project/nacre        # must agree with path; path wins on conflict
 confidence: 0.9
@@ -204,8 +204,10 @@ the truth layer.
    is preserved (current auto-embed behavior, no UX regression).
 
 At the next consolidation, the candidate is promoted: canonical file
-materialized (id minted, slug chosen, source attached), SQLite row flipped to
-`status: promoted` and re-pointed at the file. Recall may include candidates
+materialized (slug chosen, source attached, keeping the id minted at
+capture — spool entry, candidate row, and canonical file share one
+identity), SQLite row flipped to `status: promoted` and re-pointed at the
+file. Recall may include candidates
 by default but receipts (V2-4) will distinguish them.
 
 Rebuild-from-scratch therefore = replay canonical files + replay unpromoted

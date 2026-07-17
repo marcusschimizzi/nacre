@@ -46,7 +46,7 @@ import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -65,7 +65,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   reinforcement_count INTEGER NOT NULL DEFAULT 0,
   source_files        TEXT NOT NULL DEFAULT '[]',
   excerpts            TEXT NOT NULL DEFAULT '[]',
-  hive_exclude        INTEGER NOT NULL DEFAULT 0
+  hive_exclude        INTEGER NOT NULL DEFAULT 0,
+  status              TEXT,
+  canonical_path      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -210,6 +212,12 @@ function rowToNode(row: Record<string, unknown>): MemoryNode {
   };
   if ((row.hive_exclude as number) === 1) {
     node.hiveExclude = true;
+  }
+  if (row.status === 'candidate' || row.status === 'promoted') {
+    node.status = row.status;
+  }
+  if (typeof row.canonical_path === 'string') {
+    node.canonicalPath = row.canonical_path;
   }
   return node;
 }
@@ -596,6 +604,18 @@ export class SqliteStore implements GraphStore {
           db.exec('ALTER TABLE embeddings ADD COLUMN vector_norm REAL');
         }
       }
+      if (ver < 7) {
+        // V2-1 truth layer: memory-backed nodes carry a lifecycle status
+        // (candidate → promoted) and, once promoted, the canonical file path.
+        // NULL for ordinary extracted entities.
+        const cols = db.prepare('PRAGMA table_info(nodes)').all() as Array<{ name: string }>;
+        if (!cols.some((c) => c.name === 'status')) {
+          db.exec('ALTER TABLE nodes ADD COLUMN status TEXT');
+        }
+        if (!cols.some((c) => c.name === 'canonical_path')) {
+          db.exec('ALTER TABLE nodes ADD COLUMN canonical_path TEXT');
+        }
+      }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
         'schema_version',
         String(SCHEMA_VERSION),
@@ -687,8 +707,8 @@ export class SqliteStore implements GraphStore {
   putNode(node: MemoryNode): void {
     this.stmt(
       `INSERT OR REPLACE INTO nodes
-       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       node.id,
       node.label,
@@ -701,6 +721,8 @@ export class SqliteStore implements GraphStore {
       JSON.stringify(node.sourceFiles),
       JSON.stringify(node.excerpts),
       node.hiveExclude ? 1 : 0,
+      node.status ?? null,
+      node.canonicalPath ?? null,
     );
     this.invalidateCaches();
   }

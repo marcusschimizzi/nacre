@@ -1,14 +1,18 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
-  SqliteStore,
+  type SqliteStore,
   resolveProvider,
+  resolveMemoryDir,
   recall,
   generateBrief,
   extractQueryTerms,
+  appendCapture,
+  mintMemoryId,
   EncoderMismatchError,
   type EntityType,
   type MemoryNode,
+  type MemoryObjectType,
   type Procedure,
   type ProcedureType,
 } from '@nacre/core';
@@ -73,14 +77,21 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             '⚠ Semantic recall unavailable (embedding provider error) — graph-only results.\n\n';
         } catch {
           return {
-            content: [{ type: 'text', text: 'Recall failed: embedding provider and graph recall both errored.' }],
+            content: [
+              {
+                type: 'text',
+                text: 'Recall failed: embedding provider and graph recall both errored.',
+              },
+            ],
             isError: true,
           };
         }
       }
 
       if (response.results.length === 0) {
-        return { content: [{ type: 'text', text: `${degradedNote}No memories found for that query.` }] };
+        return {
+          content: [{ type: 'text', text: `${degradedNote}No memories found for that query.` }],
+        };
       }
 
       const lines = response.results.map(
@@ -162,10 +173,34 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         observation: 'concept',
         decision: 'decision',
       };
+      const memoryTypeMap: Record<string, MemoryObjectType> = {
+        fact: 'fact',
+        event: 'fact',
+        observation: 'claim',
+        decision: 'decision',
+      };
 
       const nodeType = typeMap[args.type] || 'concept';
-      const id = generateId(args.content);
+      const id = mintMemoryId();
       const timestamp = now();
+
+      // Two-phase write (V2-1): the spool append is the durable act; the
+      // candidate row below makes the memory immediately recallable. The
+      // canonical file materializes at the next consolidation.
+      const memoryDir = resolveMemoryDir(graphPath);
+      if (memoryDir) {
+        appendCapture(memoryDir, {
+          id,
+          ts: timestamp,
+          origin: 'mcp',
+          tool: 'nacre_remember',
+          payload: {
+            content: args.content,
+            type: memoryTypeMap[args.type] ?? 'fact',
+            links: args.entities,
+          },
+        });
+      }
 
       const node: MemoryNode = {
         id,
@@ -178,6 +213,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         reinforcementCount: Math.ceil(args.importance * 3),
         sourceFiles: ['mcp'],
         excerpts: [{ file: 'mcp', text: args.content, date: timestamp }],
+        status: 'candidate',
       };
 
       store.putNode(node);
@@ -216,7 +252,11 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         content: [
           {
             type: 'text',
-            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}${searchMsg}`,
+            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}${searchMsg}${
+              memoryDir
+                ? ' Captured to the truth layer (canonical file at next consolidation).'
+                : ' ⚠ No memory directory configured — this memory lives only in the database.'
+            }`,
           },
         ],
       };
