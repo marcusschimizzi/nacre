@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { SqliteStore, compileMemoryDir, promoteCaptured, resolveMemoryDir } from '@nacre/core';
 import { consolidate } from '@nacre/parser';
 import { formatConsolidationSummary } from '../output.js';
 
@@ -38,6 +39,40 @@ export default defineCommand({
       outDir,
       entityMapPath: args['entity-map'] as string,
     });
+
+    // V2-1 truth layer: promote spooled capture entries to canonical memory
+    // files, then compile the canonical directory into the store. This is the
+    // only path from capture (Tier 1) into durable memory (Tier 2).
+    if (outDir.endsWith('.db')) {
+      const memoryDir = resolveMemoryDir(outDir);
+      if (memoryDir) {
+        const store = SqliteStore.open(outDir);
+        try {
+          const promotion = promoteCaptured(store, memoryDir);
+          const compiled = compileMemoryDir(store, memoryDir);
+
+          console.log('');
+          console.log(`🗂  Truth layer (${memoryDir}):`);
+          console.log(
+            `   Promoted: ${promotion.promoted.length} captured → canonical (${promotion.skipped} already promoted)`,
+          );
+          console.log(
+            `   Compiled: ${compiled.memories} memories, ${compiled.entitiesCreated} new entities, ${compiled.edges} edges`,
+          );
+          for (const warning of [...promotion.warnings, ...compiled.warnings]) {
+            console.log(`   ⚠ ${warning}`);
+          }
+          const truthErrors = [...promotion.errors, ...compiled.errors];
+          if (truthErrors.length > 0) {
+            for (const error of truthErrors) console.error(`   ✖ ${error}`);
+            console.error('   Truth-layer errors above — these entries/files were not processed.');
+            process.exitCode = 1;
+          }
+        } finally {
+          store.close();
+        }
+      }
+    }
 
     const elapsed = Date.now() - start;
     console.log(formatConsolidationSummary(result, elapsed));

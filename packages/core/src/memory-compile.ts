@@ -126,6 +126,8 @@ function compileMemory(
     reinforcementCount: memory.salience.reinforcementCount,
     sourceFiles: [relPath],
     excerpts: [{ file: relPath, text: truncate(claim, EXCERPT_MAX), date: memory.created }],
+    status: 'promoted',
+    canonicalPath: relPath,
   };
   store.putNode(memoryNode);
   result.memories++;
