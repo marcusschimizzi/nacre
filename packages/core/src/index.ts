@@ -7,6 +7,7 @@ export * from './intelligence.js';
 export * from './store.js';
 export * from './embeddings.js';
 export * from './memory-file.js';
+export * from './memory-compile.js';
 export * from './recall.js';
 export * from './hive.js';
 export * from './procedures.js';
