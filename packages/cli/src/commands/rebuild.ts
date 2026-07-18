@@ -110,12 +110,37 @@ export default defineCommand({
         }
         console.log(`\nEmbedding with ${provider.name} (${provider.dimensions} dims)…`);
         let embedded = 0;
+        const failures: string[] = [];
         for (const node of store.listNodes()) {
           const text = `${node.label} — ${node.excerpts.map((e) => e.text).join('. ')}`;
-          const vector = await provider.embed(text);
-          store.putEmbedding(node.id, 'node', text, vector, provider.name);
-          embedded++;
+          try {
+            const vector = await provider.embed(text);
+            store.putEmbedding(node.id, 'node', text, vector, provider.name);
+            embedded++;
+          } catch (err) {
+            failures.push(`${node.id}: ${err instanceof Error ? err.message : String(err)}`);
+            if (failures.length >= 5) {
+              failures.push('(giving up — provider appears to be down)');
+              break;
+            }
+          }
         }
+
+        if (failures.length > 0) {
+          // A partial index silently loses memories from semantic recall and
+          // pins the store to a fingerprint it can't fully honor. All or
+          // nothing: clear the partial index (and its fingerprint stamp) so
+          // the rebuilt graph is valid, unpinned, and honestly graph-only.
+          store.clearAllEmbeddings();
+          console.error(`\nEmbedding failed (${embedded} embedded before the first failure):`);
+          for (const failure of failures.slice(0, 6)) console.error(`  ✖ ${failure}`);
+          console.error(
+            '\nCleared the partial embedding index. The rebuilt graph is valid but has NO embeddings — run ' +
+              `'nacre embed --graph ${graphPath}' once the provider is available.`,
+          );
+          process.exit(1);
+        }
+
         store.setMeta('embedding_provider', provider.name);
         store.setMeta('embedding_dimensions', String(provider.dimensions));
         console.log(`Embedded ${embedded} nodes (encoder: ${store.getEncoderFingerprint()}).`);
