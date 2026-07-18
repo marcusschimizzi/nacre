@@ -78,7 +78,7 @@ export default defineCommand({
           console.log(
             `   Compiled: ${compiled.memories} memories, ${compiled.entitiesCreated} new entities, ${compiled.edges} edges${
               compiled.removed > 0 ? `, ${compiled.removed} removed (files deleted)` : ''
-            }`,
+            }${compiled.edgesRemoved > 0 ? `, ${compiled.edgesRemoved} stale edges removed` : ''}`,
           );
           for (const warning of [
             ...promotion.warnings,

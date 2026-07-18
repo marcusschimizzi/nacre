@@ -31,6 +31,8 @@ export interface CompileMemoryResult {
   edges: number;
   /** Promoted rows deleted because their canonical file no longer exists. */
   removed: number;
+  /** Stale explicit edges deleted because their [[link]] was edited out of a file. */
+  edgesRemoved: number;
   /** Recoverable issues (per-file, prefixed with the file path). */
   warnings: string[];
   /** Files that failed to parse — reported, never silently skipped. */
@@ -82,9 +84,13 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     entitiesCreated: 0,
     edges: 0,
     removed: 0,
+    edgesRemoved: 0,
     warnings: [],
     errors: [],
   };
+  // Entity ids each compiled memory currently links — the file-derived truth
+  // for that memory's explicit edges.
+  const currentLinks = new Map<string, Set<string>>();
   const forgotten = tombstonedIds(memoryDir);
   // Which memory id each compiled file currently declares — reconciliation
   // must match on id, not mere path existence, or an id edited in a file's
@@ -132,7 +138,7 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
       for (const warning of parsed.warnings) {
         result.warnings.push(`${relPath}: ${warning}`);
       }
-      compileMemory(store, parsed, relPath, result);
+      compileMemory(store, parsed, relPath, result, currentLinks);
     } catch (err) {
       if (err instanceof MemoryFileError) {
         result.errors.push(`${relPath}: ${err.message}`);
@@ -140,6 +146,21 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
       } else {
         throw err;
       }
+    }
+  }
+
+  // Wikilink edges are file-derived state: a [[link]] edited out of a file
+  // takes its edge with it. Only edges touching a memory compiled THIS run
+  // are candidates — entity↔entity edges from raw ingestion, and edges of
+  // candidate (not yet file-backed) memories, are untouched.
+  for (const edge of store.listEdges({ type: 'explicit' })) {
+    const sourceLinks = currentLinks.get(edge.source);
+    const targetLinks = currentLinks.get(edge.target);
+    if (!sourceLinks && !targetLinks) continue;
+    const kept = sourceLinks?.has(edge.target) || targetLinks?.has(edge.source);
+    if (!kept) {
+      store.deleteEdge(edge.id);
+      result.edgesRemoved++;
     }
   }
 
@@ -296,6 +317,7 @@ function compileMemory(
   parsed: ReturnType<typeof parseMemoryFile>,
   relPath: string,
   result: CompileMemoryResult,
+  currentLinks: Map<string, Set<string>>,
 ): void {
   const { memory, claim, wikilinks } = parsed;
   const lastReinforced = memory.salience.lastReinforced ?? memory.lastConfirmed;
@@ -319,6 +341,9 @@ function compileMemory(
   store.putNode(memoryNode);
   result.memories++;
 
+  const linked = new Set<string>();
+  currentLinks.set(memory.id, linked);
+
   for (const target of wikilinks) {
     let entity = store.findNode(target);
     if (!entity) {
@@ -337,6 +362,7 @@ function compileMemory(
       store.putNode(entity);
       result.entitiesCreated++;
     }
+    linked.add(entity.id);
 
     const edgeId = generateEdgeId(memory.id, entity.id, 'explicit');
     const existing = store.getEdge(edgeId);

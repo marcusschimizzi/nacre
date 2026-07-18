@@ -194,6 +194,58 @@ describe('compileMemoryDir', () => {
     assert.ok(tombstones.some((t) => t.id === 'mem_bbbb33334444'));
   });
 
+  it('a [[link]] edited out of a file removes its edge; other edges survive', () => {
+    compileMemoryDir(store, root);
+    const memEdges = () =>
+      store
+        .listEdges({ type: 'explicit' })
+        .filter((e) => e.source === 'mem_aaaa11112222' || e.target === 'mem_aaaa11112222');
+    assert.equal(memEdges().length, 2); // SQLite + nacre
+
+    // Edit [[nacre]] out of the decision's body.
+    writeFileSync(
+      join(root, 'projects/nacre/decisions/sqlite-over-json.md'),
+      DECISION.replace('for [[nacre]].', 'for the graph store.'),
+    );
+    const result = compileMemoryDir(store, root);
+
+    assert.equal(result.edgesRemoved, 1);
+    const remaining = memEdges();
+    assert.equal(remaining.length, 1);
+    const sqliteId = generateNodeId('SQLite');
+    assert.ok(remaining[0].source === sqliteId || remaining[0].target === sqliteId);
+    // The other memory's edges are untouched.
+    const prefEdges = store
+      .listEdges({ type: 'explicit' })
+      .filter((e) => e.source === 'mem_bbbb33334444' || e.target === 'mem_bbbb33334444');
+    assert.equal(prefEdges.length, 2); // TypeScript + nacre
+  });
+
+  it('entity↔entity edges from raw ingestion are never touched by edge reconciliation', () => {
+    compileMemoryDir(store, root);
+    // Simulate a parser-created explicit edge between two entities.
+    const a = generateNodeId('SQLite');
+    const b = generateNodeId('TypeScript');
+    store.putEdge({
+      id: `${a}--${b}--explicit`,
+      source: a,
+      target: b,
+      type: 'explicit',
+      directed: false,
+      weight: 0.5,
+      baseWeight: 0.5,
+      reinforcementCount: 1,
+      firstFormed: '2026-07-01',
+      lastReinforced: '2026-07-01',
+      stability: 1,
+      evidence: [],
+    });
+    const before = store.edgeCount();
+    const result = compileMemoryDir(store, root);
+    assert.equal(result.edgesRemoved, 0);
+    assert.equal(store.edgeCount(), before);
+  });
+
   it('two files declaring the same id: first (sorted) wins, duplicate is a loud error', () => {
     // 'projects/…' sorts before 'user/…', so the decision file wins the id.
     writeFileSync(
