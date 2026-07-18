@@ -86,11 +86,13 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     errors: [],
   };
   const forgotten = tombstonedIds(memoryDir);
-  // Canonical paths that still legitimately back a store row this run:
-  // successfully compiled files AND parse-error files (a syntax error must
-  // not delete the memory it backs). Tombstone-skipped files are excluded —
-  // their rows were removed at forget and must stay gone.
-  const backedPaths = new Set<string>();
+  // Which memory id each compiled file currently declares — reconciliation
+  // must match on id, not mere path existence, or an id edited in a file's
+  // frontmatter leaves the old promoted row behind as a duplicate.
+  const pathOwner = new Map<string, string>();
+  // Unparseable files: identity unknown, so any row they back is preserved —
+  // a syntax error must not delete the memory it backs.
+  const errorPaths = new Set<string>();
 
   for (const relPath of listMemoryFiles(memoryDir)) {
     let content: string;
@@ -98,7 +100,7 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
       content = readFileSync(join(memoryDir, relPath), 'utf-8');
     } catch (err) {
       result.errors.push(`${relPath}: ${err instanceof Error ? err.message : String(err)}`);
-      backedPaths.add(relPath);
+      errorPaths.add(relPath);
       continue;
     }
 
@@ -114,7 +116,7 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
         continue;
       }
       result.files++;
-      backedPaths.add(relPath);
+      pathOwner.set(relPath, parsed.memory.id);
       for (const warning of parsed.warnings) {
         result.warnings.push(`${relPath}: ${warning}`);
       }
@@ -122,7 +124,7 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     } catch (err) {
       if (err instanceof MemoryFileError) {
         result.errors.push(`${relPath}: ${err.message}`);
-        backedPaths.add(relPath);
+        errorPaths.add(relPath);
       } else {
         throw err;
       }
@@ -130,13 +132,16 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
   }
 
   // Files are the truth in both directions: a promoted row whose canonical
-  // file is gone (deleted by hand or via git sync) must leave the store too,
-  // or deleted memories stay recallable forever. The deletion is tombstoned —
+  // file is gone (deleted by hand or via git sync) — or whose file now
+  // declares a DIFFERENT id (frontmatter edited) — must leave the store, or
+  // stale memories stay recallable forever. Removals are tombstoned;
   // otherwise the original spool entry would re-promote the memory and
-  // recreate the file on the next consolidation, making hand-deletion futile.
+  // recreate the file on the next consolidation.
   for (const node of store.listNodes()) {
     if (node.status !== 'promoted' || !node.canonicalPath) continue;
-    if (backedPaths.has(node.canonicalPath)) continue;
+    if (errorPaths.has(node.canonicalPath)) continue;
+    const owner = pathOwner.get(node.canonicalPath);
+    if (owner === node.id) continue;
     store.deleteNode(node.id);
     store.deleteEmbedding(node.id);
     if (!forgotten.has(node.id)) {
@@ -145,12 +150,16 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
         id: node.id,
         ts: new Date().toISOString(),
         origin: 'reconcile',
-        reason: `canonical file removed: ${node.canonicalPath}`,
+        reason: owner
+          ? `canonical file ${node.canonicalPath} now declares id ${owner}`
+          : `canonical file removed: ${node.canonicalPath}`,
       });
     }
     result.removed++;
     result.warnings.push(
-      `${node.canonicalPath}: canonical file removed — deleted promoted memory ${node.id} from the store (tombstoned)`,
+      owner
+        ? `${node.canonicalPath}: file id changed to ${owner} — deleted stale promoted row ${node.id} (tombstoned)`
+        : `${node.canonicalPath}: canonical file removed — deleted promoted memory ${node.id} from the store (tombstoned)`,
     );
   }
 

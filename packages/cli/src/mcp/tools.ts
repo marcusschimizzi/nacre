@@ -18,7 +18,7 @@ import {
   type Procedure,
   type ProcedureType,
 } from '@nacre/core';
-import { embedNodeBestEffort } from '../embed-node.js';
+import { embedNodeBestEffort, embedResultWarning } from '../embed-node.js';
 
 function generateId(content: string): string {
   let hash = 0;
@@ -261,10 +261,16 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       }
 
       // Embed the new memory so it's immediately recallable by semantic search.
-      const embedded = await embedNodeBestEffort(store, provider, node);
+      const embedResult = await embedNodeBestEffort(store, provider, node);
+      const embedded = embedResult.embedded;
 
       const linkMsg = linked.length > 0 ? ` Linked to: ${linked.join(', ')}.` : '';
-      const searchMsg = embedded ? ' Semantically searchable.' : '';
+      const embedWarning = embedResultWarning(embedResult);
+      const searchMsg = embedded
+        ? ' Semantically searchable.'
+        : embedWarning
+          ? ` ${embedWarning}`
+          : '';
       return {
         content: [
           {

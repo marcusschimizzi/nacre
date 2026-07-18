@@ -157,8 +157,35 @@ export default defineCommand({
         hiveStore?.close();
       }
 
+      // --source applies to every output format: enrich results with the
+      // verbatim claim + Source evidence from canonical files up front.
+      const memoryDir = args.source ? resolveMemoryDir(graphPath) : null;
+      const verbatimById = new Map<string, { claim: string; source?: string }>();
+      if (memoryDir) {
+        for (const r of response.results) {
+          const canonicalPath = store.getNode(r.id)?.canonicalPath;
+          const verbatim = canonicalPath ? readMemorySource(memoryDir, canonicalPath) : undefined;
+          if (verbatim) verbatimById.set(r.id, verbatim);
+        }
+      }
+
       if ((args.format as string) === 'json') {
-        console.log(formatJSON(response));
+        const output = memoryDir
+          ? {
+              ...response,
+              results: response.results.map((r) => {
+                const verbatim = verbatimById.get(r.id);
+                return verbatim
+                  ? {
+                      ...r,
+                      claim: verbatim.claim,
+                      ...(verbatim.source ? { source: verbatim.source } : {}),
+                    }
+                  : r;
+              }),
+            }
+          : response;
+        console.log(formatJSON(output));
         return;
       }
 
@@ -172,8 +199,6 @@ export default defineCommand({
         `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n`,
       );
 
-      const memoryDir = args.source ? resolveMemoryDir(graphPath) : null;
-
       for (let i = 0; i < response.results.length; i++) {
         const r = response.results[i];
         console.log(`  ${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}`);
@@ -181,9 +206,8 @@ export default defineCommand({
           `     semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}`,
         );
 
-        if (memoryDir) {
-          const canonicalPath = store.getNode(r.id)?.canonicalPath;
-          const verbatim = canonicalPath ? readMemorySource(memoryDir, canonicalPath) : undefined;
+        {
+          const verbatim = verbatimById.get(r.id);
           if (verbatim) {
             console.log(`     Claim: ${verbatim.claim}`);
             if (verbatim.source) {

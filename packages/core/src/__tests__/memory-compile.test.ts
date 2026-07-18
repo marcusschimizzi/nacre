@@ -173,6 +173,27 @@ describe('compileMemoryDir', () => {
     assert.equal(store.getNode('mem_aaaa11112222'), undefined);
   });
 
+  it('an edited frontmatter id removes the stale promoted row (no duplicates)', () => {
+    compileMemoryDir(store, root);
+    assert.ok(store.getNode('mem_bbbb33334444'));
+
+    // Hand-edit the file's id.
+    writeFileSync(
+      join(root, 'user/preferences/typescript-strict.md'),
+      PREFERENCE.replace('mem_bbbb33334444', 'mem_cccc55556666'),
+    );
+    const result = compileMemoryDir(store, root);
+
+    assert.ok(store.getNode('mem_cccc55556666'), 'new id compiled');
+    assert.equal(store.getNode('mem_bbbb33334444'), undefined, 'stale row removed');
+    assert.equal(result.removed, 1);
+    assert.ok(result.warnings.some((w) => w.includes('file id changed')));
+
+    // The old id is tombstoned so nothing can resurrect it later.
+    const { tombstones } = readCaptureEntries(root);
+    assert.ok(tombstones.some((t) => t.id === 'mem_bbbb33334444'));
+  });
+
   it('a parse error does NOT delete the memory the broken file backs', () => {
     compileMemoryDir(store, root);
     assert.ok(store.getNode('mem_bbbb33334444'));

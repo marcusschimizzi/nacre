@@ -10,7 +10,7 @@ import {
   type SqliteStore,
 } from '@nacre/core';
 import { memoryCreateSchema, feedbackSchema } from '../schemas.js';
-import { embedNodeBestEffort } from '../../embed-node.js';
+import { embedNodeBestEffort, embedResultWarning } from '../../embed-node.js';
 
 const ENTITY_TO_MEMORY_TYPE: Record<string, MemoryObjectType> = {
   decision: 'decision',
@@ -73,18 +73,27 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
 
     store.putNode(node);
     // Embed best-effort so the memory is immediately recallable by semantic search.
-    const embedded = await embedNodeBestEffort(store, provider, node);
+    const embedResult = await embedNodeBestEffort(store, provider, node);
     // Clients must be able to tell a truth-layer-captured memory from a
-    // database-only one — a missing memory dir is not silently durable.
+    // database-only one, and a searchable memory from a skipped embed —
+    // neither state may look silently successful.
+    const warnings = [
+      ...(memoryDir
+        ? []
+        : [
+            'No memory directory configured — this memory is database-only and will not survive a rebuild. Configure memory.dir in nacre.config.json.',
+          ]),
+      ...(embedResultWarning(embedResult) ? [embedResultWarning(embedResult)] : []),
+    ];
     return c.json(
       {
-        data: { ...node, embedded, captured: Boolean(memoryDir) },
-        ...(memoryDir
-          ? {}
-          : {
-              warning:
-                'No memory directory configured — this memory is database-only and will not survive a rebuild. Configure memory.dir in nacre.config.json.',
-            }),
+        data: {
+          ...node,
+          embedded: embedResult.embedded,
+          ...(embedResult.reason ? { embedSkipped: embedResult.reason } : {}),
+          captured: Boolean(memoryDir),
+        },
+        ...(warnings.length > 0 ? { warning: warnings.join(' ') } : {}),
       },
       201,
     );
