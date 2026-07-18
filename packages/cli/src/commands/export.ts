@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineCommand } from 'citty';
 import { SqliteStore, exportCanonical, resolveMemoryDir } from '@nacre/core';
 
@@ -35,12 +36,24 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const memoryDir = (args['memory-dir'] as string | undefined) ?? resolveMemoryDir(graphPath);
+    // Resolve the CLI override to an absolute path (cwd-relative, standard
+    // CLI semantics) so it can't silently diverge from the config-relative
+    // resolution used elsewhere; if it lands somewhere other than the truth
+    // layer consolidate/rebuild use, say so loudly.
+    const override = args['memory-dir'] as string | undefined;
+    const configured = resolveMemoryDir(graphPath);
+    const memoryDir = override ? resolve(override) : configured;
     if (!memoryDir) {
       console.error(
         'No memory directory configured. Pass --memory-dir, set memory.dir in nacre.config.json, or create ./memory next to the graph.',
       );
       process.exit(1);
+    }
+    if (override && configured && resolve(configured) !== memoryDir) {
+      console.warn(
+        `⚠ Exporting to ${memoryDir}, but consolidate/rebuild use the configured truth layer at ${resolve(configured)}. ` +
+          'Memories exported here will not be seen by those commands.',
+      );
     }
     mkdirSync(memoryDir, { recursive: true });
 

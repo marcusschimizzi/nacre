@@ -1,8 +1,8 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   isMemoryId,
-  mintMemoryId,
   serializeMemoryFile,
   type MemoryObject,
   type MemoryObjectType,
@@ -34,6 +34,11 @@ const ENTITY_TO_MEMORY_TYPE: Partial<Record<EntityType, MemoryObjectType>> = {
   decision: 'decision',
   lesson: 'lesson',
 };
+
+/** The mem_ id a legacy node migrates to — a stable function of its old id. */
+function exportIdFor(legacyId: string): string {
+  return `mem_${createHash('sha256').update(`export|${legacyId}`).digest('hex').slice(0, 12)}`;
+}
 
 /** SQLite-only memories: candidates, plus legacy MCP/API writes that predate node status. */
 function isDatabaseOnlyMemory(node: MemoryNode): boolean {
@@ -68,10 +73,10 @@ export function exportCanonical(store: SqliteStore, memoryDir: string): ExportCa
         node.excerpts[0]?.text ??
         node.label;
 
-      let id = node.id;
-      if (!isMemoryId(id)) {
-        id = mintMemoryId();
-      }
+      // Deterministic: derived from the legacy id, not randomly minted, so a
+      // partial failure + retry converges on the same id and canonical file
+      // instead of producing a duplicate under a fresh id.
+      const id = isMemoryId(node.id) ? node.id : exportIdFor(node.id);
 
       const created = node.firstSeen.slice(0, 10);
       const memory: MemoryObject = {

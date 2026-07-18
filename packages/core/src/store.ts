@@ -809,8 +809,11 @@ export class SqliteStore implements GraphStore {
 
   /**
    * Rename a node, updating every reference in one transaction: edges (whose
-   * ids embed the endpoint ids and are regenerated), embeddings, and episode
-   * links. Used by canonical export to migrate legacy node ids to mem_ ids.
+   * ids embed the endpoint ids and are regenerated), embeddings, episode
+   * links, snapshot history (columns and serialized data blobs), and
+   * procedure provenance. Used by canonical export to migrate legacy node
+   * ids to mem_ ids — the rename is an identity migration, so history and
+   * provenance must follow the memory to its new id.
    */
   renameNode(oldId: string, newId: string): void {
     if (oldId === newId) return;
@@ -833,6 +836,56 @@ export class SqliteStore implements GraphStore {
         if (edge.target === oldId) edge.target = newId;
         edge.id = generateEdgeId(edge.source, edge.target, edge.type, edge.directed);
         this.putEdge(edge);
+      }
+
+      // Snapshot history: both the indexed columns and the serialized data
+      // blobs reference node ids; temporal queries must keep tracing the
+      // memory across the rename.
+      const snapNodes = this.db
+        .prepare('SELECT snapshot_id, data FROM snapshot_nodes WHERE node_id = ?')
+        .all(oldId) as Array<{ snapshot_id: string; data: string }>;
+      for (const row of snapNodes) {
+        const data = JSON.parse(row.data) as { id: string };
+        data.id = newId;
+        this.stmt(
+          'UPDATE snapshot_nodes SET node_id = ?, data = ? WHERE snapshot_id = ? AND node_id = ?',
+        ).run(newId, JSON.stringify(data), row.snapshot_id, oldId);
+      }
+
+      const snapEdges = this.db
+        .prepare(
+          'SELECT snapshot_id, edge_id, data FROM snapshot_edges WHERE source = ? OR target = ?',
+        )
+        .all(oldId, oldId) as Array<{ snapshot_id: string; edge_id: string; data: string }>;
+      for (const row of snapEdges) {
+        const data = JSON.parse(row.data) as MemoryEdge;
+        if (data.source === oldId) data.source = newId;
+        if (data.target === oldId) data.target = newId;
+        data.id = generateEdgeId(data.source, data.target, data.type, data.directed);
+        this.stmt(
+          'UPDATE snapshot_edges SET edge_id = ?, source = ?, target = ?, data = ? WHERE snapshot_id = ? AND edge_id = ?',
+        ).run(
+          data.id,
+          data.source,
+          data.target,
+          JSON.stringify(data),
+          row.snapshot_id,
+          row.edge_id,
+        );
+      }
+
+      // Procedure provenance: source_nodes is a JSON id array.
+      const procs = this.db
+        .prepare(`SELECT id, source_nodes FROM procedures WHERE source_nodes LIKE ?`)
+        .all(`%"${oldId}"%`) as Array<{ id: string; source_nodes: string }>;
+      for (const row of procs) {
+        const ids = (JSON.parse(row.source_nodes) as string[]).map((id) =>
+          id === oldId ? newId : id,
+        );
+        this.stmt('UPDATE procedures SET source_nodes = ? WHERE id = ?').run(
+          JSON.stringify(ids),
+          row.id,
+        );
       }
     });
     apply();

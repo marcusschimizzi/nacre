@@ -87,6 +87,82 @@ describe('writeBackSalience', () => {
 });
 
 describe('renameNode', () => {
+  it('rewrites snapshot history and procedure provenance', () => {
+    const store = SqliteStore.open(':memory:');
+    const entityId = generateNodeId('Vite');
+    store.putNode({
+      id: 'n-legacy2',
+      label: 'Old memory',
+      aliases: [],
+      type: 'concept',
+      firstSeen: '2026-06-01',
+      lastReinforced: '2026-06-10',
+      mentionCount: 1,
+      reinforcementCount: 1,
+      sourceFiles: ['mcp'],
+      excerpts: [],
+    });
+    store.putNode({
+      id: entityId,
+      label: 'Vite',
+      aliases: [],
+      type: 'tool',
+      firstSeen: '2026-06-01',
+      lastReinforced: '2026-06-10',
+      mentionCount: 1,
+      reinforcementCount: 0,
+      sourceFiles: [],
+      excerpts: [],
+    });
+    store.putEdge({
+      id: generateEdgeId('n-legacy2', entityId, 'explicit'),
+      source: 'n-legacy2',
+      target: entityId,
+      type: 'explicit',
+      directed: false,
+      weight: 0.8,
+      baseWeight: 0.8,
+      reinforcementCount: 1,
+      firstFormed: '2026-06-01',
+      lastReinforced: '2026-06-10',
+      stability: 1,
+      evidence: [],
+    });
+    const snapshot = store.createSnapshot('manual');
+    store.putProcedure({
+      id: 'proc-1',
+      statement: 'A lesson derived from the legacy memory',
+      type: 'insight',
+      triggerKeywords: [],
+      triggerContexts: [],
+      sourceEpisodes: [],
+      sourceNodes: ['n-legacy2', entityId],
+      confidence: 0.8,
+      applications: 0,
+      contradictions: 0,
+      stability: 1,
+      lastApplied: null,
+      createdAt: '2026-06-10',
+      updatedAt: '2026-06-10',
+      flaggedForReview: false,
+    });
+
+    store.renameNode('n-legacy2', 'mem_eeee00002222');
+
+    // Snapshot history follows the memory to its new id.
+    const snapGraph = store.getSnapshotGraph(snapshot.id);
+    assert.ok(snapGraph.nodes['mem_eeee00002222']);
+    assert.equal(snapGraph.nodes['n-legacy2'], undefined);
+    const snapEdge = Object.values(snapGraph.edges)[0];
+    assert.ok(snapEdge.source === 'mem_eeee00002222' || snapEdge.target === 'mem_eeee00002222');
+    assert.equal(snapEdge.id, generateEdgeId('mem_eeee00002222', entityId, 'explicit'));
+
+    // Procedure provenance follows too; unrelated ids are untouched.
+    const proc = store.getProcedure('proc-1');
+    assert.deepEqual(proc?.sourceNodes, ['mem_eeee00002222', entityId]);
+    store.close();
+  });
+
   it('moves edges, embeddings, and identity in one transaction', () => {
     const store = SqliteStore.open(':memory:');
     const legacy: MemoryNode = {
@@ -236,6 +312,42 @@ describe('exportCanonical', () => {
     // The entity node was never exported or renamed.
     assert.ok(store.findNode('TypeScript'));
     assert.equal(store.findNode('TypeScript')?.status, undefined);
+  });
+
+  it('export ids are deterministic: a retry against a fresh store converges on the same file', () => {
+    putLegacyMcpNode();
+    const first = exportCanonical(store, root);
+    const [, firstNewId] = first.renamed[0];
+
+    // Simulate a partial failure: the file was written, but the store's
+    // rename was lost (fresh db). A retry must reuse the same derived id and
+    // find the existing file instead of minting a new id + duplicate file.
+    const retryStore = SqliteStore.open(':memory:');
+    // Recreate the original legacy node in the retry store.
+    retryStore.putNode({
+      id: 'n-1a2b3c',
+      label: 'Marcus prefers TypeScript strict mode everywhere, even in',
+      aliases: [],
+      type: 'concept',
+      firstSeen: '2026-06-01T10:00:00Z',
+      lastReinforced: '2026-06-15T10:00:00Z',
+      mentionCount: 1,
+      reinforcementCount: 2,
+      sourceFiles: ['mcp'],
+      excerpts: [
+        {
+          file: 'mcp',
+          text: 'Marcus prefers TypeScript strict mode everywhere, even in quick prototypes.',
+          date: '2026-06-01',
+        },
+      ],
+    });
+    const retry = exportCanonical(retryStore, root);
+    assert.equal(retry.exported.length, 0, 'no duplicate file on retry');
+    assert.equal(retry.skipped, 1);
+    assert.deepEqual(retry.renamed, [['n-1a2b3c', firstNewId]]);
+    assert.equal(retryStore.getNode(firstNewId)?.status, 'promoted');
+    retryStore.close();
   });
 
   it('exported memories survive a rebuild from the memory dir alone', () => {
