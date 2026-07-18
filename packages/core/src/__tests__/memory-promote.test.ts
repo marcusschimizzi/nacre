@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, beforeEach, describe, it } from 'node:test';
@@ -138,6 +138,33 @@ describe('promoteCaptured', () => {
     const parsed = parseMemoryFile(readFileSync(join(root, result.promoted[0]), 'utf-8'));
     assert.equal(parsed.memory.type, 'fact');
     assert.equal(parsed.memory.scope, 'agent');
+  });
+
+  it('a hand-moved canonical file (same id, different path) is reattached, never duplicated', () => {
+    appendCapture(root, makeEntry());
+    store.putNode(makeCandidate('mem_0011aabbccdd'));
+    const first = promoteCaptured(store, root);
+    const originalPath = first.promoted[0];
+
+    // Move the file by hand — renames are id-preserving and must be safe.
+    const movedPath = 'user/facts/renamed-by-hand.md';
+    mkdirSync(join(root, 'user/facts'), { recursive: true });
+    writeFileSync(join(root, movedPath), readFileSync(join(root, originalPath), 'utf-8'));
+    rmSync(join(root, originalPath));
+
+    // Fresh store (post-rebuild): the node isn't promoted, the slug path is
+    // free — the old behavior would write a duplicate file there.
+    const fresh = SqliteStore.open(':memory:');
+    const rerun = promoteCaptured(fresh, root);
+    assert.equal(rerun.promoted.length, 0, 'no duplicate file written');
+    assert.equal(rerun.skipped, 1);
+    assert.ok(!existsSync(join(root, originalPath)), 'slug path stays free');
+
+    // Compile sees exactly one file for the id, at the moved path.
+    compileMemoryDir(fresh, root);
+    const node = fresh.getNode('mem_0011aabbccdd');
+    assert.equal(node?.canonicalPath, movedPath);
+    fresh.close();
   });
 
   it('normalizes malformed capture ids deterministically (never writes an unparseable file)', () => {

@@ -7,7 +7,7 @@ import {
   type MemoryObject,
   type MemoryObjectType,
 } from './memory-file.js';
-import { existingPathForId, resolveTargetPath } from './memory-promote.js';
+import { existingPathForId, indexCanonicalIds, resolveTargetPath } from './memory-promote.js';
 import type { SqliteStore } from './store.js';
 import type { EntityType, MemoryNode } from './types.js';
 
@@ -59,6 +59,7 @@ export function exportCanonical(store: SqliteStore, memoryDir: string): ExportCa
     warnings: [],
     errors: [],
   };
+  const idIndex = indexCanonicalIds(memoryDir);
 
   for (const node of store.listNodes()) {
     if (!isDatabaseOnlyMemory(node)) {
@@ -77,6 +78,15 @@ export function exportCanonical(store: SqliteStore, memoryDir: string): ExportCa
       // partial failure + retry converges on the same id and canonical file
       // instead of producing a duplicate under a fresh id.
       const id = isMemoryId(node.id) ? node.id : exportIdFor(node.id);
+
+      // A canonical file for this id already exists somewhere (possibly
+      // moved by hand) — reattach to it, never write a duplicate.
+      const existingAnywhere = idIndex.get(id);
+      if (existingAnywhere) {
+        result.skipped++;
+        finalizeNode(store, node, id, existingAnywhere, result);
+        continue;
+      }
 
       const created = node.firstSeen.slice(0, 10);
       const memory: MemoryObject = {
@@ -106,6 +116,7 @@ export function exportCanonical(store: SqliteStore, memoryDir: string): ExportCa
       const absPath = join(memoryDir, relPath);
       mkdirSync(dirname(absPath), { recursive: true });
       writeFileSync(absPath, serializeMemoryFile(memory), 'utf-8');
+      idIndex.set(id, relPath);
       result.exported.push(relPath);
       finalizeNode(store, node, id, relPath, result);
     } catch (err) {

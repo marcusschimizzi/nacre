@@ -3,13 +3,13 @@ import { join } from 'node:path';
 import {
   CAPTURE_DIR,
   appendTombstone,
+  canonicalIdFor,
   captureFileFor,
   readCaptureEntries,
   tombstonedIds,
 } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
-import { canonicalIdFor } from './memory-promote.js';
 import type { SqliteStore } from './store.js';
 import type { EntityType, MemoryNode } from './types.js';
 
@@ -90,6 +90,10 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
   // must match on id, not mere path existence, or an id edited in a file's
   // frontmatter leaves the old promoted row behind as a duplicate.
   const pathOwner = new Map<string, string>();
+  // First file (sorted order) to declare each id. Two files claiming one id
+  // is a broken state: the first wins deterministically, the duplicate is a
+  // loud error — never a silent last-write-wins by path order.
+  const idOwner = new Map<string, string>();
   // Unparseable files: identity unknown, so any row they back is preserved —
   // a syntax error must not delete the memory it backs.
   const errorPaths = new Set<string>();
@@ -115,6 +119,14 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
         );
         continue;
       }
+      const firstPath = idOwner.get(parsed.memory.id);
+      if (firstPath) {
+        result.errors.push(
+          `${relPath}: duplicate memory id ${parsed.memory.id} (already declared by ${firstPath}) — remove one of the files`,
+        );
+        continue;
+      }
+      idOwner.set(parsed.memory.id, relPath);
       result.files++;
       pathOwner.set(relPath, parsed.memory.id);
       for (const warning of parsed.warnings) {

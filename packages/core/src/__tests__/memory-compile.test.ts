@@ -194,6 +194,22 @@ describe('compileMemoryDir', () => {
     assert.ok(tombstones.some((t) => t.id === 'mem_bbbb33334444'));
   });
 
+  it('two files declaring the same id: first (sorted) wins, duplicate is a loud error', () => {
+    // 'projects/…' sorts before 'user/…', so the decision file wins the id.
+    writeFileSync(
+      join(root, 'user/preferences/typescript-strict.md'),
+      PREFERENCE.replace('mem_bbbb33334444', 'mem_aaaa11112222'),
+    );
+    const result = compileMemoryDir(store, root);
+
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], /duplicate memory id mem_aaaa11112222/);
+    assert.match(result.errors[0], /sqlite-over-json\.md/);
+    const node = store.getNode('mem_aaaa11112222');
+    // Deterministically the first file's content, not last-write-wins.
+    assert.match(node?.label ?? '', /^Chose \[\[SQLite\]\]/);
+  });
+
   it('a parse error does NOT delete the memory the broken file backs', () => {
     compileMemoryDir(store, root);
     assert.ok(store.getNode('mem_bbbb33334444'));

@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { MemoryObjectType } from './memory-file.js';
+import { isMemoryId, type MemoryObjectType } from './memory-file.js';
 
 // ── Capture spool (V2-1 truth layer, Tier 1) ─────────────────────
 //
@@ -130,4 +131,15 @@ export function readCaptureEntries(memoryDir: string): ReadCaptureResult {
 /** The set of forgotten ids — consumed by promotion, replay, and compile. */
 export function tombstonedIds(memoryDir: string): Set<string> {
   return new Set(readCaptureEntries(memoryDir).tombstones.map((t) => t.id));
+}
+
+/**
+ * The id a spool entry promotes under. Well-formed ids pass through; a
+ * malformed id (a canonical file must never be written unparseable) maps to a
+ * DETERMINISTIC replacement — hash of old id + timestamp — so repeated
+ * consolidations converge on one file instead of minting fresh ids per run.
+ */
+export function canonicalIdFor(entry: CaptureEntry): string {
+  if (isMemoryId(entry.id)) return entry.id;
+  return `mem_${createHash('sha256').update(`${entry.id}|${entry.ts}`).digest('hex').slice(0, 12)}`;
 }

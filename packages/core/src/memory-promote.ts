@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { captureFileFor, readCaptureEntries, type CaptureEntry } from './capture.js';
+import { canonicalIdFor, captureFileFor, readCaptureEntries } from './capture.js';
+import { listMemoryFiles } from './memory-compile.js';
 import {
   MEMORY_OBJECT_TYPES,
   MemoryFileError,
-  isMemoryId,
   isValidScope,
   memoryFilePath,
   parseMemoryFile,
@@ -37,14 +36,22 @@ export interface PromoteResult {
 const DEFAULT_SCOPE = 'agent';
 
 /**
- * The id a spool entry promotes under. Well-formed ids pass through; a
- * malformed id (a canonical file must never be written unparseable) maps to a
- * DETERMINISTIC replacement — hash of old id + timestamp — so repeated
- * consolidations converge on one file instead of minting fresh ids per run.
+ * Index every parseable canonical file by the memory id it declares (first
+ * path in sorted order wins). Promotion and export consult this before
+ * writing: a memory whose file lives at ANY path — including one moved by
+ * hand, since renames are id-preserving — must never get a second file.
  */
-export function canonicalIdFor(entry: CaptureEntry): string {
-  if (isMemoryId(entry.id)) return entry.id;
-  return `mem_${createHash('sha256').update(`${entry.id}|${entry.ts}`).digest('hex').slice(0, 12)}`;
+export function indexCanonicalIds(memoryDir: string): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const relPath of listMemoryFiles(memoryDir)) {
+    try {
+      const parsed = parseMemoryFile(readFileSync(join(memoryDir, relPath), 'utf-8'), relPath);
+      if (!index.has(parsed.memory.id)) index.set(parsed.memory.id, relPath);
+    } catch {
+      // Unparseable files are reported by compile; they cannot claim an id here.
+    }
+  }
+  return index;
 }
 
 export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteResult {
@@ -52,6 +59,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
   const { entries, tombstones, errors } = readCaptureEntries(memoryDir);
   result.errors.push(...errors);
   const forgotten = new Set(tombstones.map((t) => t.id));
+  const idIndex = indexCanonicalIds(memoryDir);
 
   for (const entry of entries) {
     try {
@@ -59,6 +67,15 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       // Explicitly forgotten — never resurrect from the spool.
       if (forgotten.has(id)) {
         result.skipped++;
+        continue;
+      }
+      // A canonical file for this id already exists SOMEWHERE in the memory
+      // dir — possibly moved by hand (renames are id-preserving). The file is
+      // the truth; reattach rather than write a duplicate at the slug path.
+      const existingPath = idIndex.get(id);
+      if (existingPath) {
+        result.skipped++;
+        markPromoted(store, id, existingPath);
         continue;
       }
       if (id !== entry.id) {
@@ -125,6 +142,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       const absPath = join(memoryDir, relPath);
       mkdirSync(dirname(absPath), { recursive: true });
       writeFileSync(absPath, serializeMemoryFile(memory), 'utf-8');
+      idIndex.set(id, relPath);
       result.promoted.push(relPath);
       markPromoted(store, id, relPath);
     } catch (err) {
