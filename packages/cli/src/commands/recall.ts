@@ -1,5 +1,14 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, recall, recallWithHive, resolveProvider, type EntityType } from '@nacre/core';
+import {
+  EncoderMismatchError,
+  SqliteStore,
+  readMemorySource,
+  recall,
+  recallWithHive,
+  resolveMemoryDir,
+  resolveProvider,
+  type EntityType,
+} from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 export default defineCommand({
@@ -61,6 +70,10 @@ export default defineCommand({
       type: 'boolean',
       description: 'Search hive only, skip private graph',
     },
+    source: {
+      type: 'boolean',
+      description: 'Include verbatim claim + Source evidence from canonical memory files',
+    },
   },
   async run({ args }) {
     const graphPath = args.graph as string;
@@ -105,7 +118,7 @@ export default defineCommand({
         hiveStore = SqliteStore.open(hivePath);
       }
 
-      let response;
+      let response: Awaited<ReturnType<typeof recall>>;
       try {
         if (hiveStore) {
           response = await recallWithHive(store, hiveStore, provider, {
@@ -132,12 +145,47 @@ export default defineCommand({
             asOf: args['as-of'] as string | undefined,
           });
         }
+      } catch (err) {
+        // An encoder switch is a configuration error with a known remedy —
+        // print it, don't crash with a stack trace.
+        if (err instanceof EncoderMismatchError) {
+          console.error(err.message);
+          process.exit(1);
+        }
+        throw err;
       } finally {
         hiveStore?.close();
       }
 
+      // --source applies to every output format: enrich results with the
+      // verbatim claim + Source evidence from canonical files up front.
+      const memoryDir = args.source ? resolveMemoryDir(graphPath) : null;
+      const verbatimById = new Map<string, { claim: string; source?: string }>();
+      if (memoryDir) {
+        for (const r of response.results) {
+          const canonicalPath = store.getNode(r.id)?.canonicalPath;
+          const verbatim = canonicalPath ? readMemorySource(memoryDir, canonicalPath) : undefined;
+          if (verbatim) verbatimById.set(r.id, verbatim);
+        }
+      }
+
       if ((args.format as string) === 'json') {
-        console.log(formatJSON(response));
+        const output = memoryDir
+          ? {
+              ...response,
+              results: response.results.map((r) => {
+                const verbatim = verbatimById.get(r.id);
+                return verbatim
+                  ? {
+                      ...r,
+                      claim: verbatim.claim,
+                      ...(verbatim.source ? { source: verbatim.source } : {}),
+                    }
+                  : r;
+              }),
+            }
+          : response;
+        console.log(formatJSON(output));
         return;
       }
 
@@ -157,6 +205,18 @@ export default defineCommand({
         console.log(
           `     semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}`,
         );
+
+        {
+          const verbatim = verbatimById.get(r.id);
+          if (verbatim) {
+            console.log(`     Claim: ${verbatim.claim}`);
+            if (verbatim.source) {
+              for (const line of verbatim.source.split('\n')) {
+                console.log(`     Source: ${line}`);
+              }
+            }
+          }
+        }
 
         if (r.connections.length > 0) {
           const conns = r.connections

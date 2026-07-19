@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { SqliteStore, consolidateTruthLayer, resolveMemoryDir } from '@nacre/core';
 import { consolidate } from '@nacre/parser';
 import { formatConsolidationSummary } from '../output.js';
 
@@ -33,11 +34,55 @@ export default defineCommand({
     console.log(`💾 Output: ${outDir} (${outDir.endsWith('.db') ? 'SQLite' : 'JSON'})`);
     console.log('');
 
+    // The canonical memory dir is compiled by its own deterministic path
+    // below — exclude it from raw ingestion so overlapping sources don't
+    // create duplicate/conflicting nodes for the same files.
+    const truthDir = outDir.endsWith('.db') ? resolveMemoryDir(outDir) : null;
+
     const result = await consolidate({
       inputs,
       outDir,
       entityMapPath: args['entity-map'] as string,
+      ignore: truthDir ? [truthDir] : undefined,
     });
+
+    // V2-1 truth layer: promote spooled capture entries to canonical memory
+    // files, then compile the canonical directory into the store. This is the
+    // only path from capture (Tier 1) into durable memory (Tier 2).
+    if (outDir.endsWith('.db')) {
+      const memoryDir = truthDir;
+      if (memoryDir) {
+        const store = SqliteStore.open(outDir);
+        try {
+          const truth = consolidateTruthLayer(store, memoryDir);
+          const { promotion, salience, compiled } = truth;
+
+          console.log('');
+          console.log(`🗂  Truth layer (${memoryDir}):`);
+          console.log(
+            `   Promoted: ${promotion.promoted.length} captured → canonical (${promotion.skipped} already promoted)`,
+          );
+          console.log(
+            `   Salience: ${salience.updated.length} files updated (${salience.unchanged} unchanged)`,
+          );
+          console.log(
+            `   Compiled: ${compiled.memories} memories, ${compiled.entitiesCreated} new entities, ${compiled.edges} edges${
+              compiled.removed > 0 ? `, ${compiled.removed} removed (files deleted)` : ''
+            }${compiled.edgesRemoved > 0 ? `, ${compiled.edgesRemoved} stale edges removed` : ''}`,
+          );
+          for (const warning of truth.warnings) {
+            console.log(`   ⚠ ${warning}`);
+          }
+          if (truth.errors.length > 0) {
+            for (const error of truth.errors) console.error(`   ✖ ${error}`);
+            console.error('   Truth-layer errors above — these entries/files were not processed.');
+            process.exitCode = 1;
+          }
+        } finally {
+          store.close();
+        }
+      }
+    }
 
     const elapsed = Date.now() - start;
     console.log(formatConsolidationSummary(result, elapsed));

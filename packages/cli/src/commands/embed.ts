@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, resolveProvider } from '@nacre/core';
+import { SqliteStore, resolveProvider, encoderFingerprint } from '@nacre/core';
 
 export default defineCommand({
   meta: {
@@ -19,6 +19,11 @@ export default defineCommand({
     force: {
       type: 'boolean',
       description: 'Regenerate all embeddings even if they already exist',
+    },
+    rebuild: {
+      type: 'boolean',
+      description:
+        'Clear all embeddings and the encoder fingerprint, then re-embed with the active provider (required after switching encoders)',
     },
     status: {
       type: 'boolean',
@@ -46,6 +51,7 @@ export default defineCommand({
 
         console.log('Embedding Status:');
         console.log(`  Provider:  ${providerName} (${dims} dims)`);
+        console.log(`  Encoder:   ${store.getEncoderFingerprint() ?? 'not stamped'}`);
         console.log(
           `  Nodes:     ${nodeEmbeddings}/${nodeCount} embedded (${nodeCount > 0 ? Math.round((nodeEmbeddings / nodeCount) * 100) : 0}%)`,
         );
@@ -101,24 +107,22 @@ export default defineCommand({
         return;
       }
 
-      const storedProvider = store.getMeta('embedding_provider');
-      const storedDims = store.getMeta('embedding_dimensions');
-      if (storedProvider && storedDims && store.embeddingCount() > 0) {
-        const existingDims = parseInt(storedDims, 10);
-        if (existingDims !== provider.dimensions) {
-          console.warn(`Provider changed (${storedProvider} → ${provider.name})`);
-          console.warn(`Dimensions: ${existingDims} → ${provider.dimensions}`);
-          if (!args.force) {
-            console.warn('Run with --force to clear existing embeddings and re-embed.');
-            process.exit(1);
-          }
-          const cleared = store.clearAllEmbeddings();
-          console.log(`Cleared ${cleared} existing embeddings for re-embedding.`);
-        } else if (storedProvider !== provider.name) {
-          console.log(
-            `Provider name changed (${storedProvider} → ${provider.name}), dimensions match.`,
-          );
+      const activeFingerprint = encoderFingerprint(provider);
+      const storedFingerprint = store.getEncoderFingerprint();
+
+      if (args.rebuild) {
+        const cleared = store.clearAllEmbeddings();
+        if (cleared > 0) {
+          console.log(`Cleared ${cleared} embeddings (fingerprint reset) for rebuild.`);
         }
+      } else if (storedFingerprint && storedFingerprint !== activeFingerprint) {
+        console.error(
+          `Encoder mismatch: store has vectors from "${storedFingerprint}", active provider is "${activeFingerprint}".`,
+        );
+        console.error(
+          `Run 'nacre embed --graph ${graphPath} --rebuild' to re-embed, or fix the provider in nacre.config.json.`,
+        );
+        process.exit(1);
       }
 
       console.log(`Provider: ${provider.name} (${provider.dimensions} dims)`);

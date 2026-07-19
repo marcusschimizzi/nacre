@@ -129,3 +129,30 @@ describe('Recall API', () => {
     }
   });
 });
+
+describe('Recall API encoder mismatch', () => {
+  it('GET /recall returns 409 ENCODER_MISMATCH instead of an unhandled 500', async () => {
+    const store = SqliteStore.open(':memory:');
+    try {
+      store.putNode(makeNode({ id: 'n-x', label: 'Mismatch target' }));
+      // Store vectors from a different embedding space than the mock provider
+      // the request will use (384 dims vs mock's 64).
+      store.putEmbedding(
+        'n-x',
+        'node',
+        'Mismatch target',
+        new Float32Array(384).fill(0.5),
+        'onnx/all-MiniLM-L6-v2',
+      );
+      const app = createApp({ store, graphPath: ':memory:' });
+
+      const res = await app.request('/api/v1/recall?q=anything&provider=mock');
+      assert.strictEqual(res.status, 409);
+      const body = (await res.json()) as { error: { code: string; message: string } };
+      assert.equal(body.error.code, 'ENCODER_MISMATCH');
+      assert.match(body.error.message, /--rebuild/);
+    } finally {
+      store.close();
+    }
+  });
+});

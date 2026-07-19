@@ -1,6 +1,6 @@
 # V2-1 Design — Truth Layer & Capture Path
 
-Status: **accepted** · 2026-07-17
+Status: **implemented** · accepted 2026-07-17 · shipped 2026-07-17 (branch `feat/v2-1-truth-layer`)
 Roadmap: [ROADMAP.md](./ROADMAP.md) → V2-1
 
 > Commit to "truth in files, indexes derived" everywhere. Durable memory is
@@ -115,7 +115,7 @@ memory/
 
 ```markdown
 ---
-id: mem_a1b2c3d4            # stable, generated at promotion, never reused
+id: mem_a1b2c3d4            # stable, minted at capture, never reused
 type: decision              # claim | preference | decision | fact | lesson
 scope: project/nacre        # must agree with path; path wins on conflict
 confidence: 0.9
@@ -204,8 +204,10 @@ the truth layer.
    is preserved (current auto-embed behavior, no UX regression).
 
 At the next consolidation, the candidate is promoted: canonical file
-materialized (id minted, slug chosen, source attached), SQLite row flipped to
-`status: promoted` and re-pointed at the file. Recall may include candidates
+materialized (slug chosen, source attached, keeping the id minted at
+capture — spool entry, candidate row, and canonical file share one
+identity), SQLite row flipped to `status: promoted` and re-pointed at the
+file. Recall may include candidates
 by default but receipts (V2-4) will distinguish them.
 
 Rebuild-from-scratch therefore = replay canonical files + replay unpromoted
@@ -286,18 +288,20 @@ nacre rebuild --memory-dir ./memory --out nacre.db
 
 ## Acceptance criteria
 
-- [ ] Fresh machine + memory dir + `nacre rebuild` → recall results
+- [x] Fresh machine + memory dir + `nacre rebuild` → recall results
       equivalent to the origin machine (same encoder).
-- [ ] `rm nacre.db` loses nothing durable.
-- [ ] `nacre_remember` → entry visible in spool file; memory recallable
+- [x] `rm nacre.db` loses nothing durable.
+- [x] `nacre_remember` → entry visible in spool file; memory recallable
       immediately as candidate; canonical file exists after next
       `nacre consolidate`; git diff shows exactly that file.
-- [ ] Editing a canonical file by hand (fix a claim, bump confidence) →
+- [x] Editing a canonical file by hand (fix a claim, bump confidence) →
       next consolidation recompiles it; no drift, no duplicate.
-- [ ] Recall with `includeSource` returns the verbatim `## Source` block.
-- [ ] Swapping embedding provider fails loudly with remediation text;
+- [x] Recall with `includeSource` returns the verbatim `## Source` block
+      (`nacre recall --source`, MCP `includeSource`).
+- [x] Swapping embedding provider fails loudly with remediation text;
       `nacre embed --rebuild` recovers.
-- [ ] Reinforcement counts survive rebuild and travel through git.
+- [x] Reinforcement counts survive rebuild and travel through git
+      (write-back is monotone-merge: max count, later date).
 
 ## Open questions (deferred, tracked)
 

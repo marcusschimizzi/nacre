@@ -1,8 +1,21 @@
 import { Hono } from 'hono';
-import { randomBytes } from 'node:crypto';
-import { resolveProvider, type SqliteStore, type MemoryNode } from '@nacre/core';
+import {
+  appendCapture,
+  forgetMemory,
+  mintMemoryId,
+  resolveMemoryDir,
+  resolveProvider,
+  type MemoryNode,
+  type MemoryObjectType,
+  type SqliteStore,
+} from '@nacre/core';
 import { memoryCreateSchema, feedbackSchema } from '../schemas.js';
-import { embedNodeBestEffort } from '../../embed-node.js';
+import { embedNodeBestEffort, embedResultWarning } from '../../embed-node.js';
+
+const ENTITY_TO_MEMORY_TYPE: Record<string, MemoryObjectType> = {
+  decision: 'decision',
+  lesson: 'lesson',
+};
 
 export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
   const app = new Hono();
@@ -29,8 +42,22 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
     }
 
     const { content, type, label } = parsed.data;
-    const id = randomBytes(8).toString('hex');
+    const id = mintMemoryId();
     const now = new Date().toISOString();
+
+    // Two-phase write (V2-1): spool first (the durable act), then compile an
+    // immediately-recallable candidate row. Canonical file at consolidation.
+    const memoryDir = resolveMemoryDir(graphPath);
+    if (memoryDir) {
+      appendCapture(memoryDir, {
+        id,
+        ts: now,
+        origin: 'api',
+        // entityType preserves the node type through promotion — without it,
+        // consolidation would reclassify e.g. person/tool memories as concept.
+        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact', entityType: type },
+      });
+    }
 
     const node: MemoryNode = {
       id,
@@ -41,14 +68,37 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
       lastReinforced: now,
       mentionCount: 1,
       reinforcementCount: 0,
-      sourceFiles: [],
+      sourceFiles: ['api'],
       excerpts: [{ file: 'api', text: content, date: now.slice(0, 10) }],
+      status: 'candidate',
     };
 
     store.putNode(node);
     // Embed best-effort so the memory is immediately recallable by semantic search.
-    const embedded = await embedNodeBestEffort(store, provider, node);
-    return c.json({ data: { ...node, embedded } }, 201);
+    const embedResult = await embedNodeBestEffort(store, provider, node);
+    // Clients must be able to tell a truth-layer-captured memory from a
+    // database-only one, and a searchable memory from a skipped embed —
+    // neither state may look silently successful.
+    const warnings = [
+      ...(memoryDir
+        ? []
+        : [
+            'No memory directory configured — this memory is database-only and will not survive a rebuild. Configure memory.dir in nacre.config.json.',
+          ]),
+      ...(embedResultWarning(embedResult) ? [embedResultWarning(embedResult)] : []),
+    ];
+    return c.json(
+      {
+        data: {
+          ...node,
+          embedded: embedResult.embedded,
+          ...(embedResult.reason ? { embedSkipped: embedResult.reason } : {}),
+          captured: Boolean(memoryDir),
+        },
+        ...(warnings.length > 0 ? { warning: warnings.join(' ') } : {}),
+      },
+      201,
+    );
   });
 
   app.delete('/memories/:id', (c) => {
@@ -58,9 +108,25 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
       return c.json({ error: { message: 'Memory not found', code: 'NOT_FOUND' } }, 404);
     }
 
-    store.deleteNode(id);
-    store.deleteEmbedding(id);
-    return c.json({ data: { deleted: id } });
+    // Truth-layer forget: row + embedding + canonical file + spool tombstone,
+    // so consolidate/rebuild cannot resurrect the memory.
+    const result = forgetMemory(store, resolveMemoryDir(graphPath), id, {
+      ts: new Date().toISOString(),
+      origin: 'api',
+    });
+    return c.json({
+      data: {
+        deleted: id,
+        fileDeleted: result.fileDeleted ?? null,
+        tombstoned: result.tombstoned,
+      },
+      ...(result.tombstoned
+        ? {}
+        : {
+            warning:
+              'No memory directory configured — if this memory exists in a spool or canonical file elsewhere, it may return on consolidate/rebuild.',
+          }),
+    });
   });
 
   app.post('/feedback', async (c) => {

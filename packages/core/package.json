@@ -10,9 +10,12 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^11.0.0",
+    "yaml": "^2.9.0"
   },
   "optionalDependencies": {
     "@huggingface/transformers": "^3.0.0"

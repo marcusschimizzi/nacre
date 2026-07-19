@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SqliteStore, generateBrief, generateAlerts } from '@nacre/core';
+import { type SqliteStore, generateBrief, generateAlerts } from '@nacre/core';
 
 export function registerResources(server: McpServer, store: SqliteStore): void {
   server.resource(

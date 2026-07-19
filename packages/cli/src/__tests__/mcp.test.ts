@@ -1,8 +1,11 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { SqliteStore, MockEmbedder } from '@nacre/core';
+import { SqliteStore, MockEmbedder, readCaptureEntries } from '@nacre/core';
 import type { MemoryNode, MemoryEdge } from '@nacre/core';
 import { registerTools } from '../mcp/tools.js';
 import { registerResources } from '../mcp/resources.js';
@@ -169,6 +172,45 @@ describe('MCP Server', () => {
       assert.ok(!result.isError);
       const text = (result.content as Array<{ type: string; text: string }>)[0].text;
       assert.ok(text.includes('Linked to'));
+    });
+
+    it('two-phase write: spools to the capture dir and marks the node candidate', async () => {
+      const memoryDir = mkdtempSync(join(tmpdir(), 'nacre-mcp-capture-'));
+      process.env.NACRE_MEMORY_DIR = memoryDir;
+      try {
+        const result = await client.callTool({
+          name: 'nacre_remember',
+          arguments: { content: 'Spooled durable memory', type: 'decision' },
+        });
+        assert.ok(!result.isError);
+        const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+        assert.ok(text.includes('Captured to the truth layer'));
+
+        const { entries, errors } = readCaptureEntries(memoryDir);
+        assert.deepEqual(errors, []);
+        assert.equal(entries.length, 1);
+        assert.equal(entries[0].origin, 'mcp');
+        assert.equal(entries[0].payload.content, 'Spooled durable memory');
+        assert.equal(entries[0].payload.type, 'decision');
+        assert.match(entries[0].id, /^mem_[0-9a-f]{12}$/);
+
+        const node = store.getNode(entries[0].id);
+        assert.ok(node);
+        assert.equal(node.status, 'candidate');
+      } finally {
+        delete process.env.NACRE_MEMORY_DIR;
+        rmSync(memoryDir, { recursive: true, force: true });
+      }
+    });
+
+    it('warns when no memory directory is configured (database-only write)', async () => {
+      const result = await client.callTool({
+        name: 'nacre_remember',
+        arguments: { content: 'Ephemeral database-only memory' },
+      });
+      assert.ok(!result.isError);
+      const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+      assert.ok(text.includes('No memory directory configured'));
     });
   });
 

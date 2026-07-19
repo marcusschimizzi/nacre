@@ -1,17 +1,24 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
-  SqliteStore,
+  type SqliteStore,
   resolveProvider,
+  resolveMemoryDir,
   recall,
   generateBrief,
   extractQueryTerms,
+  appendCapture,
+  forgetMemory,
+  mintMemoryId,
+  readMemorySource,
+  EncoderMismatchError,
   type EntityType,
   type MemoryNode,
+  type MemoryObjectType,
   type Procedure,
   type ProcedureType,
 } from '@nacre/core';
-import { embedNodeBestEffort } from '../embed-node.js';
+import { embedNodeBestEffort, embedResultWarning } from '../embed-node.js';
 
 function generateId(content: string): string {
   let hash = 0;
@@ -37,9 +44,15 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       limit: z.number().optional().default(10).describe('Max results'),
       types: z.array(z.string()).optional().describe('Filter by entity types'),
       since: z.string().optional().describe('ISO date — only memories after this'),
+      includeSource: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe('Include verbatim claim + Source evidence from canonical memory files'),
     },
     async (args) => {
-      let response;
+      let response: Awaited<ReturnType<typeof recall>>;
+      let degradedNote = '';
       try {
         // Embed the query with the graph's configured provider (config/env) so
         // it matches the model the stored vectors were built with. Hardcoding a
@@ -52,8 +65,14 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
           types: args.types as EntityType[] | undefined,
           since: args.since,
         });
-      } catch {
-        // Ollama unavailable or other error — fall back to graph-only recall
+      } catch (err) {
+        // A misconfigured encoder is a persistent configuration error, not an
+        // outage — surface it; a silent graph-only fallback would mask it.
+        if (err instanceof EncoderMismatchError) {
+          return { content: [{ type: 'text', text: err.message }], isError: true };
+        }
+        // Provider unavailable (e.g. Ollama down) — degrade to graph-only
+        // recall, but say so rather than masking the outage.
         try {
           response = await recall(store, null, {
             query: args.query,
@@ -61,27 +80,48 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             types: args.types as EntityType[] | undefined,
             since: args.since,
           });
+          degradedNote =
+            '⚠ Semantic recall unavailable (embedding provider error) — graph-only results.\n\n';
         } catch {
-          // If even graph-only recall fails, return empty results
-          return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Recall failed: embedding provider and graph recall both errored.',
+              },
+            ],
+            isError: true,
+          };
         }
       }
 
       if (response.results.length === 0) {
-        return { content: [{ type: 'text', text: 'No memories found for that query.' }] };
+        return {
+          content: [{ type: 'text', text: `${degradedNote}No memories found for that query.` }],
+        };
       }
 
-      const lines = response.results.map(
-        (r, i) =>
+      const memoryDir = args.includeSource ? resolveMemoryDir(graphPath) : null;
+      const lines = response.results.map((r, i) => {
+        let line =
           `${i + 1}. ${r.label} (${r.type}) — score: ${r.score.toFixed(3)}\n` +
           `   semantic: ${r.scores.semantic.toFixed(2)}  graph: ${r.scores.graph.toFixed(2)}  ` +
           `recency: ${r.scores.recency.toFixed(2)}  importance: ${r.scores.importance.toFixed(2)}` +
           (r.connections.length > 0
             ? `\n   connections: ${r.connections.map((c) => `${c.label} (${c.relationship})`).join(', ')}`
-            : ''),
-      );
+            : '');
+        if (memoryDir) {
+          const canonicalPath = store.getNode(r.id)?.canonicalPath;
+          const verbatim = canonicalPath ? readMemorySource(memoryDir, canonicalPath) : undefined;
+          if (verbatim) {
+            line += `\n   claim: ${verbatim.claim}`;
+            if (verbatim.source) line += `\n   source: ${verbatim.source.replace(/\n/g, '\n   ')}`;
+          }
+        }
+        return line;
+      });
 
-      let text = `Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
+      let text = `${degradedNote}Found ${response.results.length} result${response.results.length === 1 ? '' : 's'}:\n\n${lines.join('\n\n')}`;
 
       if (response.procedures.length > 0) {
         text +=
@@ -150,10 +190,37 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         observation: 'concept',
         decision: 'decision',
       };
+      const memoryTypeMap: Record<string, MemoryObjectType> = {
+        fact: 'fact',
+        event: 'fact',
+        observation: 'claim',
+        decision: 'decision',
+      };
 
       const nodeType = typeMap[args.type] || 'concept';
-      const id = generateId(args.content);
+      const id = mintMemoryId();
       const timestamp = now();
+
+      // Two-phase write (V2-1): the spool append is the durable act; the
+      // candidate row below makes the memory immediately recallable. The
+      // canonical file materializes at the next consolidation.
+      const memoryDir = resolveMemoryDir(graphPath);
+      if (memoryDir) {
+        appendCapture(memoryDir, {
+          id,
+          ts: timestamp,
+          origin: 'mcp',
+          tool: 'nacre_remember',
+          payload: {
+            content: args.content,
+            type: memoryTypeMap[args.type] ?? 'fact',
+            // Preserve the node type through promotion (e.g. event → fact
+            // would otherwise reclassify the compiled node as concept).
+            entityType: nodeType,
+            links: args.entities,
+          },
+        });
+      }
 
       const node: MemoryNode = {
         id,
@@ -166,6 +233,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         reinforcementCount: Math.ceil(args.importance * 3),
         sourceFiles: ['mcp'],
         excerpts: [{ file: 'mcp', text: args.content, date: timestamp }],
+        status: 'candidate',
       };
 
       store.putNode(node);
@@ -196,15 +264,25 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       }
 
       // Embed the new memory so it's immediately recallable by semantic search.
-      const embedded = await embedNodeBestEffort(store, provider, node);
+      const embedResult = await embedNodeBestEffort(store, provider, node);
+      const embedded = embedResult.embedded;
 
       const linkMsg = linked.length > 0 ? ` Linked to: ${linked.join(', ')}.` : '';
-      const searchMsg = embedded ? ' Semantically searchable.' : '';
+      const embedWarning = embedResultWarning(embedResult);
+      const searchMsg = embedded
+        ? ' Semantically searchable.'
+        : embedWarning
+          ? ` ${embedWarning}`
+          : '';
       return {
         content: [
           {
             type: 'text',
-            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}${searchMsg}`,
+            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}${searchMsg}${
+              memoryDir
+                ? ' Captured to the truth layer (canonical file at next consolidation).'
+                : ' ⚠ No memory directory configured — this memory lives only in the database.'
+            }`,
           },
         ],
       };
@@ -228,13 +306,24 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       }
 
       const label = existing.label;
-      store.deleteNode(args.memoryId);
+      // Forgetting is a truth-layer operation: remove the row, embedding, and
+      // canonical file, and tombstone the spool so no consolidate/rebuild can
+      // resurrect the memory.
+      const result = forgetMemory(store, resolveMemoryDir(graphPath), args.memoryId, {
+        ts: now(),
+        origin: 'mcp',
+        reason: args.reason,
+      });
 
+      const fileMsg = result.fileDeleted ? ` Canonical file removed: ${result.fileDeleted}.` : '';
+      const durabilityMsg = result.tombstoned
+        ? ' Tombstoned — will not return on consolidate or rebuild.'
+        : ' ⚠ No memory directory configured — if this memory exists in a spool or canonical file elsewhere, it may return.';
       return {
         content: [
           {
             type: 'text',
-            text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}` : ''}`,
+            text: `Forgotten: "${label}" (${args.memoryId}).${args.reason ? ` Reason: ${args.reason}.` : ''}${fileMsg}${durabilityMsg}`,
           },
         ],
       };

@@ -16,9 +16,15 @@ export interface SnapshotConfig {
   triggers?: Array<'consolidation' | 'manual' | 'scheduled'>;
 }
 
+export interface MemoryDirConfig {
+  /** Canonical memory directory (truth layer), absolute or relative to the graph's directory. */
+  dir?: string;
+}
+
 export interface NacreConfig {
   embeddings?: EmbeddingConfig;
   snapshots?: SnapshotConfig;
+  memory?: MemoryDirConfig;
 }
 
 export interface ResolveProviderOptions {
@@ -45,6 +51,24 @@ export function loadConfig(graphPath: string | null): NacreConfig {
     }
   }
   return {};
+}
+
+/**
+ * Locate the canonical memory directory (truth layer) for a graph:
+ * `memory.dir` from nacre.config.json (relative paths resolve against the
+ * graph's directory), then NACRE_MEMORY_DIR, then a `memory/` directory next
+ * to the graph if one exists. Null → capture/promotion are disabled.
+ */
+export function resolveMemoryDir(graphPath: string | null): string | null {
+  const base = graphPath && graphPath !== ':memory:' ? dirname(graphPath) : process.cwd();
+
+  const configured = loadConfig(graphPath).memory?.dir ?? process.env.NACRE_MEMORY_DIR;
+  if (configured) {
+    return configured.startsWith('/') ? configured : join(base, configured);
+  }
+
+  const conventional = join(base, 'memory');
+  return existsSync(conventional) ? conventional : null;
 }
 
 export function resolveProvider(opts?: ResolveProviderOptions): EmbeddingProvider | null {

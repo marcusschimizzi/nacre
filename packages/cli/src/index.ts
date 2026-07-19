@@ -19,6 +19,8 @@ import ingestCmd from './commands/ingest.js';
 import { migrateCommand } from './commands/migrate.js';
 import dashboardCmd from './commands/dashboard.js';
 import hiveCmd from './commands/hive.js';
+import rebuildCmd from './commands/rebuild.js';
+import exportCmd from './commands/export.js';
 
 const main = defineCommand({
   meta: {
@@ -48,6 +50,8 @@ const main = defineCommand({
     ingest: ingestCmd,
     dashboard: dashboardCmd,
     hive: hiveCmd,
+    rebuild: rebuildCmd,
+    export: exportCmd,
   },
 });
 

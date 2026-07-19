@@ -3,6 +3,7 @@ import {
   searchNodes,
   recall,
   resolveProvider,
+  EncoderMismatchError,
   type SqliteStore,
   type EntityType,
 } from '@nacre/core';
@@ -55,13 +56,20 @@ export function searchRoutes(store: SqliteStore): Hono {
 
     const provider = resolveProvider({ provider: providerName, allowNull: false });
     const queryVec = await provider!.embed(q);
-    const results = store.searchSimilar(queryVec, {
-      limit,
-      minSimilarity: threshold,
-      type: type || undefined,
-    });
-
-    return c.json({ data: results });
+    try {
+      const results = store.searchSimilar(queryVec, {
+        limit,
+        minSimilarity: threshold,
+        type: type || undefined,
+      });
+      return c.json({ data: results });
+    } catch (err) {
+      // Configuration error with a known remedy — a 409, not a crash/500.
+      if (err instanceof EncoderMismatchError) {
+        return c.json({ error: { message: err.message, code: 'ENCODER_MISMATCH' } }, 409);
+      }
+      throw err;
+    }
   });
 
   app.get('/recall', async (c) => {
@@ -80,16 +88,24 @@ export function searchRoutes(store: SqliteStore): Hono {
 
     const provider = resolveProvider({ provider: providerName, allowNull: true });
 
-    const response = await recall(store, provider, {
-      query: q,
-      limit,
-      types,
-      since,
-      until,
-      hops,
-    });
-
-    return c.json({ data: response.results, procedures: response.procedures });
+    try {
+      const response = await recall(store, provider, {
+        query: q,
+        limit,
+        types,
+        since,
+        until,
+        hops,
+      });
+      return c.json({ data: response.results, procedures: response.procedures });
+    } catch (err) {
+      // Same contract as /similar: an encoder/fingerprint mismatch is a
+      // configuration error with a known remedy — a 409, not a 500.
+      if (err instanceof EncoderMismatchError) {
+        return c.json({ error: { message: err.message, code: 'ENCODER_MISMATCH' } }, 409);
+      }
+      throw err;
+    }
   });
 
   return app;

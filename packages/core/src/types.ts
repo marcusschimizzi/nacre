@@ -9,6 +9,18 @@ export type EntityType =
   | 'place'
   | 'tag';
 
+export const ENTITY_TYPES: readonly EntityType[] = [
+  'person',
+  'project',
+  'tool',
+  'concept',
+  'decision',
+  'event',
+  'lesson',
+  'place',
+  'tag',
+];
+
 export interface Excerpt {
   file: string;
   text: string;
@@ -33,6 +45,15 @@ export interface MemoryNode {
   sourceFiles: string[];
   excerpts: Excerpt[];
   hiveExclude?: boolean;
+  /**
+   * Lifecycle of memory-backed nodes (V2-1 truth layer): 'candidate' = written
+   * via MCP/API, awaiting promotion to a canonical file at consolidation;
+   * 'promoted' = backed by a canonical memory file. Unset for ordinary
+   * extracted entities.
+   */
+  status?: 'candidate' | 'promoted';
+  /** Path of the canonical memory file (relative to the memory root), once promoted. */
+  canonicalPath?: string;
 }
 
 export type EdgeType = 'explicit' | 'co-occurrence' | 'temporal' | 'causal';

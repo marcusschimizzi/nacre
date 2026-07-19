@@ -1,11 +1,13 @@
 import { isAbsolute, relative, resolve } from 'node:path';
 import { Hono } from 'hono';
 import {
+  SqliteStore,
   generateBrief,
   generateAlerts,
   analyzeSignificance,
   generateSuggestions,
-  type SqliteStore,
+  consolidateTruthLayer,
+  resolveMemoryDir,
   type PendingEdge,
 } from '@nacre/core';
 import { consolidate } from '@nacre/parser';
@@ -96,21 +98,68 @@ export function intelligenceRoutes(
       );
     }
 
+    const target = outDir ?? graphPath;
+    // Same overlap rule as CLI consolidate: the canonical memory dir has its
+    // own compile path — never raw-ingest it.
+    const memoryDir = target.endsWith('.db') ? resolveMemoryDir(target) : null;
+
     const result = await consolidate({
       inputs,
-      outDir: outDir ?? graphPath,
+      outDir: target,
+      ignore: memoryDir ? [memoryDir] : undefined,
     });
 
-    return c.json({
-      data: {
-        newNodes: result.newNodes,
-        newEdges: result.newEdges,
-        reinforcedNodes: result.reinforcedNodes,
-        decayedEdges: result.decayedEdges,
-        newEmbeddings: result.newEmbeddings,
-        failures: result.failures,
-      },
-    });
+    // The truth-layer sequence runs on EVERY consolidation surface — without
+    // it, API/MCP captures would never be promoted to canonical files.
+    let truthLayer: ReturnType<typeof consolidateTruthLayer> | null = null;
+    if (memoryDir) {
+      // Reuse the bound store when consolidating into the served graph;
+      // otherwise open the target store for the duration.
+      const sameStore = target === graphPath;
+      const truthStore = sameStore ? store : SqliteStore.open(target);
+      try {
+        truthLayer = consolidateTruthLayer(truthStore, memoryDir);
+      } finally {
+        if (!sameStore) truthStore.close();
+      }
+    }
+
+    const data = {
+      newNodes: result.newNodes,
+      newEdges: result.newEdges,
+      reinforcedNodes: result.reinforcedNodes,
+      decayedEdges: result.decayedEdges,
+      newEmbeddings: result.newEmbeddings,
+      failures: result.failures,
+      truthLayer: truthLayer
+        ? {
+            promoted: truthLayer.promotion.promoted,
+            salienceUpdated: truthLayer.salience.updated.length,
+            compiledMemories: truthLayer.compiled.memories,
+            removed: truthLayer.compiled.removed,
+            edgesRemoved: truthLayer.compiled.edgesRemoved,
+            warnings: truthLayer.warnings,
+            errors: truthLayer.errors,
+          }
+        : null,
+    };
+
+    // Same contract as CLI consolidate (non-zero exit): truth-layer errors
+    // mean entries/files were NOT processed — never a silent 200.
+    if (truthLayer && truthLayer.errors.length > 0) {
+      return c.json(
+        {
+          error: {
+            message: `Consolidation completed with ${truthLayer.errors.length} truth-layer error(s) — these entries/files were not processed`,
+            code: 'TRUTH_LAYER_ERRORS',
+          },
+          data,
+        },
+        500,
+      );
+    }
+
+    return c.json({ data });
   });
 
   return app;

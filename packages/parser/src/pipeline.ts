@@ -123,7 +123,14 @@ export async function consolidate(opts: ConsolidateOptions): Promise<Consolidati
   const entityMap = loadEntityMap(opts.entityMapPath ?? resolve('data', 'entity-map.json'));
 
   const basePath = resolve(opts.inputs[0]);
-  const files = await scanDirectories(opts.inputs);
+  let files = await scanDirectories(opts.inputs);
+  // Ignored paths (e.g. the canonical memory dir, which has its own compile
+  // path) never enter raw ingestion — overlapping them would create
+  // duplicate/conflicting nodes for the same content.
+  const ignoreDirs = (opts.ignore ?? []).map((p) => resolve(p));
+  if (ignoreDirs.length > 0) {
+    files = files.filter((f) => !ignoreDirs.some((dir) => f === dir || f.startsWith(`${dir}/`)));
+  }
   const changes = await detectChanges(files, graph.processedFiles, basePath);
 
   const toProcess = [...changes.newFiles, ...changes.changedFiles];

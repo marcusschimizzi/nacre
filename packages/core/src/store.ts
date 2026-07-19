@@ -33,12 +33,21 @@ import type {
   EntityHistory,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
-import { bufferToVector, vectorToBuffer, vectorNorm, dot } from './embeddings.js';
+import { generateEdgeId } from './graph.js';
+import {
+  bufferToVector,
+  vectorToBuffer,
+  vectorNorm,
+  dot,
+  makeFingerprint,
+  fingerprintDimensions,
+  EncoderMismatchError,
+} from './embeddings.js';
 import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 8;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -57,7 +66,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   reinforcement_count INTEGER NOT NULL DEFAULT 0,
   source_files        TEXT NOT NULL DEFAULT '[]',
   excerpts            TEXT NOT NULL DEFAULT '[]',
-  hive_exclude        INTEGER NOT NULL DEFAULT 0
+  hive_exclude        INTEGER NOT NULL DEFAULT 0,
+  status              TEXT,
+  canonical_path      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -183,6 +194,13 @@ CREATE TABLE IF NOT EXISTS snapshot_edges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
+
+CREATE TABLE IF NOT EXISTS forgotten (
+  id     TEXT PRIMARY KEY,
+  ts     TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  reason TEXT
+);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -202,6 +220,12 @@ function rowToNode(row: Record<string, unknown>): MemoryNode {
   };
   if ((row.hive_exclude as number) === 1) {
     node.hiveExclude = true;
+  }
+  if (row.status === 'candidate' || row.status === 'promoted') {
+    node.status = row.status;
+  }
+  if (typeof row.canonical_path === 'string') {
+    node.canonicalPath = row.canonical_path;
   }
   return node;
 }
@@ -332,6 +356,7 @@ export interface GraphStore {
 
   // Embedding operations
   getEmbeddingProvider(): string;
+  getEncoderFingerprint(): string | undefined;
   setEmbeddingProvider(provider: string): void;
   putEmbedding(
     id: string,
@@ -587,6 +612,31 @@ export class SqliteStore implements GraphStore {
           db.exec('ALTER TABLE embeddings ADD COLUMN vector_norm REAL');
         }
       }
+      if (ver < 7) {
+        // V2-1 truth layer: memory-backed nodes carry a lifecycle status
+        // (candidate → promoted) and, once promoted, the canonical file path.
+        // NULL for ordinary extracted entities.
+        const cols = db.prepare('PRAGMA table_info(nodes)').all() as Array<{ name: string }>;
+        if (!cols.some((c) => c.name === 'status')) {
+          db.exec('ALTER TABLE nodes ADD COLUMN status TEXT');
+        }
+        if (!cols.some((c) => c.name === 'canonical_path')) {
+          db.exec('ALTER TABLE nodes ADD COLUMN canonical_path TEXT');
+        }
+      }
+      if (ver < 8) {
+        // Store-side forget records: forget intent must survive even when no
+        // memory dir resolves at forget time (spool tombstones alone can be
+        // unreachable). Consolidation migrates these into the spool.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS forgotten (
+            id     TEXT PRIMARY KEY,
+            ts     TEXT NOT NULL,
+            origin TEXT NOT NULL,
+            reason TEXT
+          );
+        `);
+      }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
         'schema_version',
         String(SCHEMA_VERSION),
@@ -678,8 +728,8 @@ export class SqliteStore implements GraphStore {
   putNode(node: MemoryNode): void {
     this.stmt(
       `INSERT OR REPLACE INTO nodes
-       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       node.id,
       node.label,
@@ -692,6 +742,8 @@ export class SqliteStore implements GraphStore {
       JSON.stringify(node.sourceFiles),
       JSON.stringify(node.excerpts),
       node.hiveExclude ? 1 : 0,
+      node.status ?? null,
+      node.canonicalPath ?? null,
     );
     this.invalidateCaches();
   }
@@ -775,6 +827,91 @@ export class SqliteStore implements GraphStore {
     this.invalidateCaches();
   }
 
+  /**
+   * Rename a node, updating every reference in one transaction: edges (whose
+   * ids embed the endpoint ids and are regenerated), embeddings, episode
+   * links, snapshot history (columns and serialized data blobs), and
+   * procedure provenance. Used by canonical export to migrate legacy node
+   * ids to mem_ ids — the rename is an identity migration, so history and
+   * provenance must follow the memory to its new id.
+   */
+  renameNode(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    const node = this.getNode(oldId);
+    if (!node) throw new Error(`renameNode: node not found: ${oldId}`);
+    if (this.getNode(newId)) throw new Error(`renameNode: target id already exists: ${newId}`);
+
+    const apply = this.db.transaction(() => {
+      this.stmt('UPDATE nodes SET id = ? WHERE id = ?').run(newId, oldId);
+      this.stmt('UPDATE embeddings SET id = ? WHERE id = ?').run(newId, oldId);
+      this.stmt('UPDATE episode_entities SET node_id = ? WHERE node_id = ?').run(newId, oldId);
+
+      const edges = this.db
+        .prepare('SELECT * FROM edges WHERE source = ? OR target = ?')
+        .all(oldId, oldId) as Array<Record<string, unknown>>;
+      for (const row of edges) {
+        const edge = rowToEdge(row);
+        this.stmt('DELETE FROM edges WHERE id = ?').run(edge.id);
+        if (edge.source === oldId) edge.source = newId;
+        if (edge.target === oldId) edge.target = newId;
+        edge.id = generateEdgeId(edge.source, edge.target, edge.type, edge.directed);
+        this.putEdge(edge);
+      }
+
+      // Snapshot history: both the indexed columns and the serialized data
+      // blobs reference node ids; temporal queries must keep tracing the
+      // memory across the rename.
+      const snapNodes = this.db
+        .prepare('SELECT snapshot_id, data FROM snapshot_nodes WHERE node_id = ?')
+        .all(oldId) as Array<{ snapshot_id: string; data: string }>;
+      for (const row of snapNodes) {
+        const data = JSON.parse(row.data) as { id: string };
+        data.id = newId;
+        this.stmt(
+          'UPDATE snapshot_nodes SET node_id = ?, data = ? WHERE snapshot_id = ? AND node_id = ?',
+        ).run(newId, JSON.stringify(data), row.snapshot_id, oldId);
+      }
+
+      const snapEdges = this.db
+        .prepare(
+          'SELECT snapshot_id, edge_id, data FROM snapshot_edges WHERE source = ? OR target = ?',
+        )
+        .all(oldId, oldId) as Array<{ snapshot_id: string; edge_id: string; data: string }>;
+      for (const row of snapEdges) {
+        const data = JSON.parse(row.data) as MemoryEdge;
+        if (data.source === oldId) data.source = newId;
+        if (data.target === oldId) data.target = newId;
+        data.id = generateEdgeId(data.source, data.target, data.type, data.directed);
+        this.stmt(
+          'UPDATE snapshot_edges SET edge_id = ?, source = ?, target = ?, data = ? WHERE snapshot_id = ? AND edge_id = ?',
+        ).run(
+          data.id,
+          data.source,
+          data.target,
+          JSON.stringify(data),
+          row.snapshot_id,
+          row.edge_id,
+        );
+      }
+
+      // Procedure provenance: source_nodes is a JSON id array.
+      const procs = this.db
+        .prepare(`SELECT id, source_nodes FROM procedures WHERE source_nodes LIKE ?`)
+        .all(`%"${oldId}"%`) as Array<{ id: string; source_nodes: string }>;
+      for (const row of procs) {
+        const ids = (JSON.parse(row.source_nodes) as string[]).map((id) =>
+          id === oldId ? newId : id,
+        );
+        this.stmt('UPDATE procedures SET source_nodes = ? WHERE id = ?').run(
+          JSON.stringify(ids),
+          row.id,
+        );
+      }
+    });
+    apply();
+    this.invalidateCaches();
+  }
+
   edgeCount(): number {
     const row = this.stmt('SELECT COUNT(*) as count FROM edges').get() as { count: number };
     return row.count;
@@ -795,6 +932,35 @@ export class SqliteStore implements GraphStore {
     this.setMeta('embedding_provider', provider);
   }
 
+  /**
+   * The fingerprint ("provider:dims") of the encoder that produced this store's
+   * vectors. Stamped on the first embedding write; stores created before
+   * pinning are backfilled from an existing embedding row on first read.
+   */
+  getEncoderFingerprint(): string | undefined {
+    const stamped = this.getMeta('encoder_fingerprint');
+    if (stamped) return stamped;
+    const row = this.stmt('SELECT provider, dimensions FROM embeddings LIMIT 1').get() as
+      | { provider: string; dimensions: number }
+      | undefined;
+    if (!row) return undefined;
+    const derived = makeFingerprint(row.provider, row.dimensions);
+    this.setMeta('encoder_fingerprint', derived);
+    return derived;
+  }
+
+  /** Stamp on first write; hard-fail if a different encoder's vectors would enter the store. */
+  private assertEncoder(fingerprint: string): void {
+    const stored = this.getEncoderFingerprint();
+    if (!stored) {
+      this.setMeta('encoder_fingerprint', fingerprint);
+      return;
+    }
+    if (stored !== fingerprint) {
+      throw new EncoderMismatchError(stored, fingerprint);
+    }
+  }
+
   putEmbedding(
     id: string,
     type: string,
@@ -802,17 +968,7 @@ export class SqliteStore implements GraphStore {
     vector: Float32Array,
     provider: string,
   ): void {
-    // Only enforce provider check if one has been explicitly set (non-default)
-    const active = this.getEmbeddingProvider();
-    const metaHasProvider = this.stmt('SELECT value FROM meta WHERE key = ?').get(
-      'embedding_provider',
-    ) as { value: string } | undefined;
-    if (metaHasProvider && provider !== active) {
-      throw new Error(
-        `Provider "${provider}" is not active. Active provider: "${active}". ` +
-          `Call setEmbeddingProvider() to switch providers.`,
-      );
-    }
+    this.assertEncoder(makeFingerprint(provider, vector.length));
     this.stmt(
       `INSERT OR REPLACE INTO embeddings
        (id, type, content, vector, dimensions, provider, created_at, vector_norm)
@@ -855,6 +1011,19 @@ export class SqliteStore implements GraphStore {
   }
 
   searchSimilar(query: Float32Array, opts?: SimilaritySearchOptions): SimilarityResult[] {
+    // Refuse to compare vectors across embedding spaces. Silently returning
+    // empty/partial results here would mask an encoder switch as "no matches".
+    const stored = this.getEncoderFingerprint();
+    if (stored) {
+      const dims = fingerprintDimensions(stored);
+      if (Number.isFinite(dims) && dims !== query.length) {
+        throw new EncoderMismatchError(
+          stored,
+          `unknown encoder (query vector has ${query.length} dims)`,
+        );
+      }
+    }
+
     const limit = opts?.limit ?? 10;
     const minSimilarity = opts?.minSimilarity ?? 0;
     // Compute the query norm once; per-row similarity is then a plain dot product
@@ -899,6 +1068,12 @@ export class SqliteStore implements GraphStore {
 
   clearAllEmbeddings(): number {
     const result = this.db.prepare('DELETE FROM embeddings').run();
+    // An empty store has no embedding space: clear the fingerprint AND the
+    // provider meta, or stale config would keep blocking best-effort embeds
+    // (API/MCP writes) against an empty index until a full CLI re-embed.
+    this.stmt('DELETE FROM meta WHERE key = ?').run('encoder_fingerprint');
+    this.stmt('DELETE FROM meta WHERE key = ?').run('embedding_provider');
+    this.stmt('DELETE FROM meta WHERE key = ?').run('embedding_dimensions');
     return result.changes;
   }
 
@@ -912,6 +1087,38 @@ export class SqliteStore implements GraphStore {
       count: number;
     };
     return row.count;
+  }
+
+  // ── Forgotten ids (store-side tombstones) ────────────────
+
+  /**
+   * Record a forget in the store itself. The spool tombstone is the durable,
+   * git-synced record, but it can only be written when a memory dir resolves;
+   * this store-side record guarantees the forget survives regardless, and
+   * consolidation migrates it into whichever spool it next touches.
+   */
+  recordForgotten(record: { id: string; ts: string; origin: string; reason?: string }): void {
+    this.stmt('INSERT OR REPLACE INTO forgotten (id, ts, origin, reason) VALUES (?, ?, ?, ?)').run(
+      record.id,
+      record.ts,
+      record.origin,
+      record.reason ?? null,
+    );
+  }
+
+  listForgotten(): Array<{ id: string; ts: string; origin: string; reason?: string }> {
+    const rows = this.stmt('SELECT id, ts, origin, reason FROM forgotten').all() as Array<{
+      id: string;
+      ts: string;
+      origin: string;
+      reason: string | null;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      ts: r.ts,
+      origin: r.origin,
+      ...(r.reason ? { reason: r.reason } : {}),
+    }));
   }
 
   // ── File Tracking ─────────────────────────────────────────
