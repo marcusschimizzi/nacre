@@ -52,6 +52,18 @@ export function forgetMemory(
   if (node) store.deleteNode(id);
   store.deleteEmbedding(id);
 
+  // Always record the forget in the store: a spool tombstone can only be
+  // written when a memory dir resolves HERE and NOW, but the spool entry may
+  // live in a dir that resolves later (or elsewhere). Promotion, replay, and
+  // compile honor store-side records too, and consolidation migrates them
+  // into the spool so they become durable and git-synced.
+  store.recordForgotten({
+    id,
+    ts: opts.ts,
+    origin: opts.origin,
+    ...(opts.reason ? { reason: opts.reason } : {}),
+  });
+
   if (memoryDir) {
     appendTombstone(memoryDir, {
       op: 'forget',

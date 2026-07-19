@@ -136,6 +136,36 @@ describe('entityType preservation through the truth layer', () => {
   });
 });
 
+describe('store-side tombstone migration', () => {
+  it('consolidation migrates dir-less forget records into the spool', () => {
+    const root = mkdtempSync(join(tmpdir(), 'nacre-migrate-'));
+    const store = SqliteStore.open(':memory:');
+    try {
+      // Forget recorded while no memory dir resolved.
+      store.recordForgotten({
+        id: 'mem_dead00000001',
+        ts: '2026-07-18T10:00:00Z',
+        origin: 'api',
+        reason: 'dir was unreachable',
+      });
+
+      consolidateTruthLayer(store, root);
+
+      const { tombstones } = readCaptureEntries(root);
+      assert.equal(tombstones.length, 1);
+      assert.equal(tombstones[0].id, 'mem_dead00000001');
+      assert.equal(tombstones[0].reason, 'dir was unreachable');
+
+      // Idempotent: a second run does not duplicate the tombstone.
+      consolidateTruthLayer(store, root);
+      assert.equal(readCaptureEntries(root).tombstones.length, 1);
+    } finally {
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('clearAllEmbeddings clears provider meta (finding 4)', () => {
   it('best-effort embeds work again immediately after a clear', () => {
     const store = SqliteStore.open(':memory:');

@@ -59,7 +59,10 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
   const result: PromoteResult = { promoted: [], skipped: 0, warnings: [], errors: [] };
   const { entries, tombstones, errors } = readCaptureEntries(memoryDir);
   result.errors.push(...errors);
-  const forgotten = new Set(tombstones.map((t) => t.id));
+  const forgotten = new Set([
+    ...tombstones.map((t) => t.id),
+    ...store.listForgotten().map((t) => t.id),
+  ]);
   const idIndex = indexCanonicalIds(memoryDir);
 
   for (const entry of entries) {

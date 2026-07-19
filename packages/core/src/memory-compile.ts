@@ -110,7 +110,10 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
   // Entity ids each compiled memory currently links — the file-derived truth
   // for that memory's explicit edges.
   const currentLinks = new Map<string, Set<string>>();
-  const forgotten = tombstonedIds(memoryDir);
+  const forgotten = new Set([
+    ...tombstonedIds(memoryDir),
+    ...store.listForgotten().map((t) => t.id),
+  ]);
   // Which memory id each compiled file currently declares — reconciliation
   // must match on id, not mere path existence, or an id edited in a file's
   // frontmatter leaves the old promoted row behind as a duplicate.
@@ -262,7 +265,10 @@ export function replayCaptureCandidates(
   const result: ReplayCaptureResult = { candidates: 0, skipped: 0, edges: 0, errors: [] };
   const { entries, tombstones, errors } = readCaptureEntries(memoryDir);
   result.errors.push(...errors);
-  const forgotten = new Set(tombstones.map((t) => t.id));
+  const forgotten = new Set([
+    ...tombstones.map((t) => t.id),
+    ...store.listForgotten().map((t) => t.id),
+  ]);
 
   for (const entry of entries) {
     // Same id normalization as promotion, so a rebuilt candidate and its

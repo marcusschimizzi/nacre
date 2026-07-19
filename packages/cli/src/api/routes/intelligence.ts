@@ -124,27 +124,42 @@ export function intelligenceRoutes(
       }
     }
 
-    return c.json({
-      data: {
-        newNodes: result.newNodes,
-        newEdges: result.newEdges,
-        reinforcedNodes: result.reinforcedNodes,
-        decayedEdges: result.decayedEdges,
-        newEmbeddings: result.newEmbeddings,
-        failures: result.failures,
-        truthLayer: truthLayer
-          ? {
-              promoted: truthLayer.promotion.promoted,
-              salienceUpdated: truthLayer.salience.updated.length,
-              compiledMemories: truthLayer.compiled.memories,
-              removed: truthLayer.compiled.removed,
-              edgesRemoved: truthLayer.compiled.edgesRemoved,
-              warnings: truthLayer.warnings,
-              errors: truthLayer.errors,
-            }
-          : null,
-      },
-    });
+    const data = {
+      newNodes: result.newNodes,
+      newEdges: result.newEdges,
+      reinforcedNodes: result.reinforcedNodes,
+      decayedEdges: result.decayedEdges,
+      newEmbeddings: result.newEmbeddings,
+      failures: result.failures,
+      truthLayer: truthLayer
+        ? {
+            promoted: truthLayer.promotion.promoted,
+            salienceUpdated: truthLayer.salience.updated.length,
+            compiledMemories: truthLayer.compiled.memories,
+            removed: truthLayer.compiled.removed,
+            edgesRemoved: truthLayer.compiled.edgesRemoved,
+            warnings: truthLayer.warnings,
+            errors: truthLayer.errors,
+          }
+        : null,
+    };
+
+    // Same contract as CLI consolidate (non-zero exit): truth-layer errors
+    // mean entries/files were NOT processed — never a silent 200.
+    if (truthLayer && truthLayer.errors.length > 0) {
+      return c.json(
+        {
+          error: {
+            message: `Consolidation completed with ${truthLayer.errors.length} truth-layer error(s) — these entries/files were not processed`,
+            code: 'TRUTH_LAYER_ERRORS',
+          },
+          data,
+        },
+        500,
+      );
+    }
+
+    return c.json({ data });
   });
 
   return app;

@@ -47,7 +47,7 @@ import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -194,6 +194,13 @@ CREATE TABLE IF NOT EXISTS snapshot_edges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
+
+CREATE TABLE IF NOT EXISTS forgotten (
+  id     TEXT PRIMARY KEY,
+  ts     TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  reason TEXT
+);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -616,6 +623,19 @@ export class SqliteStore implements GraphStore {
         if (!cols.some((c) => c.name === 'canonical_path')) {
           db.exec('ALTER TABLE nodes ADD COLUMN canonical_path TEXT');
         }
+      }
+      if (ver < 8) {
+        // Store-side forget records: forget intent must survive even when no
+        // memory dir resolves at forget time (spool tombstones alone can be
+        // unreachable). Consolidation migrates these into the spool.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS forgotten (
+            id     TEXT PRIMARY KEY,
+            ts     TEXT NOT NULL,
+            origin TEXT NOT NULL,
+            reason TEXT
+          );
+        `);
       }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
         'schema_version',
@@ -1067,6 +1087,38 @@ export class SqliteStore implements GraphStore {
       count: number;
     };
     return row.count;
+  }
+
+  // ── Forgotten ids (store-side tombstones) ────────────────
+
+  /**
+   * Record a forget in the store itself. The spool tombstone is the durable,
+   * git-synced record, but it can only be written when a memory dir resolves;
+   * this store-side record guarantees the forget survives regardless, and
+   * consolidation migrates it into whichever spool it next touches.
+   */
+  recordForgotten(record: { id: string; ts: string; origin: string; reason?: string }): void {
+    this.stmt('INSERT OR REPLACE INTO forgotten (id, ts, origin, reason) VALUES (?, ?, ?, ?)').run(
+      record.id,
+      record.ts,
+      record.origin,
+      record.reason ?? null,
+    );
+  }
+
+  listForgotten(): Array<{ id: string; ts: string; origin: string; reason?: string }> {
+    const rows = this.stmt('SELECT id, ts, origin, reason FROM forgotten').all() as Array<{
+      id: string;
+      ts: string;
+      origin: string;
+      reason: string | null;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      ts: r.ts,
+      origin: r.origin,
+      ...(r.reason ? { reason: r.reason } : {}),
+    }));
   }
 
   // ── File Tracking ─────────────────────────────────────────

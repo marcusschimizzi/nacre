@@ -103,6 +103,22 @@ describe('forgetMemory', () => {
     assert.equal(result.tombstoned, false);
     assert.equal(store.getNode(MEM_ID), undefined);
   });
+
+  it('a forget with no resolvable memory dir still blocks later promotion/replay (store-side record)', () => {
+    captureAndPromote(store, root);
+    // Forget while the memory dir is "unreachable" — spool tombstone impossible.
+    forgetMemory(store, null, MEM_ID, { ts: '2026-07-18T10:00:00Z', origin: 'api' });
+    // The canonical file survives the dir-less forget; remove it to simulate
+    // the fullest resurrection surface: spool entry + no file + no spool
+    // tombstone.
+    rmSync(join(root, 'agent/facts/a-memory-to-forget.md'));
+
+    const promotion = promoteCaptured(store, root);
+    assert.equal(promotion.promoted.length, 0, 'promotion honors the store-side record');
+    const replay = replayCaptureCandidates(store, root);
+    assert.equal(replay.candidates, 0, 'replay honors the store-side record');
+    assert.equal(store.getNode(MEM_ID), undefined);
+  });
 });
 
 describe('missing memory dir resilience', () => {

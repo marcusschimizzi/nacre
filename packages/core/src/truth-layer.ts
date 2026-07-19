@@ -1,3 +1,4 @@
+import { appendTombstone, tombstonedIds } from './capture.js';
 import { compileMemoryDir, type CompileMemoryResult } from './memory-compile.js';
 import { promoteCaptured, type PromoteResult } from './memory-promote.js';
 import { writeBackSalience, type SalienceWriteBackResult } from './memory-salience.js';
@@ -22,6 +23,16 @@ export interface TruthLayerResult {
 }
 
 export function consolidateTruthLayer(store: SqliteStore, memoryDir: string): TruthLayerResult {
+  // Migrate store-side forget records (written when no memory dir resolved
+  // at forget time, or a different one did) into THIS spool, so the forget
+  // becomes durable and git-synced wherever the truth layer now lives.
+  const spooled = tombstonedIds(memoryDir);
+  for (const record of store.listForgotten()) {
+    if (!spooled.has(record.id)) {
+      appendTombstone(memoryDir, { op: 'forget', ...record });
+    }
+  }
+
   const promotion = promoteCaptured(store, memoryDir);
   const salience = writeBackSalience(store, memoryDir);
   const compiled = compileMemoryDir(store, memoryDir);
