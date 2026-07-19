@@ -28,6 +28,8 @@ export interface CaptureEntry {
   payload: {
     content: string;
     type: MemoryObjectType;
+    /** Entity-graph node type to preserve when `type` alone would lose it (e.g. person/tool). */
+    entityType?: string;
     scope?: string;
     context?: string;
     links?: string[];

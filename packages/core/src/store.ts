@@ -1048,8 +1048,12 @@ export class SqliteStore implements GraphStore {
 
   clearAllEmbeddings(): number {
     const result = this.db.prepare('DELETE FROM embeddings').run();
-    // An empty store has no embedding space; the next write may stamp a new one.
+    // An empty store has no embedding space: clear the fingerprint AND the
+    // provider meta, or stale config would keep blocking best-effort embeds
+    // (API/MCP writes) against an empty index until a full CLI re-embed.
     this.stmt('DELETE FROM meta WHERE key = ?').run('encoder_fingerprint');
+    this.stmt('DELETE FROM meta WHERE key = ?').run('embedding_provider');
+    this.stmt('DELETE FROM meta WHERE key = ?').run('embedding_dimensions');
     return result.changes;
   }
 

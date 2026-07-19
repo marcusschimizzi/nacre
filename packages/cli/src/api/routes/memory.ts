@@ -53,7 +53,9 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
         id,
         ts: now,
         origin: 'api',
-        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact' },
+        // entityType preserves the node type through promotion — without it,
+        // consolidation would reclassify e.g. person/tool memories as concept.
+        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact', entityType: type },
       });
     }
 

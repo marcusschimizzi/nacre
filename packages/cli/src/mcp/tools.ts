@@ -214,6 +214,9 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
           payload: {
             content: args.content,
             type: memoryTypeMap[args.type] ?? 'fact',
+            // Preserve the node type through promotion (e.g. event → fact
+            // would otherwise reclassify the compiled node as concept).
+            entityType: nodeType,
             links: args.entities,
           },
         });

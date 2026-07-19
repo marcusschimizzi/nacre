@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import YAML from 'yaml';
+import { ENTITY_TYPES, type EntityType } from './types.js';
 
 // ── Canonical memory files (V2-1 truth layer) ────────────────────
 //
@@ -35,9 +36,15 @@ export interface MemorySalience {
 }
 
 export interface MemoryObject {
-  /** Stable identity — minted at promotion, never reused. Filenames/paths may change. */
+  /** Stable identity — minted at capture, never reused. Filenames/paths may change. */
   id: string;
   type: MemoryObjectType;
+  /**
+   * Entity-graph node type this memory compiles to, when the memory type
+   * alone would lose it (e.g. an API write about a person/tool). Absent means
+   * the default memory-type → node-type projection applies.
+   */
+  entityType?: EntityType;
   /** 'user' | 'agent' | 'project/<name>'. Path encodes scope; on conflict the path wins. */
   scope: string;
   confidence: number;
@@ -135,6 +142,7 @@ export function pathToScope(relPath: string): string | undefined {
 const KNOWN_KEYS = new Set([
   'id',
   'type',
+  'entity_type',
   'scope',
   'confidence',
   'sensitivity',
@@ -253,6 +261,16 @@ export function parseMemoryFile(content: string, relPath?: string): ParsedMemory
     );
   }
 
+  const entityType = record.entity_type;
+  if (
+    entityType !== undefined &&
+    (typeof entityType !== 'string' || !ENTITY_TYPES.includes(entityType as EntityType))
+  ) {
+    throw new MemoryFileError(
+      `Invalid "entity_type": ${JSON.stringify(entityType)} (expected one of ${ENTITY_TYPES.join(', ')})`,
+    );
+  }
+
   const sensitivity = record.sensitivity ?? 'low';
   if (typeof sensitivity !== 'string' || !SENSITIVITY_LEVELS.includes(sensitivity as Sensitivity)) {
     throw new MemoryFileError(
@@ -341,6 +359,7 @@ export function parseMemoryFile(content: string, relPath?: string): ParsedMemory
     salience,
     body,
   };
+  if (typeof entityType === 'string') memory.entityType = entityType as EntityType;
   if (typeof record.supersedes === 'string') memory.supersedes = record.supersedes;
   if (typeof record.superseded_by === 'string') memory.supersededBy = record.superseded_by;
 
@@ -373,6 +392,7 @@ export function serializeMemoryFile(memory: MemoryObject): string {
   const fm: Record<string, unknown> = {
     id: memory.id,
     type: memory.type,
+    ...(memory.entityType ? { entity_type: memory.entityType } : {}),
     scope: memory.scope,
     confidence: memory.confidence,
     sensitivity: memory.sensitivity,

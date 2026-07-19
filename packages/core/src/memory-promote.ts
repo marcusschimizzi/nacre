@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { canonicalIdFor, captureFileFor, readCaptureEntries } from './capture.js';
-import { listMemoryFiles } from './memory-compile.js';
+import { listMemoryFiles, previouslyCompiledPaths } from './memory-compile.js';
+import { ENTITY_TYPES, type EntityType } from './types.js';
 import {
   MEMORY_OBJECT_TYPES,
   MemoryFileError,
@@ -87,8 +88,26 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       const node = store.getNode(id);
 
       if (node?.status === 'promoted' && node.canonicalPath) {
-        result.skipped++;
-        continue;
+        // The row claims a file, but no parseable file anywhere owns this id
+        // (idIndex already checked). Distinguish three cases:
+        //  - file exists at the recorded path but is unparseable → leave it
+        //    for compile to report; don't write beside it.
+        //  - file was previously compiled from THIS dir → deliberate hand
+        //    deletion; compile will tombstone it this run. Skip.
+        //  - file never existed here (fresh clone, incomplete sync, changed
+        //    memory.dir) → the row is stale, not the capture. Heal by
+        //    re-promoting so the truth layer regains the file.
+        if (existsSync(join(memoryDir, node.canonicalPath))) {
+          result.skipped++;
+          continue;
+        }
+        if (previouslyCompiledPaths(store, memoryDir).has(node.canonicalPath)) {
+          result.skipped++;
+          continue;
+        }
+        result.warnings.push(
+          `${id}: promoted row references ${node.canonicalPath}, which never existed in this memory dir — re-promoting from capture`,
+        );
       }
 
       const rawType = entry.payload.type;
@@ -115,9 +134,18 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
         body += `\n\nRelated: ${links.map((l) => `[[${l}]]`).join(', ')}`;
       }
 
+      const rawEntityType = entry.payload.entityType;
+      const entityType = ENTITY_TYPES.includes(rawEntityType as EntityType)
+        ? (rawEntityType as EntityType)
+        : undefined;
+      if (rawEntityType && !entityType) {
+        result.warnings.push(`${entry.id}: unknown entity type "${rawEntityType}" — omitted`);
+      }
+
       const memory: MemoryObject = {
         id,
         type,
+        ...(entityType ? { entityType } : {}),
         scope,
         confidence: 1,
         sensitivity: 'low',

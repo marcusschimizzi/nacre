@@ -1,11 +1,13 @@
 import { isAbsolute, relative, resolve } from 'node:path';
 import { Hono } from 'hono';
 import {
+  SqliteStore,
   generateBrief,
   generateAlerts,
   analyzeSignificance,
   generateSuggestions,
-  type SqliteStore,
+  consolidateTruthLayer,
+  resolveMemoryDir,
   type PendingEdge,
 } from '@nacre/core';
 import { consolidate } from '@nacre/parser';
@@ -96,10 +98,31 @@ export function intelligenceRoutes(
       );
     }
 
+    const target = outDir ?? graphPath;
+    // Same overlap rule as CLI consolidate: the canonical memory dir has its
+    // own compile path — never raw-ingest it.
+    const memoryDir = target.endsWith('.db') ? resolveMemoryDir(target) : null;
+
     const result = await consolidate({
       inputs,
-      outDir: outDir ?? graphPath,
+      outDir: target,
+      ignore: memoryDir ? [memoryDir] : undefined,
     });
+
+    // The truth-layer sequence runs on EVERY consolidation surface — without
+    // it, API/MCP captures would never be promoted to canonical files.
+    let truthLayer: ReturnType<typeof consolidateTruthLayer> | null = null;
+    if (memoryDir) {
+      // Reuse the bound store when consolidating into the served graph;
+      // otherwise open the target store for the duration.
+      const sameStore = target === graphPath;
+      const truthStore = sameStore ? store : SqliteStore.open(target);
+      try {
+        truthLayer = consolidateTruthLayer(truthStore, memoryDir);
+      } finally {
+        if (!sameStore) truthStore.close();
+      }
+    }
 
     return c.json({
       data: {
@@ -109,6 +132,17 @@ export function intelligenceRoutes(
         decayedEdges: result.decayedEdges,
         newEmbeddings: result.newEmbeddings,
         failures: result.failures,
+        truthLayer: truthLayer
+          ? {
+              promoted: truthLayer.promotion.promoted,
+              salienceUpdated: truthLayer.salience.updated.length,
+              compiledMemories: truthLayer.compiled.memories,
+              removed: truthLayer.compiled.removed,
+              edgesRemoved: truthLayer.compiled.edgesRemoved,
+              warnings: truthLayer.warnings,
+              errors: truthLayer.errors,
+            }
+          : null,
       },
     });
   });

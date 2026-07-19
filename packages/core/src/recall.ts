@@ -121,7 +121,7 @@ const STOPWORDS = new Set([
 
 export function extractQueryTerms(query: string): string[] {
   const tokens = query
-    .split(/[\s,;:!?()\[\]{}"']+/)
+    .split(/[\s,;:!?()[\]{}"']+/)
     .map((t) => normalize(t))
     .filter((t) => t.length >= 2 && !STOPWORDS.has(t));
 

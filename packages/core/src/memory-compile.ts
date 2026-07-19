@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   CAPTURE_DIR,
   appendTombstone,
@@ -11,7 +11,7 @@ import {
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
 import type { SqliteStore } from './store.js';
-import type { EntityType, MemoryNode } from './types.js';
+import { ENTITY_TYPES, type EntityType, type MemoryNode } from './types.js';
 
 // ── Memory-dir compiler (V2-1 truth layer) ───────────────────────
 //
@@ -50,6 +50,25 @@ const MEMORY_TYPE_TO_ENTITY: Record<string, EntityType> = {
 
 const LABEL_MAX = 120;
 const EXCERPT_MAX = 200;
+
+/**
+ * Meta key recording which canonical paths a compile of THIS memory dir has
+ * actually seen. "File missing" only means "deliberately deleted" when this
+ * store previously compiled that file from this directory — a fresh clone,
+ * incomplete sync, or switched memory.dir must never tombstone memories whose
+ * files simply never existed here.
+ */
+export function compiledPathsMetaKey(memoryDir: string): string {
+  return `truth_compiled_paths::${resolve(memoryDir)}`;
+}
+
+export function previouslyCompiledPaths(store: SqliteStore, memoryDir: string): Set<string> {
+  try {
+    return new Set(JSON.parse(store.getMeta(compiledPathsMetaKey(memoryDir)) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+}
 
 /** Recursively list canonical memory files, sorted for deterministic compile order. */
 export function listMemoryFiles(memoryDir: string, subdir = ''): string[] {
@@ -170,11 +189,21 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
   // stale memories stay recallable forever. Removals are tombstoned;
   // otherwise the original spool entry would re-promote the memory and
   // recreate the file on the next consolidation.
+  const previouslySeen = previouslyCompiledPaths(store, memoryDir);
   for (const node of store.listNodes()) {
     if (node.status !== 'promoted' || !node.canonicalPath) continue;
     if (errorPaths.has(node.canonicalPath)) continue;
     const owner = pathOwner.get(node.canonicalPath);
     if (owner === node.id) continue;
+    // Missing file: only a deliberate deletion if THIS store compiled that
+    // file from THIS dir before. Otherwise (fresh clone, incomplete sync,
+    // switched memory.dir) leave the row — deleting would be data loss.
+    if (!owner && !previouslySeen.has(node.canonicalPath)) {
+      result.warnings.push(
+        `${node.canonicalPath}: promoted memory ${node.id} references a file never compiled from this memory dir — left in place (incomplete sync or changed memory.dir?)`,
+      );
+      continue;
+    }
     store.deleteNode(node.id);
     store.deleteEmbedding(node.id);
     if (!forgotten.has(node.id)) {
@@ -195,6 +224,13 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
         : `${node.canonicalPath}: canonical file removed — deleted promoted memory ${node.id} from the store (tombstoned)`,
     );
   }
+
+  // Record what this compile actually saw so the next run can distinguish
+  // "deliberately deleted" from "never present here".
+  store.setMeta(
+    compiledPathsMetaKey(memoryDir),
+    JSON.stringify([...pathOwner.keys(), ...errorPaths].sort()),
+  );
 
   return result;
 }
@@ -248,11 +284,14 @@ export function replayCaptureCandidates(
 
     const spoolFile = `${CAPTURE_DIR}/${captureFileFor(entry.ts)}`;
     const date = entry.ts.slice(0, 10);
+    const entityType = ENTITY_TYPES.includes(entry.payload.entityType as EntityType)
+      ? (entry.payload.entityType as EntityType)
+      : undefined;
     store.putNode({
       id,
       label: truncate(entry.payload.content, LABEL_MAX),
       aliases: [],
-      type: MEMORY_TYPE_TO_ENTITY[entry.payload.type] ?? 'concept',
+      type: entityType ?? MEMORY_TYPE_TO_ENTITY[entry.payload.type] ?? 'concept',
       firstSeen: entry.ts,
       lastReinforced: entry.ts,
       mentionCount: 1,
@@ -328,7 +367,7 @@ function compileMemory(
     id: memory.id,
     label: truncate(claim || memory.id, LABEL_MAX),
     aliases: [],
-    type: MEMORY_TYPE_TO_ENTITY[memory.type] ?? 'concept',
+    type: memory.entityType ?? MEMORY_TYPE_TO_ENTITY[memory.type] ?? 'concept',
     firstSeen: memory.created,
     lastReinforced,
     mentionCount: 1,

@@ -1,11 +1,5 @@
 import { defineCommand } from 'citty';
-import {
-  SqliteStore,
-  compileMemoryDir,
-  promoteCaptured,
-  resolveMemoryDir,
-  writeBackSalience,
-} from '@nacre/core';
+import { SqliteStore, consolidateTruthLayer, resolveMemoryDir } from '@nacre/core';
 import { consolidate } from '@nacre/parser';
 import { formatConsolidationSummary } from '../output.js';
 
@@ -60,12 +54,8 @@ export default defineCommand({
       if (memoryDir) {
         const store = SqliteStore.open(outDir);
         try {
-          const promotion = promoteCaptured(store, memoryDir);
-          // Write reinforcement accumulated since the last consolidation back
-          // into frontmatter BEFORE compiling, so the files carry it and the
-          // compile below reads it back as truth.
-          const salience = writeBackSalience(store, memoryDir);
-          const compiled = compileMemoryDir(store, memoryDir);
+          const truth = consolidateTruthLayer(store, memoryDir);
+          const { promotion, salience, compiled } = truth;
 
           console.log('');
           console.log(`🗂  Truth layer (${memoryDir}):`);
@@ -80,16 +70,11 @@ export default defineCommand({
               compiled.removed > 0 ? `, ${compiled.removed} removed (files deleted)` : ''
             }${compiled.edgesRemoved > 0 ? `, ${compiled.edgesRemoved} stale edges removed` : ''}`,
           );
-          for (const warning of [
-            ...promotion.warnings,
-            ...salience.warnings,
-            ...compiled.warnings,
-          ]) {
+          for (const warning of truth.warnings) {
             console.log(`   ⚠ ${warning}`);
           }
-          const truthErrors = [...promotion.errors, ...salience.errors, ...compiled.errors];
-          if (truthErrors.length > 0) {
-            for (const error of truthErrors) console.error(`   ✖ ${error}`);
+          if (truth.errors.length > 0) {
+            for (const error of truth.errors) console.error(`   ✖ ${error}`);
             console.error('   Truth-layer errors above — these entries/files were not processed.');
             process.exitCode = 1;
           }

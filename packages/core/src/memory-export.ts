@@ -89,9 +89,15 @@ export function exportCanonical(store: SqliteStore, memoryDir: string): ExportCa
       }
 
       const created = node.firstSeen.slice(0, 10);
+      const memoryType = ENTITY_TO_MEMORY_TYPE[node.type] ?? 'fact';
       const memory: MemoryObject = {
         id,
-        type: ENTITY_TO_MEMORY_TYPE[node.type] ?? 'fact',
+        type: memoryType,
+        // Preserve the node type whenever the memory-type projection would
+        // lose it (e.g. person/tool/event → fact → concept).
+        ...(node.type !== 'concept' && !ENTITY_TO_MEMORY_TYPE[node.type]
+          ? { entityType: node.type }
+          : {}),
         scope: 'agent',
         confidence: 1,
         sensitivity: 'low',

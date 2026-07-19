@@ -9,6 +9,18 @@ export type EntityType =
   | 'place'
   | 'tag';
 
+export const ENTITY_TYPES: readonly EntityType[] = [
+  'person',
+  'project',
+  'tool',
+  'concept',
+  'decision',
+  'event',
+  'lesson',
+  'place',
+  'tag',
+];
+
 export interface Excerpt {
   file: string;
   text: string;
