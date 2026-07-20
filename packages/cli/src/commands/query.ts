@@ -1,5 +1,6 @@
 import { defineCommand } from 'citty';
 import {
+  filterGraphByScopes,
   findNode,
   getNeighbors,
   getRelated,
@@ -71,7 +72,7 @@ export default defineCommand({
   async run({ args }) {
     const loaded = await loadGraph(args.graph as string);
     try {
-      const graph = loaded.graph;
+      const graph = filterGraphByScopes(loaded.graph);
       const fmt = args.format as string;
       const now = new Date();
       const typeFilter = args.type as EntityType | undefined;

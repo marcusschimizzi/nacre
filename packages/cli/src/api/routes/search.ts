@@ -3,6 +3,10 @@ import {
   searchNodes,
   recall,
   resolveProvider,
+  filterGraphByScopes,
+  nodeVisibleInScopes,
+  parseScopesFilter,
+  recordVisibleInScopes,
   EncoderMismatchError,
   type SqliteStore,
   type EntityType,
@@ -53,15 +57,31 @@ export function searchRoutes(store: SqliteStore): Hono {
     const limit = parseInt(c.req.query('limit') ?? '10', 10);
     const threshold = parseFloat(c.req.query('threshold') ?? '0');
     const type = c.req.query('type');
+    const scopes = parseScopesFilter(c.req.query('scopes'));
 
     const provider = resolveProvider({ provider: providerName, allowNull: false });
     const queryVec = await provider!.embed(q);
     try {
-      const results = store.searchSimilar(queryVec, {
-        limit,
-        minSimilarity: threshold,
-        type: type || undefined,
-      });
+      const results = store
+        .searchSimilar(queryVec, {
+          // Always over-fetch: the visibility filter below runs on every
+          // request (session is hidden even by default) and must not starve
+          // the page.
+          limit: limit * 3,
+          minSimilarity: threshold,
+          type: type || undefined,
+        })
+        .filter((r) => {
+          // Fail closed: resolve the row to its node or episode and apply
+          // that record's scope. Unresolvable rows are dropped — admitting
+          // them let episode content bypass an explicit scopes filter.
+          const node = store.getNode(r.id);
+          if (node) return nodeVisibleInScopes(node, scopes);
+          const episode = store.getEpisode(r.id);
+          if (episode) return recordVisibleInScopes(episode, scopes);
+          return false;
+        })
+        .slice(0, limit);
       return c.json({ data: results });
     } catch (err) {
       // Configuration error with a known remedy — a 409, not a crash/500.
@@ -85,6 +105,7 @@ export function searchRoutes(store: SqliteStore): Hono {
     const until = c.req.query('until') || undefined;
     const typesRaw = c.req.query('types');
     const types = typesRaw ? (typesRaw.split(',').map((t) => t.trim()) as EntityType[]) : undefined;
+    const recallScopes = parseScopesFilter(c.req.query('scopes'));
 
     const provider = resolveProvider({ provider: providerName, allowNull: true });
 
@@ -96,6 +117,7 @@ export function searchRoutes(store: SqliteStore): Hono {
         since,
         until,
         hops,
+        scopes: recallScopes,
       });
       return c.json({ data: response.results, procedures: response.procedures });
     } catch (err) {

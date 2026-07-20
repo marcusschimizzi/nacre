@@ -56,6 +56,57 @@ describe('POST /memories auto-embed', () => {
     }
   });
 
+  it('POST /memories accepts scope and echoes it; session is ephemeral and unspooled', async () => {
+    delete process.env.NACRE_EMBEDDING_PROVIDER;
+    const memoryDir = mkdtempSync(join(tmpdir(), 'nacre-api-scope-'));
+    process.env.NACRE_MEMORY_DIR = memoryDir;
+    const store = SqliteStore.open(':memory:');
+    try {
+      const app = createApp({ store, graphPath: ':memory:' });
+
+      const scoped = await app.request('/api/v1/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'User-scoped fact', scope: 'user' }),
+      });
+      const scopedBody = (await scoped.json()) as { data: { id: string; scope: string } };
+      assert.equal(scopedBody.data.scope, 'user');
+      assert.equal(store.getNode(scopedBody.data.id)?.scope, 'user');
+
+      const session = await app.request('/api/v1/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'Scratch note', scope: 'session' }),
+      });
+      const sessionBody = (await session.json()) as {
+        data: { id: string; scope: string; ephemeral?: boolean; captured: boolean };
+        warning?: string;
+      };
+      assert.equal(sessionBody.data.scope, 'session');
+      assert.equal(sessionBody.data.ephemeral, true);
+      assert.equal(sessionBody.data.captured, false);
+      assert.equal(sessionBody.warning, undefined, 'session is deliberate, not a warning');
+      assert.equal(store.getNode(sessionBody.data.id)?.status, undefined);
+
+      const { entries } = readCaptureEntries(memoryDir);
+      assert.equal(entries.length, 1, 'only the durable write reached the spool');
+      assert.equal(entries[0].payload.scope, 'user');
+
+      const invalid = await app.request('/api/v1/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'Bad scope', scope: 'galaxy' }),
+      });
+      const invalidBody = (await invalid.json()) as { data: { scope: string }; warning?: string };
+      assert.equal(invalidBody.data.scope, 'agent');
+      assert.match(invalidBody.warning ?? '', /Unknown scope "galaxy"/);
+    } finally {
+      delete process.env.NACRE_MEMORY_DIR;
+      rmSync(memoryDir, { recursive: true, force: true });
+      store.close();
+    }
+  });
+
   it('DELETE tombstones the spool so the memory cannot be resurrected', async () => {
     delete process.env.NACRE_EMBEDDING_PROVIDER;
     const memoryDir = mkdtempSync(join(tmpdir(), 'nacre-api-forget-'));

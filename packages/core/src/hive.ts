@@ -16,6 +16,7 @@ import type {
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { SqliteStore } from './store.js';
+import { effectiveNodeScope, scopePolicy, type ScopePolicyOverrides } from './scopes.js';
 
 /**
  * Adaptive origin factor based on the private graph size.
@@ -58,6 +59,13 @@ export async function consolidateHive(options: HiveConsolidationOptions): Promis
 
       for (const [id, node] of Object.entries(graph.nodes)) {
         if (node.hiveExclude) continue;
+        // Scope policy (V2-2 D5): agent-local and session memories never
+        // enter federated hive graphs by default. Entities (no scope) and
+        // pre-v9 legacy memory rows follow their effective scope's policy.
+        const effective = effectiveNodeScope(node);
+        if (effective !== null && !scopePolicy(effective, options.scopeOverrides).hiveEligible) {
+          continue;
+        }
 
         if (mergedNodes[id]) {
           // Merge into existing node
@@ -146,6 +154,16 @@ export async function consolidateHive(options: HiveConsolidationOptions): Promis
   } finally {
     for (const store of stores) {
       store.close();
+    }
+  }
+
+  // Drop edges whose endpoints were scope- or hiveExclude-filtered out:
+  // a dangling edge's id embeds the excluded memory's id and its evidence
+  // context carries the claim text — leaking exactly what the node
+  // exclusion protects.
+  for (const [id, edge] of Object.entries(mergedEdges)) {
+    if (!mergedNodes[edge.source] || !mergedNodes[edge.target]) {
+      delete mergedEdges[id];
     }
   }
 

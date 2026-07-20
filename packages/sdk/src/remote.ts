@@ -41,6 +41,7 @@ export class RemoteBackend implements Backend {
         content,
         type: opts?.type === 'fact' ? 'concept' : opts?.type || 'concept',
         label: content.slice(0, 100),
+        ...(opts?.scope ? { scope: opts.scope } : {}),
       }),
     });
     return data;
@@ -52,6 +53,7 @@ export class RemoteBackend implements Backend {
     if (opts?.types) params.set('types', opts.types.join(','));
     if (opts?.since) params.set('since', opts.since);
     if (opts?.until) params.set('until', opts.until);
+    if (opts?.scopes) params.set('scopes', opts.scopes.join(','));
 
     const { data } = await this.request<{ data: Memory[] }>(`/api/v1/recall?${params}`);
     return data;
@@ -60,6 +62,7 @@ export class RemoteBackend implements Backend {
   async brief(opts?: BriefOptions): Promise<string> {
     const params = new URLSearchParams();
     if (opts?.top) params.set('top', String(opts.top));
+    if (opts?.scopes) params.set('scopes', opts.scopes.join(','));
     params.set('format', 'json');
 
     const { data } = await this.request<{ data: { summary: string } }>(`/api/v1/brief?${params}`);

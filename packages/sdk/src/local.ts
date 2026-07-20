@@ -1,6 +1,10 @@
 import {
   SqliteStore,
+  SESSION_SCOPE,
+  filterGraphByScopes,
+  parseScopesFilter,
   resolveProvider,
+  resolveWriteScope,
   recall as coreRecall,
   generateBrief,
   extractQueryTerms,
@@ -82,6 +86,11 @@ export class LocalBackend implements Backend {
     const id = generateId(content);
     const timestamp = new Date().toISOString();
 
+    // Scope + lifecycle stamping (V2-2): without these the row classified
+    // as an unscoped ENTITY — visible under every scope filter, hive-
+    // included, and unpurgeable. Durable writes are candidates (exportable
+    // to the truth layer); session scratch carries no status.
+    const scope = resolveWriteScope(opts?.scope);
     const node: MemoryNode = {
       id,
       label: content.slice(0, 100),
@@ -93,6 +102,8 @@ export class LocalBackend implements Backend {
       reinforcementCount: Math.ceil((opts?.importance ?? 0.5) * 3),
       sourceFiles: ['sdk'],
       excerpts: [{ file: 'sdk', text: content, date: timestamp }],
+      ...(scope === SESSION_SCOPE ? {} : { status: 'candidate' as const }),
+      scope,
     };
 
     this.store.putNode(node);
@@ -130,6 +141,7 @@ export class LocalBackend implements Backend {
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
+        scopes: opts?.scopes,
       });
       return response.results.map((r) => ({
         id: r.id,
@@ -157,6 +169,7 @@ export class LocalBackend implements Backend {
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
+        scopes: opts?.scopes,
       });
       return response.results.map((r) => ({
         id: r.id,
@@ -169,7 +182,7 @@ export class LocalBackend implements Backend {
   }
 
   async brief(opts?: BriefOptions): Promise<string> {
-    const graph = this.store.getFullGraph();
+    const graph = filterGraphByScopes(this.store.getFullGraph(), parseScopesFilter(opts?.scopes));
     const result = generateBrief(graph, {
       top: opts?.top ?? 10,
       recentDays: 7,

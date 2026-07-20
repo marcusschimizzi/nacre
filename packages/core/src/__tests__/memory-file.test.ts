@@ -6,15 +6,13 @@ import {
   memoryFilePath,
   memorySlug,
   mintMemoryId,
-  isValidScope,
-  scopeToDir,
-  pathToScope,
   extractClaim,
   extractSource,
   extractWikilinks,
   MemoryFileError,
   type MemoryObject,
 } from '../memory-file.js';
+import { isValidScope, pathToScope, scopeToDir } from '../scopes.js';
 
 const EXAMPLE = `---
 id: mem_a1b2c3d4e5f6

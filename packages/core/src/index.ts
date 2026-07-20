@@ -14,6 +14,7 @@ export * from './memory-salience.js';
 export * from './memory-export.js';
 export * from './memory-forget.js';
 export * from './truth-layer.js';
+export * from './scopes.js';
 export * from './recall.js';
 export * from './hive.js';
 export * from './procedures.js';

@@ -10,6 +10,7 @@ import {
 } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
+import { SESSION_SCOPE, resolveWriteScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 import { ENTITY_TYPES, type EntityType, type MemoryNode } from './types.js';
 
@@ -281,6 +282,13 @@ export function replayCaptureCandidates(
       continue;
     }
 
+    // Session-scoped spool entries are never replayed — same rule as
+    // promotion, so consolidate and rebuild agree on the same input.
+    if (entry.payload.scope === SESSION_SCOPE) {
+      result.skipped++;
+      continue;
+    }
+
     // Promoted entries were compiled from their canonical file (same id);
     // already-replayed ones are equally present. Never double-create.
     if (store.getNode(id)) {
@@ -305,6 +313,7 @@ export function replayCaptureCandidates(
       sourceFiles: [spoolFile],
       excerpts: [{ file: spoolFile, text: entry.payload.content, date }],
       status: 'candidate',
+      scope: resolveWriteScope(entry.payload.scope),
     });
     result.candidates++;
 
@@ -382,6 +391,7 @@ function compileMemory(
     excerpts: [{ file: relPath, text: truncate(claim, EXCERPT_MAX), date: memory.created }],
     status: 'promoted',
     canonicalPath: relPath,
+    scope: memory.scope,
   };
   store.putNode(memoryNode);
   result.memories++;

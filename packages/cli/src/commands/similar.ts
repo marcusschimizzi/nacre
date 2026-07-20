@@ -1,5 +1,12 @@
 import { defineCommand } from 'citty';
-import { EncoderMismatchError, SqliteStore, resolveProvider } from '@nacre/core';
+import {
+  EncoderMismatchError,
+  SqliteStore,
+  nodeVisibleInScopes,
+  parseScopesFilter,
+  recordVisibleInScopes,
+  resolveProvider,
+} from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 export default defineCommand({
@@ -26,6 +33,11 @@ export default defineCommand({
       type: 'string',
       description: 'Max results to return',
       default: '10',
+    },
+    scopes: {
+      type: 'string',
+      description:
+        'Comma-separated scope filter. Default: every durable scope; session only when listed',
     },
     threshold: {
       type: 'string',
@@ -70,13 +82,29 @@ export default defineCommand({
       const queryText = args.query as string;
       const queryVec = await provider.embed(queryText);
 
+      const scopes = parseScopesFilter(args.scopes as string | undefined);
+      const limitN = parseInt(args.limit as string, 10);
       let results: ReturnType<typeof store.searchSimilar>;
       try {
-        results = store.searchSimilar(queryVec, {
-          limit: parseInt(args.limit as string, 10),
-          minSimilarity: parseFloat(args.threshold as string),
-          type: args.type as string | undefined,
-        });
+        results = store
+          .searchSimilar(queryVec, {
+            // Always over-fetch: the visibility filter below runs on every
+            // request (session hidden even by default) and must not starve
+            // the page.
+            limit: limitN * 3,
+            minSimilarity: parseFloat(args.threshold as string),
+            type: args.type as string | undefined,
+          })
+          .filter((r) => {
+            // Fail closed: resolve to node or episode and apply its scope;
+            // unresolvable rows are dropped.
+            const node = store.getNode(r.id);
+            if (node) return nodeVisibleInScopes(node, scopes);
+            const episode = store.getEpisode(r.id);
+            if (episode) return recordVisibleInScopes(episode, scopes);
+            return false;
+          })
+          .slice(0, limitN);
       } catch (err) {
         if (err instanceof EncoderMismatchError) {
           console.error(err.message);

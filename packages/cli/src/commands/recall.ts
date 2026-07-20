@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 import {
   EncoderMismatchError,
+  parseScopesFilter,
   SqliteStore,
   readMemorySource,
   recall,
@@ -74,6 +75,11 @@ export default defineCommand({
       type: 'boolean',
       description: 'Include verbatim claim + Source evidence from canonical memory files',
     },
+    scopes: {
+      type: 'string',
+      description:
+        'Comma-separated scope filter (user, agent, project/<name>, session). Default: every durable scope; session only when listed',
+    },
   },
   async run({ args }) {
     const graphPath = args.graph as string;
@@ -100,6 +106,7 @@ export default defineCommand({
       const types = args.types
         ? ((args.types as string).split(',').map((t) => t.trim()) as EntityType[])
         : undefined;
+      const scopes = parseScopesFilter(args.scopes as string | undefined);
 
       const hivePath = args.hive as string | undefined;
       const hiveOnly = args['hive-only'] as boolean | undefined;
@@ -129,6 +136,7 @@ export default defineCommand({
             until: args.until as string | undefined,
             hops: parseInt(args.hops as string, 10),
             asOf: args['as-of'] as string | undefined,
+            scopes,
             hiveOnly: hiveOnly ?? false,
             // --hive without --hive-only = explicit tap: full weight, no discount
             // --hive-only = hive only, also full weight
@@ -143,6 +151,7 @@ export default defineCommand({
             until: args.until as string | undefined,
             hops: parseInt(args.hops as string, 10),
             asOf: args['as-of'] as string | undefined,
+            scopes,
           });
         }
       } catch (err) {
