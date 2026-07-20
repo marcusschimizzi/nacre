@@ -3,6 +3,7 @@ import {
   searchNodes,
   recall,
   resolveProvider,
+  nodeVisibleInScopes,
   EncoderMismatchError,
   type SqliteStore,
   type EntityType,
@@ -53,15 +54,24 @@ export function searchRoutes(store: SqliteStore): Hono {
     const limit = parseInt(c.req.query('limit') ?? '10', 10);
     const threshold = parseFloat(c.req.query('threshold') ?? '0');
     const type = c.req.query('type');
+    const scopesRaw = c.req.query('scopes');
+    const scopes = scopesRaw ? scopesRaw.split(',').map((x) => x.trim()) : undefined;
 
     const provider = resolveProvider({ provider: providerName, allowNull: false });
     const queryVec = await provider!.embed(q);
     try {
-      const results = store.searchSimilar(queryVec, {
-        limit,
-        minSimilarity: threshold,
-        type: type || undefined,
-      });
+      const results = store
+        .searchSimilar(queryVec, {
+          // Over-fetch so scope filtering doesn't starve the page.
+          limit: scopes ? limit * 3 : limit,
+          minSimilarity: threshold,
+          type: type || undefined,
+        })
+        .filter((r) => {
+          const node = store.getNode(r.id);
+          return node ? nodeVisibleInScopes(node, scopes) : true;
+        })
+        .slice(0, limit);
       return c.json({ data: results });
     } catch (err) {
       // Configuration error with a known remedy — a 409, not a crash/500.
@@ -85,6 +95,10 @@ export function searchRoutes(store: SqliteStore): Hono {
     const until = c.req.query('until') || undefined;
     const typesRaw = c.req.query('types');
     const types = typesRaw ? (typesRaw.split(',').map((t) => t.trim()) as EntityType[]) : undefined;
+    const recallScopesRaw = c.req.query('scopes');
+    const recallScopes = recallScopesRaw
+      ? recallScopesRaw.split(',').map((x) => x.trim())
+      : undefined;
 
     const provider = resolveProvider({ provider: providerName, allowNull: true });
 
@@ -96,6 +110,7 @@ export function searchRoutes(store: SqliteStore): Hono {
         since,
         until,
         hops,
+        scopes: recallScopes,
       });
       return c.json({ data: response.results, procedures: response.procedures });
     } catch (err) {

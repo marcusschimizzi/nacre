@@ -1,5 +1,10 @@
 import { defineCommand } from 'citty';
-import { EncoderMismatchError, SqliteStore, resolveProvider } from '@nacre/core';
+import {
+  EncoderMismatchError,
+  SqliteStore,
+  nodeVisibleInScopes,
+  resolveProvider,
+} from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 export default defineCommand({
@@ -26,6 +31,11 @@ export default defineCommand({
       type: 'string',
       description: 'Max results to return',
       default: '10',
+    },
+    scopes: {
+      type: 'string',
+      description:
+        'Comma-separated scope filter. Default: every durable scope; session only when listed',
     },
     threshold: {
       type: 'string',
@@ -70,13 +80,24 @@ export default defineCommand({
       const queryText = args.query as string;
       const queryVec = await provider.embed(queryText);
 
+      const scopes = args.scopes
+        ? (args.scopes as string).split(',').map((x) => x.trim())
+        : undefined;
+      const limitN = parseInt(args.limit as string, 10);
       let results: ReturnType<typeof store.searchSimilar>;
       try {
-        results = store.searchSimilar(queryVec, {
-          limit: parseInt(args.limit as string, 10),
-          minSimilarity: parseFloat(args.threshold as string),
-          type: args.type as string | undefined,
-        });
+        results = store
+          .searchSimilar(queryVec, {
+            // Over-fetch so scope filtering doesn't starve the page.
+            limit: scopes ? limitN * 3 : limitN,
+            minSimilarity: parseFloat(args.threshold as string),
+            type: args.type as string | undefined,
+          })
+          .filter((r) => {
+            const node = store.getNode(r.id);
+            return node ? nodeVisibleInScopes(node, scopes) : true;
+          })
+          .slice(0, limitN);
       } catch (err) {
         if (err instanceof EncoderMismatchError) {
           console.error(err.message);

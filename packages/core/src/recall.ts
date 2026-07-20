@@ -17,6 +17,7 @@ import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 import { computeCurrentWeight, daysBetween } from './decay.js';
 import { normalize } from './resolve.js';
 import { findNode, searchNodes } from './query.js';
+import { nodeVisibleInScopes, recordVisibleInScopes } from './scopes.js';
 import { findRelevantProcedures } from './procedures.js';
 import { getHiveOriginFactor } from './hive.js';
 
@@ -294,6 +295,8 @@ export async function recall(
     const node = graph.nodes[id];
     if (!node) continue;
 
+    if (!nodeVisibleInScopes(node, opts.scopes)) continue;
+
     if (opts.types && !opts.types.includes(node.type)) continue;
 
     if (opts.since && node.lastReinforced < opts.since) continue;
@@ -344,7 +347,7 @@ export async function recall(
     for (const edge of allEdges) {
       const neighborId = edge.source === candidate.id ? edge.target : edge.source;
       const neighbor = graph.nodes[neighborId];
-      if (neighbor) {
+      if (neighbor && nodeVisibleInScopes(neighbor, opts.scopes)) {
         connections.push({
           label: neighbor.label,
           type: neighbor.type,
@@ -360,6 +363,7 @@ export async function recall(
 
     const allEpisodes = new Map<string, Episode>();
     for (const ep of [...nodeEpisodes, ...hitEpisodes]) {
+      if (!recordVisibleInScopes(ep, opts.scopes)) continue;
       allEpisodes.set(ep.id, ep);
     }
     if (allEpisodes.size > 0) {
@@ -390,7 +394,7 @@ export async function recall(
     const procMatches = findRelevantProcedures(store, opts.query, [], {
       limit: opts.procedureLimit ?? 3,
       minScore: 0.1,
-    });
+    }).filter((m) => recordVisibleInScopes(m.procedure, opts.scopes));
     procedures = procMatches.map(
       (m): RecallProcedureMatch => ({
         id: m.procedure.id,

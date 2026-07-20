@@ -130,6 +130,7 @@ export class LocalBackend implements Backend {
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
+        scopes: opts?.scopes,
       });
       return response.results.map((r) => ({
         id: r.id,
@@ -157,6 +158,7 @@ export class LocalBackend implements Backend {
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
+        scopes: opts?.scopes,
       });
       return response.results.map((r) => ({
         id: r.id,

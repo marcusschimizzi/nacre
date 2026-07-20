@@ -7,6 +7,7 @@ import {
   analyzeSignificance,
   generateSuggestions,
   consolidateTruthLayer,
+  filterGraphByScopes,
   resolveMemoryDir,
   type PendingEdge,
 } from '@nacre/core';
@@ -29,7 +30,9 @@ export function intelligenceRoutes(
   app.get('/brief', (c) => {
     const top = parseInt(c.req.query('top') ?? '20', 10);
     const recentDays = parseInt(c.req.query('recentDays') ?? '7', 10);
-    const graph = store.getFullGraph();
+    const scopesRaw = c.req.query('scopes');
+    const scopes = scopesRaw ? scopesRaw.split(',').map((x) => x.trim()) : undefined;
+    const graph = filterGraphByScopes(store.getFullGraph(), scopes);
     const result = generateBrief(graph, { top, recentDays, now: new Date() });
 
     if (c.req.query('format') === 'text') {

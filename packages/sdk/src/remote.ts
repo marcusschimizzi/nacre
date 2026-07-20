@@ -52,6 +52,7 @@ export class RemoteBackend implements Backend {
     if (opts?.types) params.set('types', opts.types.join(','));
     if (opts?.since) params.set('since', opts.since);
     if (opts?.until) params.set('until', opts.until);
+    if (opts?.scopes) params.set('scopes', opts.scopes.join(','));
 
     const { data } = await this.request<{ data: Memory[] }>(`/api/v1/recall?${params}`);
     return data;

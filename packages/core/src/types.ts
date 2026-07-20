@@ -447,6 +447,11 @@ export interface RecallOptions {
   includeProcedures?: boolean;
   procedureLimit?: number;
   asOf?: string;
+  /**
+   * Scope filter (V2-2 D2). Undefined = every durable scope, never session;
+   * session scratch must be requested explicitly. Entities are always visible.
+   */
+  scopes?: string[];
 }
 
 export interface RecallScores {

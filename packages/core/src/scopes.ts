@@ -62,6 +62,26 @@ export function pathToScope(relPath: string): string | undefined {
   return undefined;
 }
 
+/**
+ * A copy of the graph containing only scope-visible nodes (and the edges
+ * between them). Used by brief/insight surfaces that consume a whole graph.
+ */
+export function filterGraphByScopes<
+  N extends { scope?: string; status?: string },
+  E extends { source: string; target: string },
+  G extends { nodes: Record<string, N>; edges: Record<string, E> },
+>(graph: G, scopes?: string[]): G {
+  const nodes: Record<string, N> = {};
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    if (nodeVisibleInScopes(node, scopes)) nodes[id] = node;
+  }
+  const edges: Record<string, E> = {};
+  for (const [id, edge] of Object.entries(graph.edges)) {
+    if (nodes[edge.source] && nodes[edge.target]) edges[id] = edge;
+  }
+  return { ...graph, nodes, edges };
+}
+
 // ── Per-scope policy ─────────────────────────────────────────────
 
 export interface ScopePolicy {
@@ -98,6 +118,42 @@ export function scopePolicy(scope: string, overrides?: ScopePolicyOverrides): Sc
     ...(overrides?.[cls] ?? {}),
     ...(scope !== cls ? (overrides?.[scope] ?? {}) : {}),
   };
+}
+
+// ── Read-side visibility (D2) ────────────────────────────────────
+
+/**
+ * The scope that governs a node's visibility. Entities (no scope, no
+ * lifecycle status) return null — they are the shared vocabulary, visible
+ * from every scope. Memory rows predating schema v9 (status but no scope)
+ * are treated as 'agent'.
+ */
+export function effectiveNodeScope(node: { scope?: string; status?: string }): string | null {
+  if (node.scope) return node.scope;
+  return node.status ? 'agent' : null;
+}
+
+/**
+ * Whether something with the given effective scope is visible under a scope
+ * filter. `scopes === undefined` means the default read: every durable scope,
+ * never session — session scratch must be requested explicitly.
+ */
+export function scopeVisible(effective: string | null, scopes?: string[]): boolean {
+  if (effective === null) return true;
+  if (effective === SESSION_SCOPE) return scopes?.includes(SESSION_SCOPE) ?? false;
+  return scopes === undefined || scopes.includes(effective);
+}
+
+export function nodeVisibleInScopes(
+  node: { scope?: string; status?: string },
+  scopes?: string[],
+): boolean {
+  return scopeVisible(effectiveNodeScope(node), scopes);
+}
+
+/** Episodes/procedures: unset scope = pre-v9 legacy, treated as 'agent'. */
+export function recordVisibleInScopes(record: { scope?: string }, scopes?: string[]): boolean {
+  return scopeVisible(record.scope ?? 'agent', scopes);
 }
 
 /**

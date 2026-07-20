@@ -7,6 +7,7 @@ import {
   resolveScopeForWrite,
   resolveScopePolicy,
   SESSION_SCOPE,
+  filterGraphByScopes,
   recall,
   generateBrief,
   extractQueryTerms,
@@ -52,6 +53,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         .optional()
         .default(false)
         .describe('Include verbatim claim + Source evidence from canonical memory files'),
+      scopes: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Scope filter, e.g. ['user','project/nacre']. Default: every durable scope; add 'session' explicitly to see scratch.",
+        ),
     },
     async (args) => {
       let response: Awaited<ReturnType<typeof recall>>;
@@ -67,6 +74,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
           limit: args.limit,
           types: args.types as EntityType[] | undefined,
           since: args.since,
+          scopes: args.scopes,
         });
       } catch (err) {
         // A misconfigured encoder is a persistent configuration error, not an
@@ -82,6 +90,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             limit: args.limit,
             types: args.types as EntityType[] | undefined,
             since: args.since,
+            scopes: args.scopes,
           });
           degradedNote =
             '⚠ Semantic recall unavailable (embedding provider error) — graph-only results.\n\n';
@@ -146,9 +155,13 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
     {
       focus: z.string().optional().describe('Optional topic to focus the briefing on'),
       top: z.number().optional().default(10).describe('Number of top entities to include'),
+      scopes: z
+        .array(z.string())
+        .optional()
+        .describe('Scope filter. Default: every durable scope; never session unless listed.'),
     },
     (args) => {
-      const graph = store.getFullGraph();
+      const graph = filterGraphByScopes(store.getFullGraph(), args.scopes);
       const result = generateBrief(graph, {
         top: args.top,
         recentDays: 7,

@@ -115,6 +115,159 @@ describe('config-level scope resolution', () => {
   });
 });
 
+describe('scope-filtered recall (D2)', () => {
+  async function seededStore(): Promise<SqliteStore> {
+    const store = SqliteStore.open(':memory:');
+    const base = {
+      aliases: [],
+      firstSeen: '2026-07-10T09:00:00Z',
+      lastReinforced: '2026-07-19T09:00:00Z',
+      mentionCount: 3,
+      reinforcementCount: 1,
+      sourceFiles: [],
+      excerpts: [],
+    };
+    // One memory per scope, all mentioning "deploy" so every retrieval path
+    // (semantic seed via label match, graph walk, recency) can find them.
+    store.putNode({
+      ...base,
+      id: 'mem_a00000000001',
+      label: 'deploy decision for project a',
+      type: 'decision',
+      status: 'promoted',
+      scope: 'project/a',
+    } as never);
+    store.putNode({
+      ...base,
+      id: 'mem_b00000000002',
+      label: 'deploy decision for project b',
+      type: 'decision',
+      status: 'promoted',
+      scope: 'project/b',
+    } as never);
+    store.putNode({
+      ...base,
+      id: 'mem_c00000000003',
+      label: 'deploy preference of the user',
+      type: 'concept',
+      status: 'promoted',
+      scope: 'user',
+    } as never);
+    store.putNode({
+      ...base,
+      id: 'mem_d00000000004',
+      label: 'deploy scratch note',
+      type: 'concept',
+      scope: 'session',
+    } as never);
+    store.putNode({
+      ...base,
+      id: 'mem_e00000000005',
+      label: 'deploy legacy memory',
+      type: 'concept',
+      status: 'candidate',
+    } as never); // pre-v9: status, no scope → agent
+    // A shared entity, connected to memories in two scopes.
+    store.putNode({ ...base, id: 'ent-deploy', label: 'deploy', type: 'concept' } as never);
+    for (const [i, source] of [
+      'mem_a00000000001',
+      'mem_b00000000002',
+      'mem_c00000000003',
+      'mem_d00000000004',
+      'mem_e00000000005',
+    ].entries()) {
+      store.putEdge({
+        id: `${source}--ent-deploy--explicit`,
+        source,
+        target: 'ent-deploy',
+        type: 'explicit',
+        directed: false,
+        weight: 0.8,
+        baseWeight: 0.8,
+        reinforcementCount: 1,
+        firstFormed: '2026-07-10',
+        lastReinforced: '2026-07-19',
+        stability: 1,
+        evidence: [],
+      });
+      void i;
+    }
+    return store;
+  }
+
+  it('a project-scoped filter never returns other scopes on any path', async () => {
+    const store = await seededStore();
+    const { recall } = await import('../recall.js');
+    const response = await recall(store, null, { query: 'deploy', scopes: ['project/a'] });
+    const ids = response.results.map((r) => r.id);
+    assert.ok(ids.includes('mem_a00000000001'), 'in-scope memory returned');
+    assert.ok(ids.includes('ent-deploy'), 'entities are visible from any scope');
+    for (const leaked of [
+      'mem_b00000000002',
+      'mem_c00000000003',
+      'mem_d00000000004',
+      'mem_e00000000005',
+    ]) {
+      assert.ok(!ids.includes(leaked), `${leaked} must not leak into project/a recall`);
+    }
+    // Connections on the shared entity also hide out-of-scope memories.
+    const entity = response.results.find((r) => r.id === 'ent-deploy');
+    assert.ok(!entity?.connections.some((c) => c.label.includes('project b')));
+    store.close();
+  });
+
+  it('default recall returns every durable scope (incl. legacy-as-agent) but never session', async () => {
+    const store = await seededStore();
+    const { recall } = await import('../recall.js');
+    const response = await recall(store, null, { query: 'deploy', limit: 20 });
+    const ids = response.results.map((r) => r.id);
+    for (const durable of [
+      'mem_a00000000001',
+      'mem_b00000000002',
+      'mem_c00000000003',
+      'mem_e00000000005',
+    ]) {
+      assert.ok(ids.includes(durable), `${durable} visible by default`);
+    }
+    assert.ok(!ids.includes('mem_d00000000004'), 'session scratch requires explicit request');
+    store.close();
+  });
+
+  it('explicit session scope surfaces scratch', async () => {
+    const store = await seededStore();
+    const { recall } = await import('../recall.js');
+    const response = await recall(store, null, { query: 'deploy', scopes: ['session'], limit: 20 });
+    const ids = response.results.map((r) => r.id);
+    assert.ok(ids.includes('mem_d00000000004'));
+    assert.ok(!ids.includes('mem_c00000000003'), 'durable scopes excluded when not listed');
+    store.close();
+  });
+});
+
+describe('filterGraphByScopes', () => {
+  it('drops out-of-scope nodes and their edges; entities survive', async () => {
+    const { filterGraphByScopes } = await import('../scopes.js');
+    const graph = {
+      nodes: {
+        m1: { scope: 'project/a', status: 'promoted' },
+        m2: { scope: 'session' },
+        e1: {},
+      },
+      edges: {
+        'm1--e1': { source: 'm1', target: 'e1' },
+        'm2--e1': { source: 'm2', target: 'e1' },
+      },
+    };
+    const filtered = filterGraphByScopes(graph, ['project/a']);
+    assert.deepEqual(Object.keys(filtered.nodes).sort(), ['e1', 'm1']);
+    assert.deepEqual(Object.keys(filtered.edges), ['m1--e1']);
+
+    const defaultFiltered = filterGraphByScopes(graph);
+    assert.ok(!defaultFiltered.nodes.m2, 'session excluded by default');
+    assert.ok(defaultFiltered.nodes.m1 && defaultFiltered.nodes.e1);
+  });
+});
+
 describe('scope survives the truth-layer round trip (schema v9)', () => {
   let root: string;
   after(() => rmSync(root, { recursive: true, force: true }));

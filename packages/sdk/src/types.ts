@@ -17,6 +17,8 @@ export interface RecallOptions {
   types?: string[];
   since?: string;
   until?: string;
+  /** Scope filter. Default: every durable scope; add 'session' explicitly for scratch. */
+  scopes?: string[];
 }
 
 export interface BriefOptions {
