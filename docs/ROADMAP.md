@@ -133,15 +133,23 @@ Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17,
 
 *Make "whose memory is this and where may it go" a first-class property.*
 
-- [ ] `scope` field on nodes, memories, episodes, procedures: `user`,
-      `project`, `agent`, `session`.
-- [ ] Scope-aware defaults on every read/write surface (CLI, API, MCP, SDK) —
-      visible and overridable, per the "explicit scope parameter" pattern.
-- [ ] Per-scope policy: sync eligibility, sensitivity ceiling, retention.
-      Session scratch never syncs; secrets never persist (zero-retention
-      class).
-- [ ] Scope isolation tests: project memories don't leak into global recall;
-      agent-local memory doesn't sync to other devices.
+Design: [V2-2-SCOPE-MODEL.md](./V2-2-SCOPE-MODEL.md) (accepted 2026-07-19,
+**implemented** 2026-07-20)
+
+- [x] `scope` on nodes, episodes, and procedures (schema v9): `user`,
+      `project/<name>`, `agent`, plus `session` scratch (store-only,
+      expiring). Entities stay unscoped — shared vocabulary.
+- [x] Scope-aware defaults on every read/write surface (CLI, API, MCP, SDK):
+      explicit → memory.defaultScope → agent on writes, with the landing
+      scope named in every response; reads default to all durable scopes,
+      never session.
+- [x] Per-scope policy (spooled / hive-eligible / sync-eligible / retention)
+      with config overrides; session never spools, agent+session never enter
+      the hive, session purges after 7 days. Sync-eligibility is recorded for
+      V2-7; sensitivity ceilings deferred to V2-4 per the design.
+- [x] Scope isolation acceptance suite: cross-scope recall isolation on all
+      retrieval paths, session lifecycle (rebuild-proof, expiring,
+      explicit-read-only), hive containment, full round-trip.
 
 ### V2-3: Memory-object layer (belief lifecycle)
 

@@ -1,6 +1,6 @@
 # V2-2 Design — Scope Model
 
-Status: **accepted** · 2026-07-19
+Status: **implemented** · accepted 2026-07-19 · shipped 2026-07-20 (branch `feat/v2-2-scope-model`)
 Roadmap: [ROADMAP.md](./ROADMAP.md) → V2-2 · Builds on [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md)
 
 > Make "whose memory is this and where may it go" a first-class, visible,
@@ -152,19 +152,21 @@ Defaults, overridable per scope via `nacre.config.json` → `scopes`:
 
 ## Isolation tests (the milestone's acceptance bar)
 
-- [ ] A `--scopes project/a` recall never returns memories scoped
+- [x] A `--scopes project/a` recall never returns memories scoped
       `project/b`, `user`, `agent`, or `session` — across semantic, graph,
-      and recency paths.
-- [ ] Default recall returns durable scopes and never `session`.
-- [ ] Session writes: absent from spool, absent after rebuild, purged after
+      and recency paths (`scopes.test.ts`, `scope-isolation-acceptance.test.ts`).
+- [x] Default recall returns durable scopes and never `session`.
+- [x] Session writes: absent from spool, absent after rebuild, purged after
       retention, invisible to default recall, visible to explicit
-      `session` recall before expiry.
-- [ ] Hive built from a graph with all four scopes contains only
-      user/project memories (plus unscoped entities).
-- [ ] Scope survives the full truth-layer round trip: write with scope X →
+      `session` recall before expiry (`scope-isolation-acceptance.test.ts`).
+- [x] Hive built from a graph with all four scopes contains only
+      user/project memories (plus unscoped entities)
+      (`scope-enforcement.test.ts`).
+- [x] Scope survives the full truth-layer round trip: write with scope X →
       spool → promote (file in X's directory) → compile → node.scope === X →
-      rebuild → still X.
-- [ ] Write responses on every surface name the landing scope.
+      rebuild → still X (`scopes.test.ts`).
+- [x] Write responses on every surface name the landing scope
+      (`mcp.test.ts`, `api-memory-embed.test.ts`).
 
 ## Build order
 
