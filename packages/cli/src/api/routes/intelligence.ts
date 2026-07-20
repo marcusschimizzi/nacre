@@ -8,6 +8,7 @@ import {
   generateSuggestions,
   consolidateTruthLayer,
   filterGraphByScopes,
+  loadConfig,
   resolveMemoryDir,
   type PendingEdge,
 } from '@nacre/core';
@@ -121,7 +122,9 @@ export function intelligenceRoutes(
       const sameStore = target === graphPath;
       const truthStore = sameStore ? store : SqliteStore.open(target);
       try {
-        truthLayer = consolidateTruthLayer(truthStore, memoryDir);
+        truthLayer = consolidateTruthLayer(truthStore, memoryDir, {
+          scopeOverrides: loadConfig(target).scopes,
+        });
       } finally {
         if (!sameStore) truthStore.close();
       }
@@ -141,6 +144,7 @@ export function intelligenceRoutes(
             compiledMemories: truthLayer.compiled.memories,
             removed: truthLayer.compiled.removed,
             edgesRemoved: truthLayer.compiled.edgesRemoved,
+            purged: truthLayer.purged,
             warnings: truthLayer.warnings,
             errors: truthLayer.errors,
           }

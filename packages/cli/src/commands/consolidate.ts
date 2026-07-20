@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, consolidateTruthLayer, resolveMemoryDir } from '@nacre/core';
+import { SqliteStore, consolidateTruthLayer, loadConfig, resolveMemoryDir } from '@nacre/core';
 import { consolidate } from '@nacre/parser';
 import { formatConsolidationSummary } from '../output.js';
 
@@ -54,7 +54,9 @@ export default defineCommand({
       if (memoryDir) {
         const store = SqliteStore.open(outDir);
         try {
-          const truth = consolidateTruthLayer(store, memoryDir);
+          const truth = consolidateTruthLayer(store, memoryDir, {
+            scopeOverrides: loadConfig(outDir).scopes,
+          });
           const { promotion, salience, compiled } = truth;
 
           console.log('');
@@ -70,6 +72,12 @@ export default defineCommand({
               compiled.removed > 0 ? `, ${compiled.removed} removed (files deleted)` : ''
             }${compiled.edgesRemoved > 0 ? `, ${compiled.edgesRemoved} stale edges removed` : ''}`,
           );
+          const purgedTotal = truth.purged.nodes + truth.purged.episodes + truth.purged.procedures;
+          if (purgedTotal > 0) {
+            console.log(
+              `   Scratch:  purged ${purgedTotal} expired session row${purgedTotal === 1 ? '' : 's'}`,
+            );
+          }
           for (const warning of truth.warnings) {
             console.log(`   ⚠ ${warning}`);
           }

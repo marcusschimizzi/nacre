@@ -530,6 +530,20 @@ export interface HiveConsolidationOptions {
   deduplicationThreshold?: number;
   originFactor?: number;
   decayWindowDays?: number;
+  /**
+   * V2-2: per-scope policy overrides (nacre.config.json → scopes). Nodes
+   * whose scope policy is not hive-eligible (agent and session by default)
+   * never enter the hive.
+   */
+  scopeOverrides?: Record<
+    string,
+    Partial<{
+      spooled: boolean;
+      hiveEligible: boolean;
+      syncEligible: boolean;
+      retentionDays: number | null;
+    }>
+  >;
 }
 
 export interface HiveRecallOptions extends RecallOptions {
