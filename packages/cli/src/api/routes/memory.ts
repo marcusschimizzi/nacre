@@ -4,6 +4,7 @@ import {
   forgetMemory,
   mintMemoryId,
   resolveMemoryDir,
+  resolveScopeForWrite,
   resolveProvider,
   type MemoryNode,
   type MemoryObjectType,
@@ -44,6 +45,9 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
     const { content, type, label } = parsed.data;
     const id = mintMemoryId();
     const now = new Date().toISOString();
+    // Scope stamping (V2-2 slice 2): resolved default for now; the
+    // user-facing scope field lands with the write-surface slice.
+    const scope = resolveScopeForWrite(graphPath);
 
     // Two-phase write (V2-1): spool first (the durable act), then compile an
     // immediately-recallable candidate row. Canonical file at consolidation.
@@ -55,7 +59,7 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
         origin: 'api',
         // entityType preserves the node type through promotion — without it,
         // consolidation would reclassify e.g. person/tool memories as concept.
-        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact', entityType: type },
+        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact', entityType: type, scope },
       });
     }
 
@@ -71,6 +75,7 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
       sourceFiles: ['api'],
       excerpts: [{ file: 'api', text: content, date: now.slice(0, 10) }],
       status: 'candidate',
+      scope,
     };
 
     store.putNode(node);

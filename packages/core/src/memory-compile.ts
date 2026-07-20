@@ -10,6 +10,7 @@ import {
 } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
+import { resolveWriteScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 import { ENTITY_TYPES, type EntityType, type MemoryNode } from './types.js';
 
@@ -305,6 +306,7 @@ export function replayCaptureCandidates(
       sourceFiles: [spoolFile],
       excerpts: [{ file: spoolFile, text: entry.payload.content, date }],
       status: 'candidate',
+      scope: resolveWriteScope(entry.payload.scope),
     });
     result.candidates++;
 
@@ -382,6 +384,7 @@ function compileMemory(
     excerpts: [{ file: relPath, text: truncate(claim, EXCERPT_MAX), date: memory.created }],
     status: 'promoted',
     canonicalPath: relPath,
+    scope: memory.scope,
   };
   store.putNode(memoryNode);
   result.memories++;

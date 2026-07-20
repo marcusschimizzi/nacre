@@ -47,7 +47,7 @@ import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   excerpts            TEXT NOT NULL DEFAULT '[]',
   hive_exclude        INTEGER NOT NULL DEFAULT 0,
   status              TEXT,
-  canonical_path      TEXT
+  canonical_path      TEXT,
+  scope               TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -125,7 +126,8 @@ CREATE TABLE IF NOT EXISTS episodes (
   last_accessed   TEXT,
   source          TEXT NOT NULL,
   source_type     TEXT NOT NULL,
-  created_at      TEXT NOT NULL
+  created_at      TEXT NOT NULL,
+  scope           TEXT
 );
 
 CREATE TABLE IF NOT EXISTS episode_entities (
@@ -156,7 +158,8 @@ CREATE TABLE IF NOT EXISTS procedures (
   last_applied TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  flagged_for_review INTEGER NOT NULL DEFAULT 0
+  flagged_for_review INTEGER NOT NULL DEFAULT 0,
+  scope TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_procedures_type ON procedures(type);
@@ -227,6 +230,9 @@ function rowToNode(row: Record<string, unknown>): MemoryNode {
   if (typeof row.canonical_path === 'string') {
     node.canonicalPath = row.canonical_path;
   }
+  if (typeof row.scope === 'string') {
+    node.scope = row.scope;
+  }
   return node;
 }
 
@@ -264,6 +270,7 @@ function rowToProcedure(row: Record<string, unknown>): Procedure {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     flaggedForReview: (row.flagged_for_review as number) === 1,
+    ...(typeof row.scope === 'string' ? { scope: row.scope } : {}),
   };
 }
 
@@ -286,6 +293,7 @@ function rowToEpisode(row: Record<string, unknown>): Episode {
     lastAccessed: row.last_accessed as string,
     source: row.source as string,
     sourceType: row.source_type as Episode['sourceType'],
+    ...(typeof row.scope === 'string' ? { scope: row.scope } : {}),
   };
 }
 
@@ -624,6 +632,17 @@ export class SqliteStore implements GraphStore {
           db.exec('ALTER TABLE nodes ADD COLUMN canonical_path TEXT');
         }
       }
+      if (ver < 9) {
+        // V2-2 scope model: memories, episodes, and procedures carry a scope
+        // (user / agent / project/<name> / session). NULL = unscoped entity
+        // on nodes; pre-scope legacy (treated as agent) elsewhere.
+        for (const table of ['nodes', 'episodes', 'procedures']) {
+          const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+          if (!cols.some((c) => c.name === 'scope')) {
+            db.exec(`ALTER TABLE ${table} ADD COLUMN scope TEXT`);
+          }
+        }
+      }
       if (ver < 8) {
         // Store-side forget records: forget intent must survive even when no
         // memory dir resolves at forget time (spool tombstones alone can be
@@ -728,8 +747,8 @@ export class SqliteStore implements GraphStore {
   putNode(node: MemoryNode): void {
     this.stmt(
       `INSERT OR REPLACE INTO nodes
-       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path, scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       node.id,
       node.label,
@@ -744,6 +763,7 @@ export class SqliteStore implements GraphStore {
       node.hiveExclude ? 1 : 0,
       node.status ?? null,
       node.canonicalPath ?? null,
+      node.scope ?? null,
     );
     this.invalidateCaches();
   }
@@ -1156,8 +1176,8 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       `INSERT OR REPLACE INTO episodes
        (id, timestamp, end_timestamp, type, title, summary, content, sequence, parent_id,
-        importance, access_count, last_accessed, source, source_type, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        importance, access_count, last_accessed, source, source_type, created_at, scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       episode.id,
       episode.timestamp,
@@ -1174,6 +1194,7 @@ export class SqliteStore implements GraphStore {
       episode.source,
       episode.sourceType,
       new Date().toISOString(),
+      episode.scope ?? null,
     );
   }
 
@@ -1365,8 +1386,8 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       `INSERT OR REPLACE INTO procedures
        (id, statement, type, trigger_keywords, trigger_contexts, source_episodes, source_nodes,
-        confidence, applications, contradictions, stability, last_applied, created_at, updated_at, flagged_for_review)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        confidence, applications, contradictions, stability, last_applied, created_at, updated_at, flagged_for_review, scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       procedure.id,
       procedure.statement,
@@ -1383,6 +1404,7 @@ export class SqliteStore implements GraphStore {
       procedure.createdAt,
       procedure.updatedAt,
       procedure.flaggedForReview ? 1 : 0,
+      procedure.scope ?? null,
     );
   }
 

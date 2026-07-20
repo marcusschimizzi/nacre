@@ -166,7 +166,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       if (relPath === null) {
         // A canonical file with this id already exists — the file is the truth.
         result.skipped++;
-        markPromoted(store, id, existingPathForId(memoryDir, memory));
+        markPromoted(store, id, existingPathForId(memoryDir, memory), memory.scope);
         continue;
       }
 
@@ -175,7 +175,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       writeFileSync(absPath, serializeMemoryFile(memory), 'utf-8');
       idIndex.set(id, relPath);
       result.promoted.push(relPath);
-      markPromoted(store, id, relPath);
+      markPromoted(store, id, relPath, memory.scope);
     } catch (err) {
       result.errors.push(`${entry.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -184,11 +184,17 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
   return result;
 }
 
-function markPromoted(store: SqliteStore, id: string, relPath: string | undefined): void {
+function markPromoted(
+  store: SqliteStore,
+  id: string,
+  relPath: string | undefined,
+  scope?: string,
+): void {
   const node = store.getNode(id);
   if (!node) return;
   node.status = 'promoted';
   if (relPath) node.canonicalPath = relPath;
+  if (scope) node.scope = scope;
   store.putNode(node);
 }
 

@@ -54,6 +54,11 @@ export interface MemoryNode {
   status?: 'candidate' | 'promoted';
   /** Path of the canonical memory file (relative to the memory root), once promoted. */
   canonicalPath?: string;
+  /**
+   * V2-2 scope: user / agent / project/<name> / session. Unset on entity
+   * nodes — entities are the shared vocabulary, visible from every scope.
+   */
+  scope?: string;
 }
 
 export type EdgeType = 'explicit' | 'co-occurrence' | 'temporal' | 'causal';
@@ -305,6 +310,8 @@ export interface Episode {
   lastAccessed: string;
   source: string;
   sourceType: 'markdown' | 'conversation' | 'api';
+  /** V2-2 scope; unset = pre-scope legacy, treated as 'agent' for policy. */
+  scope?: string;
 }
 
 export interface EpisodeEntityLink {
@@ -341,6 +348,8 @@ export interface Procedure {
   createdAt: string;
   updatedAt: string;
   flaggedForReview: boolean;
+  /** V2-2 scope; unset = pre-scope legacy, treated as 'agent' for policy. */
+  scope?: string;
 }
 
 export interface ProcedureFilter {

@@ -4,6 +4,7 @@ import {
   type SqliteStore,
   resolveProvider,
   resolveMemoryDir,
+  resolveScopeForWrite,
   recall,
   generateBrief,
   extractQueryTerms,
@@ -200,6 +201,9 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       const nodeType = typeMap[args.type] || 'concept';
       const id = mintMemoryId();
       const timestamp = now();
+      // Scope stamping (V2-2 slice 2): resolved default for now; the
+      // user-facing scope parameter lands with the write-surface slice.
+      const scope = resolveScopeForWrite(graphPath);
 
       // Two-phase write (V2-1): the spool append is the durable act; the
       // candidate row below makes the memory immediately recallable. The
@@ -217,6 +221,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             // Preserve the node type through promotion (e.g. event → fact
             // would otherwise reclassify the compiled node as concept).
             entityType: nodeType,
+            scope,
             links: args.entities,
           },
         });
@@ -234,6 +239,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         sourceFiles: ['mcp'],
         excerpts: [{ file: 'mcp', text: args.content, date: timestamp }],
         status: 'candidate',
+        scope,
       };
 
       store.putNode(node);
@@ -404,6 +410,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         createdAt: timestamp,
         updatedAt: timestamp,
         flaggedForReview: false,
+        scope: resolveScopeForWrite(graphPath),
       };
 
       store.putProcedure(proc);
