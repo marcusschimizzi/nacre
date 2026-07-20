@@ -5,6 +5,8 @@ import {
   resolveProvider,
   resolveMemoryDir,
   resolveScopeForWrite,
+  resolveScopePolicy,
+  SESSION_SCOPE,
   recall,
   generateBrief,
   extractQueryTerms,
@@ -183,6 +185,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         .describe('Memory type'),
       importance: z.number().optional().default(0.5).describe('0-1, how important (affects decay)'),
       entities: z.array(z.string()).optional().describe('Related entity names to link'),
+      scope: z
+        .string()
+        .optional()
+        .describe(
+          "Where the memory belongs: 'user', 'agent', 'project/<name>', or 'session' (scratch — expires, never becomes a file). Default: configured memory.defaultScope, else 'agent'.",
+        ),
     },
     async (args) => {
       const typeMap: Record<string, EntityType> = {
@@ -201,14 +209,19 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       const nodeType = typeMap[args.type] || 'concept';
       const id = mintMemoryId();
       const timestamp = now();
-      // Scope stamping (V2-2 slice 2): resolved default for now; the
-      // user-facing scope parameter lands with the write-surface slice.
-      const scope = resolveScopeForWrite(graphPath);
+      const scope = resolveScopeForWrite(graphPath, args.scope);
+      const scopeNote =
+        args.scope && args.scope !== scope
+          ? ` ⚠ Unknown scope "${args.scope}" — landed in '${scope}'.`
+          : '';
+      const sessionWrite = scope === SESSION_SCOPE;
 
       // Two-phase write (V2-1): the spool append is the durable act; the
       // candidate row below makes the memory immediately recallable. The
-      // canonical file materializes at the next consolidation.
-      const memoryDir = resolveMemoryDir(graphPath);
+      // canonical file materializes at the next consolidation. Session
+      // scratch short-circuits the spool entirely — it is not durable by
+      // definition and must never be promoted (D4).
+      const memoryDir = sessionWrite ? null : resolveMemoryDir(graphPath);
       if (memoryDir) {
         appendCapture(memoryDir, {
           id,
@@ -238,7 +251,8 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         reinforcementCount: Math.ceil(args.importance * 3),
         sourceFiles: ['mcp'],
         excerpts: [{ file: 'mcp', text: args.content, date: timestamp }],
-        status: 'candidate',
+        // Session scratch is not a candidate — there is nothing to promote.
+        ...(sessionWrite ? {} : { status: 'candidate' as const }),
         scope,
       };
 
@@ -284,10 +298,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         content: [
           {
             type: 'text',
-            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}${searchMsg}${
-              memoryDir
-                ? ' Captured to the truth layer (canonical file at next consolidation).'
-                : ' ⚠ No memory directory configured — this memory lives only in the database.'
+            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}). Scope: ${scope}.${scopeNote}${linkMsg}${searchMsg}${
+              sessionWrite
+                ? ` Scratch — expires after ${resolveScopePolicy(graphPath, SESSION_SCOPE).retentionDays ?? '∞'} days, never promoted to a file.`
+                : memoryDir
+                  ? ' Captured to the truth layer (canonical file at next consolidation).'
+                  : ' ⚠ No memory directory configured — this memory lives only in the database.'
             }`,
           },
         ],
