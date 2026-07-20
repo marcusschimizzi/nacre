@@ -1,6 +1,6 @@
 # V2-2 Design — Scope Model
 
-Status: **draft** · 2026-07-19
+Status: **accepted** · 2026-07-19
 Roadmap: [ROADMAP.md](./ROADMAP.md) → V2-2 · Builds on [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md)
 
 > Make "whose memory is this and where may it go" a first-class, visible,

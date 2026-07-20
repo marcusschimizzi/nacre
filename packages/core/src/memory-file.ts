@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import YAML from 'yaml';
+import { isValidScope, pathToScope, scopeToDir } from './scopes.js';
 import { ENTITY_TYPES, type EntityType } from './types.js';
 
 // ── Canonical memory files (V2-1 truth layer) ────────────────────
@@ -103,38 +104,6 @@ export function memorySlug(claim: string, maxLength = 60): string {
   const cut = slug.slice(0, maxLength);
   const lastDash = cut.lastIndexOf('-');
   return lastDash > maxLength / 2 ? cut.slice(0, lastDash) : cut;
-}
-
-// ── Scopes ───────────────────────────────────────────────────────
-
-const PROJECT_SCOPE_RE = /^project\/[a-z0-9][a-z0-9._-]*$/;
-
-export function isValidScope(scope: string): boolean {
-  return scope === 'user' || scope === 'agent' || PROJECT_SCOPE_RE.test(scope);
-}
-
-/** Directory (relative to the memory root) where a scope's memories live. */
-export function scopeToDir(scope: string): string {
-  if (!isValidScope(scope)) throw new MemoryFileError(`Invalid scope: "${scope}"`);
-  if (scope.startsWith('project/')) return `projects/${scope.slice('project/'.length)}`;
-  return scope;
-}
-
-/**
- * Scope encoded by a memory file's path relative to the memory root, e.g.
- * 'projects/nacre/decisions/x.md' → 'project/nacre'. Undefined for paths
- * outside the scope directories (e.g. '.capture/').
- */
-export function pathToScope(relPath: string): string | undefined {
-  const parts = relPath.split('/').filter(Boolean);
-  if (parts.length < 2) return undefined;
-  if (parts[0] === 'user') return 'user';
-  if (parts[0] === 'agent') return 'agent';
-  if (parts[0] === 'projects' && parts.length >= 3) {
-    const scope = `project/${parts[1]}`;
-    return isValidScope(scope) ? scope : undefined;
-  }
-  return undefined;
 }
 
 // ── Parsing ──────────────────────────────────────────────────────

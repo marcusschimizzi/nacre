@@ -6,13 +6,13 @@ import { ENTITY_TYPES, type EntityType } from './types.js';
 import {
   MEMORY_OBJECT_TYPES,
   MemoryFileError,
-  isValidScope,
   memoryFilePath,
   parseMemoryFile,
   serializeMemoryFile,
   type MemoryObject,
   type MemoryObjectType,
 } from './memory-file.js';
+import { isValidScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 
 // ── Capture → canonical promotion (V2-1 truth layer) ─────────────
