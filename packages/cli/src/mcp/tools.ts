@@ -8,6 +8,7 @@ import {
   resolveScopePolicy,
   SESSION_SCOPE,
   filterGraphByScopes,
+  parseScopesFilter,
   recall,
   generateBrief,
   extractQueryTerms,
@@ -74,7 +75,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
           limit: args.limit,
           types: args.types as EntityType[] | undefined,
           since: args.since,
-          scopes: args.scopes,
+          scopes: parseScopesFilter(args.scopes),
         });
       } catch (err) {
         // A misconfigured encoder is a persistent configuration error, not an
@@ -90,7 +91,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             limit: args.limit,
             types: args.types as EntityType[] | undefined,
             since: args.since,
-            scopes: args.scopes,
+            scopes: parseScopesFilter(args.scopes),
           });
           degradedNote =
             '⚠ Semantic recall unavailable (embedding provider error) — graph-only results.\n\n';
@@ -161,7 +162,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         .describe('Scope filter. Default: every durable scope; never session unless listed.'),
     },
     (args) => {
-      const graph = filterGraphByScopes(store.getFullGraph(), args.scopes);
+      const graph = filterGraphByScopes(store.getFullGraph(), parseScopesFilter(args.scopes));
       const result = generateBrief(graph, {
         top: args.top,
         recentDays: 7,

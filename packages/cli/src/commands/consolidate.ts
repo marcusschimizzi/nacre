@@ -1,5 +1,11 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, consolidateTruthLayer, loadConfig, resolveMemoryDir } from '@nacre/core';
+import {
+  SqliteStore,
+  consolidateTruthLayer,
+  loadConfig,
+  purgeExpiredScratch,
+  resolveMemoryDir,
+} from '@nacre/core';
 import { consolidate } from '@nacre/parser';
 import { formatConsolidationSummary } from '../output.js';
 
@@ -51,6 +57,23 @@ export default defineCommand({
     // only path from capture (Tier 1) into durable memory (Tier 2).
     if (outDir.endsWith('.db')) {
       const memoryDir = truthDir;
+      if (!memoryDir) {
+        // No truth layer, but session scratch still expires: the write
+        // surfaces promise "expires after N days" even on database-only
+        // setups, so the purge cannot be gated on a memory dir.
+        const store = SqliteStore.open(outDir);
+        try {
+          const purged = purgeExpiredScratch(store, loadConfig(outDir).scopes);
+          const total = purged.nodes + purged.episodes + purged.procedures;
+          if (total > 0) {
+            console.log(
+              `\n🗂  Scratch: purged ${total} expired session row${total === 1 ? '' : 's'}`,
+            );
+          }
+        } finally {
+          store.close();
+        }
+      }
       if (memoryDir) {
         const store = SqliteStore.open(outDir);
         try {

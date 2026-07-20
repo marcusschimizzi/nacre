@@ -116,7 +116,11 @@ describe('V2-2 scope isolation acceptance', () => {
       assert.ok(existsSync(join(dir, 'user')));
 
       // A project/a filter admits exactly project/a (plus the shared entity).
-      const scoped = await recall(store, null, { query: 'deployment', scopes: ['project/a'], limit: 20 });
+      const scoped = await recall(store, null, {
+        query: 'deployment',
+        scopes: ['project/a'],
+        limit: 20,
+      });
       const ids = scoped.results.map((r) => r.id);
       assert.ok(ids.includes('mem_c0ffee000001'));
       assert.ok(!ids.includes('mem_c0ffee000002'), 'project/b must not leak');

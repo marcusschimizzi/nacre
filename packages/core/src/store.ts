@@ -34,6 +34,7 @@ import type {
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { generateEdgeId } from './graph.js';
+import { isDurableScope } from './scopes.js';
 import {
   bufferToVector,
   vectorToBuffer,
@@ -1467,8 +1468,13 @@ export class SqliteStore implements GraphStore {
   createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot {
     const now = new Date().toISOString();
     const id = `snap_${now}_${randomUUID().slice(0, 8)}`;
-    const nodes = this.listNodes();
-    const edges = this.listEdges();
+    // Scratch (session / unknown scopes) never enters durable temporal
+    // history — snapshots outlive the retention purge, so freezing scratch
+    // here would make "expires after N days" a lie.
+    const scratch = (scope?: string) => scope !== undefined && !isDurableScope(scope);
+    const nodes = this.listNodes().filter((n) => !scratch(n.scope));
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const edges = this.listEdges().filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
     const epCount = this.episodeCount();
 
     const snapshot: Snapshot = {

@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { filterGraphByScopes, generateBrief } from '@nacre/core';
+import { filterGraphByScopes, generateBrief, parseScopesFilter } from '@nacre/core';
 import { formatJSON } from '../output.js';
 import { loadGraph, closeGraph } from '../graph-loader.js';
 
@@ -40,9 +40,7 @@ export default defineCommand({
     try {
       const top = parseInt(args.top as string, 10) || 20;
       const recentDays = parseInt(args['recent-days'] as string, 10) || 7;
-      const scopes = args.scopes
-        ? (args.scopes as string).split(',').map((x) => x.trim())
-        : undefined;
+      const scopes = parseScopesFilter(args.scopes as string | undefined);
       const result = generateBrief(filterGraphByScopes(loaded.graph, scopes), {
         top,
         recentDays,

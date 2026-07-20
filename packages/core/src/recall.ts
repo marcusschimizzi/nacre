@@ -210,8 +210,10 @@ export async function recall(
       type: 'episode',
     });
     for (const hit of epHits) {
-      const links = store.getEpisodeEntities(hit.id);
       const episode = store.getEpisode(hit.id);
+      // An out-of-scope episode must not boost visible nodes' ranking.
+      if (episode && !recordVisibleInScopes(episode, opts.scopes)) continue;
+      const links = store.getEpisodeEntities(hit.id);
       for (const link of links) {
         semanticMap.set(
           link.nodeId,

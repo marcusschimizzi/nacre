@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, consolidateHive } from '@nacre/core';
+import { SqliteStore, consolidateHive, loadConfig } from '@nacre/core';
 import { formatJSON } from '../output.js';
 
 const hiveConsolidate = defineCommand({
@@ -48,6 +48,9 @@ const hiveConsolidate = defineCommand({
       agents: agentPairs,
       outPath,
       originFactor,
+      // Honor nacre.config.json scope policy overrides (D5) on the primary
+      // hive-building surface, same as consolidate does.
+      scopeOverrides: loadConfig(outPath).scopes,
     });
 
     const nodeCount = Object.keys(hive.nodes).length;

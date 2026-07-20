@@ -157,6 +157,16 @@ export async function consolidateHive(options: HiveConsolidationOptions): Promis
     }
   }
 
+  // Drop edges whose endpoints were scope- or hiveExclude-filtered out:
+  // a dangling edge's id embeds the excluded memory's id and its evidence
+  // context carries the claim text — leaking exactly what the node
+  // exclusion protects.
+  for (const [id, edge] of Object.entries(mergedEdges)) {
+    if (!mergedNodes[edge.source] || !mergedNodes[edge.target]) {
+      delete mergedEdges[id];
+    }
+  }
+
   const now = new Date().toISOString();
 
   const hiveGraph: HiveGraph = {

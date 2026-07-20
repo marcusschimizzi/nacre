@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 import {
   EncoderMismatchError,
+  parseScopesFilter,
   SqliteStore,
   readMemorySource,
   recall,
@@ -105,9 +106,7 @@ export default defineCommand({
       const types = args.types
         ? ((args.types as string).split(',').map((t) => t.trim()) as EntityType[])
         : undefined;
-      const scopes = args.scopes
-        ? (args.scopes as string).split(',').map((x) => x.trim())
-        : undefined;
+      const scopes = parseScopesFilter(args.scopes as string | undefined);
 
       const hivePath = args.hive as string | undefined;
       const hiveOnly = args['hive-only'] as boolean | undefined;

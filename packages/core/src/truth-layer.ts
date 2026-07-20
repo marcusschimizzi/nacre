@@ -2,7 +2,7 @@ import { appendTombstone, tombstonedIds } from './capture.js';
 import { compileMemoryDir, type CompileMemoryResult } from './memory-compile.js';
 import { promoteCaptured, type PromoteResult } from './memory-promote.js';
 import { writeBackSalience, type SalienceWriteBackResult } from './memory-salience.js';
-import { SESSION_SCOPE, scopePolicy, type ScopePolicyOverrides } from './scopes.js';
+import { SESSION_SCOPE, isDurableScope, scopePolicy, type ScopePolicyOverrides } from './scopes.js';
 import type { SqliteStore } from './store.js';
 
 // ── Truth-layer consolidation sequence (V2-1) ────────────────────
@@ -49,26 +49,39 @@ export function purgeExpiredScratch(
   now: Date = new Date(),
 ): ScratchPurgeResult {
   const purged: ScratchPurgeResult = { nodes: 0, episodes: 0, procedures: 0 };
-  const retention = scopePolicy(SESSION_SCOPE, overrides).retentionDays;
-  if (retention === null) return purged;
-  const cutoff = new Date(now.getTime() - retention * 86_400_000).toISOString();
+  // Scratch-class = session plus any unknown scope string (scopePolicy
+  // already treats unknowns as scratch; visibility does too). Each scope's
+  // own (possibly overridden) retention applies. Timestamps are compared
+  // lexicographically — all scratch writers stamp full toISOString(); a
+  // date-only stamp would purge up to a day early.
+  const isScratch = (scope?: string): boolean =>
+    scope !== undefined && (scope === SESSION_SCOPE || !isDurableScope(scope));
+  const cutoffFor = (scope: string): string | null => {
+    const retention = scopePolicy(scope, overrides).retentionDays;
+    return retention === null
+      ? null
+      : new Date(now.getTime() - retention * 86_400_000).toISOString();
+  };
 
   for (const node of store.listNodes()) {
-    if (node.scope !== SESSION_SCOPE) continue;
-    if (node.lastReinforced >= cutoff) continue;
+    if (!isScratch(node.scope)) continue;
+    const cutoff = cutoffFor(node.scope as string);
+    if (cutoff === null || node.lastReinforced >= cutoff) continue;
     store.deleteNode(node.id);
     store.deleteEmbedding(node.id);
     purged.nodes++;
   }
   for (const episode of store.listEpisodes()) {
-    if (episode.scope !== SESSION_SCOPE) continue;
-    if ((episode.lastAccessed || episode.timestamp) >= cutoff) continue;
+    if (!isScratch(episode.scope)) continue;
+    const cutoff = cutoffFor(episode.scope as string);
+    if (cutoff === null || (episode.lastAccessed || episode.timestamp) >= cutoff) continue;
     store.deleteEpisode(episode.id);
     purged.episodes++;
   }
   for (const procedure of store.listProcedures()) {
-    if (procedure.scope !== SESSION_SCOPE) continue;
-    if (procedure.updatedAt >= cutoff) continue;
+    if (!isScratch(procedure.scope)) continue;
+    const cutoff = cutoffFor(procedure.scope as string);
+    if (cutoff === null || procedure.updatedAt >= cutoff) continue;
     store.deleteProcedure(procedure.id);
     purged.procedures++;
   }

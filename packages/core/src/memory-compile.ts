@@ -10,7 +10,7 @@ import {
 } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
-import { resolveWriteScope } from './scopes.js';
+import { SESSION_SCOPE, resolveWriteScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 import { ENTITY_TYPES, type EntityType, type MemoryNode } from './types.js';
 
@@ -278,6 +278,13 @@ export function replayCaptureCandidates(
 
     // Explicitly forgotten — a rebuild must not resurrect it.
     if (forgotten.has(id)) {
+      result.skipped++;
+      continue;
+    }
+
+    // Session-scoped spool entries are never replayed — same rule as
+    // promotion, so consolidate and rebuild agree on the same input.
+    if (entry.payload.scope === SESSION_SCOPE) {
       result.skipped++;
       continue;
     }

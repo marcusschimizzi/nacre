@@ -82,6 +82,19 @@ export function filterGraphByScopes<
   return { ...graph, nodes, edges };
 }
 
+/**
+ * Parse a user-supplied scopes filter (comma-separated string or array) into
+ * the canonical form: trimmed, empties dropped, and an EMPTY result treated
+ * as "no filter" — otherwise `scopes=,` or `[]` would silently exclude every
+ * durable memory while still returning entities, indistinguishable from an
+ * empty store.
+ */
+export function parseScopesFilter(raw: string | string[] | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  const list = (Array.isArray(raw) ? raw : raw.split(',')).map((x) => x.trim()).filter(Boolean);
+  return list.length > 0 ? list : undefined;
+}
+
 // ── Per-scope policy ─────────────────────────────────────────────
 
 export interface ScopePolicy {
@@ -140,7 +153,13 @@ export function effectiveNodeScope(node: { scope?: string; status?: string }): s
  */
 export function scopeVisible(effective: string | null, scopes?: string[]): boolean {
   if (effective === null) return true;
-  if (effective === SESSION_SCOPE) return scopes?.includes(SESSION_SCOPE) ?? false;
+  // Session — and any unknown scope string, which scopePolicy already treats
+  // as scratch-class — is hidden unless explicitly listed. Reading unknown
+  // scopes as durable-forever while policy treats them as scratch was an
+  // inconsistency: one rule now.
+  if (effective === SESSION_SCOPE || !isDurableScope(effective)) {
+    return scopes?.includes(effective) ?? false;
+  }
   return scopes === undefined || scopes.includes(effective);
 }
 

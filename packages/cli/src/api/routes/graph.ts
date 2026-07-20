@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { filterGraphByScopes, parseScopesFilter } from '@nacre/core';
 import type { SqliteStore, EntityType, EdgeType } from '@nacre/core';
 
 export function graphRoutes(store: SqliteStore): Hono {
@@ -52,11 +53,16 @@ export function graphRoutes(store: SqliteStore): Hono {
   app.get('/graph', (c) => {
     // Full graph (nodes + edges + config) for the dashboard's live view.
     // Shape matches NacreGraph, which is what the dashboard loader expects.
-    return c.json({ data: store.getFullGraph() });
+    return c.json({
+      data: filterGraphByScopes(store.getFullGraph(), parseScopesFilter(c.req.query('scopes'))),
+    });
   });
 
   app.get('/graph/stats', (c) => {
-    const graph = store.getFullGraph();
+    const graph = filterGraphByScopes(
+      store.getFullGraph(),
+      parseScopesFilter(c.req.query('scopes')),
+    );
     const edges = Object.values(graph.edges);
     const nodes = Object.values(graph.nodes);
     let weightSum = 0;

@@ -10,6 +10,8 @@ export interface RememberOptions {
   type?: 'fact' | 'event' | 'observation' | 'decision';
   importance?: number;
   entities?: string[];
+  /** Where the memory belongs: 'user', 'agent', 'project/<name>', or 'session' (scratch). Default: configured memory.defaultScope, else 'agent'. */
+  scope?: string;
 }
 
 export interface RecallOptions {
@@ -24,6 +26,8 @@ export interface RecallOptions {
 export interface BriefOptions {
   focus?: string;
   top?: number;
+  /** Scope filter. Default: every durable scope; add 'session' explicitly for scratch. */
+  scopes?: string[];
 }
 
 export interface FeedbackOptions {
