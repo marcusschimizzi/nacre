@@ -392,22 +392,51 @@ export interface EntityHistory {
 
 // === Conversation Ingestion Types (M11) ===
 
+export type ConversationMessageOrigin =
+  | 'direct'
+  | 'quoted_context'
+  | 'system'
+  | 'tool_call'
+  | 'tool_result'
+  | 'internal_route'
+  | 'cron';
+
 export interface ConversationMessage {
+  id?: string;
+  parentId?: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp?: string; // ISO date
   name?: string; // participant name (for multi-party)
   toolName?: string; // for tool messages
   toolCallId?: string;
+  origin?: ConversationMessageOrigin;
+  extractionEligible?: boolean;
+  sourceRef?: string;
+  /** Original adapter position retained even when historical messages are event-time sorted. */
+  sourcePosition?: { line: number; ordinal: number };
+  contentHash?: string;
+  /** Source blocks not understood by the adapter, retained verbatim for audit/replay. */
+  rawContentBlocks?: unknown[];
 }
 
 export interface ConversationInput {
   messages: ConversationMessage[];
+  /** Recoverable parse/validation diagnostics with source and line locations. */
+  warnings?: string[];
+  /** Exact source lines that could not be fully normalized without loss. */
+  rawEvidence?: Array<{ line: number; raw: string; reason: string }>;
   metadata?: {
     sessionId?: string;
     platform?: string; // 'slack', 'discord', 'cli', 'openai', etc.
     topic?: string;
     source?: string; // file path or URL
+    agentId?: string;
+    sourceNamespace?: string;
+    sourceDigest?: string;
+    eventStart?: string;
+    eventEnd?: string;
+    scope?: string;
   };
 }
 
@@ -417,6 +446,25 @@ export interface ConversationChunk {
   endTime?: string;
   topic?: string; // inferred or from metadata
   summary?: string;
+}
+
+export type ImportStatus = 'planned' | 'running' | 'complete' | 'failed';
+
+export interface ImportLedgerEntry {
+  id: string;
+  sourceNamespace: string;
+  logicalSourceId: string;
+  sourceDigest: string;
+  adapterName: string;
+  adapterVersion: string;
+  status: ImportStatus;
+  ingestedAt: string;
+  completedAt?: string;
+  messageCount: number;
+  episodeCount: number;
+  evidencePath: string;
+  report?: Record<string, unknown>;
+  error?: string;
 }
 
 // === Hybrid Recall Types (M5) ===

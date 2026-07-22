@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   ConversationInput,
   ConversationChunk,
@@ -154,7 +154,7 @@ export function chunkToEpisode(
   chunk: ConversationChunk,
   metadata?: ConversationInput['metadata'],
 ): Episode {
-  const now = new Date().toISOString();
+  const now = chunk.endTime ?? chunk.startTime ?? new Date().toISOString();
   const participants = [
     ...new Set(chunk.messages.filter((m) => m.name && m.role === 'user').map((m) => m.name!)),
   ];
@@ -165,8 +165,20 @@ export function chunkToEpisode(
     chunk.messages.find((m) => m.role === 'user')?.content.slice(0, 80) ??
     'Untitled conversation';
 
+  const stableIdentity =
+    metadata?.sourceDigest && metadata.sessionId
+      ? createHash('sha256')
+          .update(
+            `${metadata.sourceNamespace ?? 'conversation'}\0${metadata.sessionId}\0${metadata.sourceDigest}\0${chunk.messages
+              .map((message) => message.id ?? message.contentHash ?? message.content)
+              .join('\0')}`,
+          )
+          .digest('hex')
+          .slice(0, 24)
+      : randomUUID().replaceAll('-', '').slice(0, 24);
+
   return {
-    id: `ep_conv_${randomUUID().slice(0, 12)}`,
+    id: `ep_conv_${stableIdentity}`,
     timestamp: chunk.startTime ?? now,
     endTimestamp: chunk.endTime,
     type: 'conversation',

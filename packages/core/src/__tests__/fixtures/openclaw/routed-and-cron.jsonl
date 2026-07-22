@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"sess-synthetic-routed","agentId":"main","timestamp":"2026-01-17T07:00:00.000Z"}
+{"type":"message","id":"cron-1","timestamp":"2026-01-17T07:01:00.000Z","message":{"role":"user","content":"[cron:daily-synthetic] Check the fabricated greenhouse."}}
+{"type":"message","id":"route-1","parentId":"cron-1","timestamp":"2026-01-17T07:02:00.000Z","message":{"role":"user","content":"[Internal route from agent synthetic-worker] fabricated status packet"}}
+{"type":"message","id":"system-1","parentId":"route-1","timestamp":"2026-01-17T07:03:00.000Z","message":{"role":"system","content":"Synthetic system instruction."}}

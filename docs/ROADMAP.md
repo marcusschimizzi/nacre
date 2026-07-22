@@ -2,7 +2,7 @@
 
 > From personal memory graph to cross-agent memory substrate.
 
-Last updated: 2026-07-16
+Last updated: 2026-07-22
 
 ---
 
@@ -105,6 +105,17 @@ Ordered by dependency: the truth layer and scope model are foundations; the
 memory-object layer is the centerpiece; receipts, evals, and integrations
 make it trustworthy and used; sync makes it multi-device.
 
+| Milestone | Name | Status / exit gate |
+|---|---|---|
+| V2-1 | Truth layer & capture path | Shipped; canonical files rebuild SQLite |
+| V2-2 | Scope model | Shipped; scope isolation and retention pass |
+| **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
+| **V2-4** | **Memory objects & belief lifecycle** | Historical sessions consolidate into canonical, evidence-linked memories |
+| **V2-5** | **Working memory, admission & receipts** | Bounded recall explains inclusion and rejection |
+| **V2-6** | **Memory evaluation & Lobstar backfill** | Replay quality gates and staged reproducible backfill pass |
+| **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
+| **V2-8** | **Multi-device sync** | Existing sync goals, renumbered |
+
 ### V2-1: Truth layer & capture path
 
 *Commit to "truth in files, indexes derived" everywhere.*
@@ -151,7 +162,24 @@ Design: [V2-2-SCOPE-MODEL.md](./V2-2-SCOPE-MODEL.md) (accepted 2026-07-19,
       retrieval paths, session lifecycle (rebuild-proof, expiring,
       explicit-read-only), hive containment, full round-trip.
 
-### V2-3: Memory-object layer (belief lifecycle)
+### V2-3: Evidence-aware historical ingestion
+
+*Make old conversation evidence deterministic, provenance-safe, and rebuildable.*
+
+Design: [V2-3-HISTORICAL-INGESTION.md](./V2-3-HISTORICAL-INGESTION.md) (accepted
+2026-07-22; first end-to-end slice implemented 2026-07-22)
+
+- [x] Synthetic private-safe OpenClaw v3 fixtures and native nested-message adapter.
+- [x] Canonical session inventory with primary selection and audited reset/trajectory alternates.
+- [x] Nacre-owned normalized JSONL evidence under `.evidence/conversations/`.
+- [x] Schema v10 import ledger, deterministic episode IDs, and strict identical-import no-op.
+- [x] Source chronology for episodes and extraction-derived graph dates; ingestion time remains separate.
+- [x] Copied history, system, tool, and internal-route records are preserved but extraction-ineligible.
+- [x] Evidence replay into a fresh database produces equivalent episodes and entities.
+- [x] Historical CLI dry-run and machine-readable inventory/import reports.
+- [ ] Crash-injection/resume hardening, forensic inventory override, and production secret/PII scanner.
+
+### V2-4: Memory-object layer (belief lifecycle)
 
 *The centerpiece: add beliefs alongside entities.*
 
@@ -172,7 +200,7 @@ Design: [V2-2-SCOPE-MODEL.md](./V2-2-SCOPE-MODEL.md) (accepted 2026-07-19,
       with lineage — deleted/superseded facts must be verifiably absent from
       recall.
 
-### V2-4: Receipts & admission
+### V2-5: Working memory, admission & receipts
 
 *Make injection trustworthy and debuggable.*
 
@@ -187,7 +215,7 @@ Design: [V2-2-SCOPE-MODEL.md](./V2-2-SCOPE-MODEL.md) (accepted 2026-07-19,
 - [ ] Outage contract: recall degrades loudly when embeddings/index are
       unavailable — never masks failure as an empty result.
 
-### V2-5: Memory eval harness
+### V2-6: Memory evaluation & Lobstar backfill
 
 *Our research edge, turned into CI.*
 
@@ -202,7 +230,7 @@ Design: [V2-2-SCOPE-MODEL.md](./V2-2-SCOPE-MODEL.md) (accepted 2026-07-19,
       economy is the value proposition.
 - [ ] Runs in CI; the score goes up, never down.
 
-### V2-6: Agent integration glue
+### V2-7: Agent integration — Hermes first
 
 *A memory an agent doesn't consult is a write-only archive.*
 
@@ -216,7 +244,7 @@ Design: [V2-2-SCOPE-MODEL.md](./V2-2-SCOPE-MODEL.md) (accepted 2026-07-19,
 - [ ] Consultation instructions: shippable CLAUDE.md/AGENTS.md snippets so
       agents proactively query before repeating decisions.
 
-### V2-7: Multi-device sync
+### V2-8: Multi-device sync
 
 *Multi-device without building a cloud product.*
 

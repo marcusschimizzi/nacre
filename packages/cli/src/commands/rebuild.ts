@@ -3,9 +3,15 @@ import { defineCommand } from 'citty';
 import {
   SqliteStore,
   compileMemoryDir,
+  rebuildHistoricalEvidence,
   replayCaptureCandidates,
   resolveProvider,
 } from '@nacre/core';
+import { extractFromConversation } from '@nacre/parser';
+
+export function rebuildHistoricalWithDefaultExtractor(store: SqliteStore, memoryDir: string) {
+  return rebuildHistoricalEvidence(store, memoryDir, { extractEntities: extractFromConversation });
+}
 
 export default defineCommand({
   meta: {
@@ -66,6 +72,7 @@ export default defineCommand({
       // the unpromoted capture spool. Replay after compile so promoted
       // entries (same id as their file) are recognized and skipped.
       const replay = replayCaptureCandidates(store, memoryDir);
+      const historical = await rebuildHistoricalWithDefaultExtractor(store, memoryDir);
 
       console.log(`Compiled ${result.files} memory files from ${memoryDir}:`);
       console.log(`  Memories:        ${result.memories}`);
@@ -73,6 +80,9 @@ export default defineCommand({
       console.log(`  Edges:           ${result.edges}`);
       console.log(
         `  Capture replay:  ${replay.candidates} unpromoted candidates (${replay.skipped} already promoted)`,
+      );
+      console.log(
+        `  Historical replay: ${historical.episodesCreated} episodes from ${historical.importsCompleted} imports`,
       );
 
       if (result.warnings.length > 0) {

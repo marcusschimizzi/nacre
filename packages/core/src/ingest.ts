@@ -4,7 +4,6 @@ import type { EmbeddingProvider } from './embeddings.js';
 import type { SqliteStore } from './store.js';
 import { chunkConversation, chunkToEpisode, type ChunkOptions } from './conversation.js';
 import { generateNodeId } from './graph.js';
-import { normalize } from './resolve.js';
 
 export interface IngestOptions {
   store: SqliteStore;
@@ -12,6 +11,7 @@ export interface IngestOptions {
   entityMap?: EntityMap;
   chunkOptions?: ChunkOptions;
   deduplicateBy?: 'sessionId' | 'contentHash' | 'none';
+  scope?: string;
   extractEntities?: (
     chunk: ConversationChunk,
     entityMap?: EntityMap,
@@ -45,11 +45,46 @@ function computeContentHash(input: ConversationInput): string {
   return createHash('sha256').update(content).digest('hex').slice(0, 32);
 }
 
-export async function ingestConversation(
+function validInstant(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const instant = Date.parse(value);
+  return Number.isNaN(instant) ? undefined : instant;
+}
+
+function chronologicalBounds(
+  messages: ConversationChunk['messages'],
+  metadata: ConversationInput['metadata'],
+): { start: string; end: string } {
+  const instants = messages
+    .map((message) => validInstant(message.timestamp))
+    .filter((instant): instant is number => instant !== undefined);
+  const fallback =
+    validInstant(metadata?.eventStart) ?? validInstant(metadata?.eventEnd) ?? Date.now();
+  const start = instants.length > 0 ? Math.min(...instants) : fallback;
+  const end = instants.length > 0 ? Math.max(...instants) : fallback;
+  return { start: new Date(start).toISOString(), end: new Date(end).toISOString() };
+}
+
+function earlier(a: string, b: string): string {
+  return (validInstant(a) ?? Number.POSITIVE_INFINITY) <=
+    (validInstant(b) ?? Number.POSITIVE_INFINITY)
+    ? a
+    : b;
+}
+
+function later(a: string, b: string): string {
+  return (validInstant(a) ?? Number.NEGATIVE_INFINITY) >=
+    (validInstant(b) ?? Number.NEGATIVE_INFINITY)
+    ? a
+    : b;
+}
+
+/** Apply the deterministic derived-state portion of conversation ingestion synchronously. */
+export function ingestConversationDerived(
   input: ConversationInput,
   opts: IngestOptions,
-): Promise<IngestResult> {
-  const { store, provider, entityMap, chunkOptions, extractEntities } = opts;
+): IngestResult {
+  const { store, entityMap, chunkOptions, extractEntities } = opts;
   const deduplicateBy = opts.deduplicateBy ?? 'sessionId';
 
   const result: IngestResult = {
@@ -82,17 +117,26 @@ export async function ingestConversation(
   }
 
   const chunks = chunkConversation(input, chunkOptions);
-  const now = new Date().toISOString();
 
   for (const chunk of chunks) {
     result.chunksProcessed++;
 
     const episode = chunkToEpisode(chunk, input.metadata);
+    episode.scope = opts.scope ?? input.metadata?.scope;
     store.putEpisode(episode);
     result.episodesCreated++;
 
     if (extractEntities) {
-      const extracted = extractEntities(chunk, entityMap);
+      const eligibleChunk: ConversationChunk = {
+        ...chunk,
+        messages: chunk.messages.filter((message) => message.extractionEligible !== false),
+      };
+      if (eligibleChunk.messages.length === 0) continue;
+      const extracted = extractEntities(eligibleChunk, entityMap);
+      const { start: eventStart, end: eventEnd } = chronologicalBounds(
+        eligibleChunk.messages,
+        input.metadata,
+      );
 
       for (const entityNode of extracted.nodes) {
         const nodeId = generateNodeId(entityNode.label);
@@ -101,12 +145,13 @@ export async function ingestConversation(
         if (existing) {
           existing.mentionCount += 1;
           existing.reinforcementCount += 1;
-          existing.lastReinforced = now;
+          existing.firstSeen = earlier(existing.firstSeen, eventStart);
+          existing.lastReinforced = later(existing.lastReinforced, eventEnd);
           if (existing.excerpts.length < 10 && entityNode.excerpts.length > 0) {
             existing.excerpts.push({
               file: episode.source,
               text: entityNode.excerpts[0],
-              date: now,
+              date: eventEnd,
             });
           }
           store.putNode(existing);
@@ -119,15 +164,15 @@ export async function ingestConversation(
             label: entityNode.label,
             type: entityNode.type as any,
             aliases: [],
-            firstSeen: now,
-            lastReinforced: now,
+            firstSeen: eventStart,
+            lastReinforced: eventEnd,
             mentionCount: 1,
             reinforcementCount: 0,
             sourceFiles: [episode.source],
             excerpts: entityNode.excerpts.slice(0, 3).map((text) => ({
               file: episode.source,
               text,
-              date: now,
+              date: eventEnd,
             })),
           });
           result.nodesCreated++;
@@ -152,12 +197,13 @@ export async function ingestConversation(
         const existingEdge = store.getEdge(edgeId);
         if (existingEdge) {
           existingEdge.reinforcementCount += 1;
-          existingEdge.lastReinforced = now;
+          existingEdge.firstFormed = earlier(existingEdge.firstFormed, eventStart);
+          existingEdge.lastReinforced = later(existingEdge.lastReinforced, eventEnd);
           existingEdge.stability = 1 + 1.5 * Math.log(existingEdge.reinforcementCount + 1);
           if (existingEdge.evidence.length < 20) {
             existingEdge.evidence.push({
               file: episode.source,
-              date: now,
+              date: eventEnd,
               context: edge.context,
             });
           }
@@ -172,13 +218,13 @@ export async function ingestConversation(
             weight: 0.3,
             baseWeight: 0.3,
             reinforcementCount: 0,
-            firstFormed: now,
-            lastReinforced: now,
+            firstFormed: eventStart,
+            lastReinforced: eventEnd,
             stability: 1.0,
             evidence: [
               {
                 file: episode.source,
-                date: now,
+                date: eventEnd,
                 context: edge.context,
               },
             ],
@@ -187,16 +233,36 @@ export async function ingestConversation(
         }
       }
     }
+  }
 
-    if (provider) {
+  return result;
+}
+
+export async function ingestConversation(
+  input: ConversationInput,
+  opts: IngestOptions,
+): Promise<IngestResult> {
+  const existingEpisodeIds = opts.provider
+    ? new Set(opts.store.listEpisodes().map((episode) => episode.id))
+    : undefined;
+  const result = ingestConversationDerived(input, opts);
+  if (opts.provider && result.episodesCreated > 0) {
+    for (const episode of opts.store
+      .listEpisodes()
+      .filter((candidate) => !existingEpisodeIds?.has(candidate.id))) {
       try {
-        const embedding = await provider.embed(episode.content);
-        store.putEmbedding(episode.id, 'episode', episode.content, embedding, provider.name);
+        const embedding = await opts.provider.embed(episode.content);
+        opts.store.putEmbedding(
+          episode.id,
+          'episode',
+          episode.content,
+          embedding,
+          opts.provider.name,
+        );
       } catch {
         // Embedding generation is best-effort; continue on failure
       }
     }
   }
-
   return result;
 }

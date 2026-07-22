@@ -31,6 +31,7 @@ import type {
   SnapshotTrigger,
   SnapshotFilter,
   EntityHistory,
+  ImportLedgerEntry,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { generateEdgeId } from './graph.js';
@@ -48,7 +49,7 @@ import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -205,6 +206,25 @@ CREATE TABLE IF NOT EXISTS forgotten (
   origin TEXT NOT NULL,
   reason TEXT
 );
+
+CREATE TABLE IF NOT EXISTS imports (
+  id TEXT PRIMARY KEY,
+  source_namespace TEXT NOT NULL,
+  logical_source_id TEXT NOT NULL,
+  source_digest TEXT NOT NULL,
+  adapter_name TEXT NOT NULL,
+  adapter_version TEXT NOT NULL,
+  status TEXT NOT NULL,
+  ingested_at TEXT NOT NULL,
+  completed_at TEXT,
+  message_count INTEGER NOT NULL DEFAULT 0,
+  episode_count INTEGER NOT NULL DEFAULT 0,
+  evidence_path TEXT NOT NULL,
+  report TEXT,
+  error TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_import_identity
+  ON imports(source_namespace, logical_source_id, source_digest, adapter_name, adapter_version);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -655,6 +675,28 @@ export class SqliteStore implements GraphStore {
             origin TEXT NOT NULL,
             reason TEXT
           );
+        `);
+      }
+      if (ver < 10) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS imports (
+            id TEXT PRIMARY KEY,
+            source_namespace TEXT NOT NULL,
+            logical_source_id TEXT NOT NULL,
+            source_digest TEXT NOT NULL,
+            adapter_name TEXT NOT NULL,
+            adapter_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            ingested_at TEXT NOT NULL,
+            completed_at TEXT,
+            message_count INTEGER NOT NULL DEFAULT 0,
+            episode_count INTEGER NOT NULL DEFAULT 0,
+            evidence_path TEXT NOT NULL,
+            report TEXT,
+            error TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_import_identity
+            ON imports(source_namespace, logical_source_id, source_digest, adapter_name, adapter_version);
         `);
       }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
@@ -1169,6 +1211,70 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       'INSERT OR REPLACE INTO processed_files (path, hash, last_processed) VALUES (?, ?, ?)',
     ).run(hash.path, hash.hash, hash.lastProcessed);
+  }
+
+  // ── Historical import ledger ──────────────────────────────
+
+  getImport(id: string): ImportLedgerEntry | undefined {
+    const row = this.stmt('SELECT * FROM imports WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? this.rowToImport(row) : undefined;
+  }
+
+  listImports(): ImportLedgerEntry[] {
+    const rows = this.stmt('SELECT * FROM imports ORDER BY ingested_at, id').all() as Record<
+      string,
+      unknown
+    >[];
+    return rows.map((row) => this.rowToImport(row));
+  }
+
+  putImport(entry: ImportLedgerEntry): void {
+    this.stmt(
+      `INSERT OR REPLACE INTO imports
+       (id, source_namespace, logical_source_id, source_digest, adapter_name, adapter_version,
+        status, ingested_at, completed_at, message_count, episode_count, evidence_path, report, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      entry.id,
+      entry.sourceNamespace,
+      entry.logicalSourceId,
+      entry.sourceDigest,
+      entry.adapterName,
+      entry.adapterVersion,
+      entry.status,
+      entry.ingestedAt,
+      entry.completedAt ?? null,
+      entry.messageCount,
+      entry.episodeCount,
+      entry.evidencePath,
+      entry.report ? JSON.stringify(entry.report) : null,
+      entry.error ?? null,
+    );
+  }
+
+  transaction<T>(operation: () => T): T {
+    return this.db.transaction(operation)();
+  }
+
+  private rowToImport(row: Record<string, unknown>): ImportLedgerEntry {
+    return {
+      id: row.id as string,
+      sourceNamespace: row.source_namespace as string,
+      logicalSourceId: row.logical_source_id as string,
+      sourceDigest: row.source_digest as string,
+      adapterName: row.adapter_name as string,
+      adapterVersion: row.adapter_version as string,
+      status: row.status as ImportLedgerEntry['status'],
+      ingestedAt: row.ingested_at as string,
+      completedAt: (row.completed_at as string) ?? undefined,
+      messageCount: row.message_count as number,
+      episodeCount: row.episode_count as number,
+      evidencePath: row.evidence_path as string,
+      report: row.report ? JSON.parse(row.report as string) : undefined,
+      error: (row.error as string) ?? undefined,
+    };
   }
 
   // ── Episodes ──────────────────────────────────────────────
