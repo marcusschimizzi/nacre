@@ -21,6 +21,7 @@ import dashboardCmd from './commands/dashboard.js';
 import hiveCmd from './commands/hive.js';
 import rebuildCmd from './commands/rebuild.js';
 import exportCmd from './commands/export.js';
+import candidatesCmd from './commands/candidates.js';
 
 const main = defineCommand({
   meta: {
@@ -52,6 +53,7 @@ const main = defineCommand({
     hive: hiveCmd,
     rebuild: rebuildCmd,
     export: exportCmd,
+    candidates: candidatesCmd,
   },
 });
 

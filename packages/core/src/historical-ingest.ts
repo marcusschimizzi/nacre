@@ -15,6 +15,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { ingestConversationDerived, type IngestOptions, type IngestResult } from './ingest.js';
+import { extractMemoryCandidates, type MemoryExtractionReceipt } from './memory-extraction.js';
 import { isDurableScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 import type { ConversationInput, ImportLedgerEntry } from './types.js';
@@ -479,6 +480,52 @@ function parseEvidence(path: string): { header: EvidenceHeader; input: Conversat
   return { header, input };
 }
 
+export function* verifiedHistoricalEvidenceInputs(
+  memoryRoot: string,
+): IterableIterator<{ path: string; header: EvidenceHeader; input: ConversationInput }> {
+  const root = join(memoryRoot, '.evidence', 'conversations');
+  if (existsSync(root)) ensureEvidenceAncestors(memoryRoot, join(root, '.probe'), false);
+  for (const path of evidenceFiles(root).sort()) {
+    const parsed = parseEvidence(path);
+    yield { path, ...parsed };
+  }
+}
+
+export interface HistoricalCandidateExtractionResult {
+  files: number;
+  created: number;
+  skipped: number;
+  rejected: number;
+  receipts: Array<{ path: string; receipt: MemoryExtractionReceipt }>;
+}
+
+export function extractCandidatesFromHistoricalEvidence(
+  store: SqliteStore,
+  memoryRoot: string,
+  options: { now?: string } = {},
+): HistoricalCandidateExtractionResult {
+  const result: HistoricalCandidateExtractionResult = {
+    files: 0,
+    created: 0,
+    skipped: 0,
+    rejected: 0,
+    receipts: [],
+  };
+  for (const evidence of verifiedHistoricalEvidenceInputs(memoryRoot)) {
+    const receipt = extractMemoryCandidates(evidence.input, store, {
+      now: options.now,
+      scope: evidence.input.metadata?.scope,
+      memoryDir: memoryRoot,
+    });
+    result.files++;
+    result.created += receipt.created;
+    result.skipped += receipt.skipped;
+    result.rejected += receipt.rejected;
+    result.receipts.push({ path: evidence.path, receipt });
+  }
+  return result;
+}
+
 export async function rebuildHistoricalEvidence(
   store: SqliteStore,
   memoryRoot: string,
@@ -486,10 +533,7 @@ export async function rebuildHistoricalEvidence(
 ): Promise<{ importsCompleted: number; episodesCreated: number }> {
   let importsCompleted = 0;
   let episodesCreated = 0;
-  const root = join(memoryRoot, '.evidence', 'conversations');
-  if (existsSync(root)) ensureEvidenceAncestors(memoryRoot, join(root, '.probe'), false);
-  for (const path of evidenceFiles(root).sort()) {
-    const { input } = parseEvidence(path);
+  for (const { input } of verifiedHistoricalEvidenceInputs(memoryRoot)) {
     const result = await importHistoricalConversation(input, {
       store,
       memoryRoot,

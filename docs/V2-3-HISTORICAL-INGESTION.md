@@ -4,7 +4,7 @@ Status: **first vertical slice implemented** (2026-07-22)
 
 ## Purpose
 
-V2-3 imports historical conversation archives as durable evidence without pretending copied context is independent corroboration. It establishes deterministic parsing, identity, chronology, provenance, inventory, and rebuild behavior. Semantic candidate extraction, belief consolidation, contradiction, and supersession remain V2-4 work.
+V2-3 imports historical conversation archives as durable evidence without pretending copied context is independent corroboration. It establishes deterministic parsing, identity, chronology, provenance, inventory, and rebuild behavior. V2-4 candidate extraction now consumes this authenticated normalized evidence; belief consolidation, contradiction, and supersession remain later work.
 
 ## Invariants
 
@@ -62,7 +62,7 @@ Episode `timestamp`/`endTimestamp`, entity `firstSeen`/`lastReinforced`, excerpt
 
 ## Rebuild
 
-`rebuildHistoricalEvidence(store, memoryRoot)` discovers versioned evidence files and replays them into a fresh store. Stable import and episode identities, source chronology, scope, classifications, and original ingestion timestamp survive replay. Canonical memory compilation remains separate; V2-4 will derive promoted memories from evidence-backed episodes.
+`rebuildHistoricalEvidence(store, memoryRoot)` discovers versioned evidence files and replays them into a fresh store. Stable import and episode identities, source chronology, scope, classifications, and original ingestion timestamp survive replay. `verifiedHistoricalEvidenceInputs(memoryRoot)` exposes the same integrity-checked normalized evidence as a read-only iterator for candidate extraction. Candidate extraction reads verified evidence directly and never parses lossy episodes.
 
 ## Retention, sensitivity, and zero retention
 
@@ -79,6 +79,6 @@ Evidence is staged and atomically renamed before derived ingestion. The ledger i
 
 The original archive is never modified. Import reports and source manifests provide the audit trail.
 
-## Deferred to V2-4
+## V2-4 boundary
 
-This milestone does **not** implement semantic belief objects, candidate claims, confidence/trust scoring, contradiction detection, consolidation, supersession, promotion thresholds, or LLM extraction. Episodes are evidence-backed historical records, not canonical beliefs.
+V2-3 itself does **not** turn episodes into beliefs. The V2-4 candidate slice provides a dedicated candidate store and deterministic extraction over verified normalized evidence through `extractCandidatesFromHistoricalEvidence(store, memoryRoot)`. It intentionally does not parse lossy episodes. Contradiction detection, consolidation, supersession, promotion thresholds, and LLM extraction remain deferred. Episodes are evidence-backed historical records, not canonical beliefs.

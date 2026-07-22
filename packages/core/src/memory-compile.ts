@@ -10,6 +10,7 @@ import {
 } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
+import { normalizeMemoryClaim } from './memory-extraction.js';
 import { SESSION_SCOPE, resolveWriteScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 import { ENTITY_TYPES, type EntityType, type MemoryNode } from './types.js';
@@ -395,6 +396,40 @@ function compileMemory(
   };
   store.putNode(memoryNode);
   result.memories++;
+
+  // Candidate-promoted canonical files carry enough structured provenance to
+  // rebuild the dedicated belief record without the original SQLite store.
+  if (
+    memory.evidence &&
+    memory.extractor &&
+    memory.sourceAuthority &&
+    memory.eventTime &&
+    memory.proposedAt
+  ) {
+    const rebuiltCandidate = {
+      id: memory.id,
+      type: memory.type,
+      claim,
+      normalizedClaim: normalizeMemoryClaim(claim),
+      scope: memory.scope,
+      sensitivity: memory.sensitivity,
+      confidence: memory.confidence,
+      sourceAuthority: memory.sourceAuthority,
+      trust: memory.trust ?? 0,
+      eventTime: memory.eventTime,
+      proposedAt: memory.proposedAt,
+      evidence: memory.evidence,
+      subjectEntityIds: memory.subjectEntityIds ?? [],
+      extractor: memory.extractor,
+      lifecycle: 'promoted' as const,
+      canonicalPath: relPath,
+      createdAt: memory.candidateCreatedAt ?? memory.eventTime,
+      updatedAt: memory.candidateUpdatedAt ?? memory.proposedAt,
+    };
+    const existing = store.getMemoryCandidate(memory.id);
+    if (!existing) store.createMemoryCandidate(rebuiltCandidate);
+    else if (existing.lifecycle !== 'rejected') store.updateMemoryCandidate(rebuiltCandidate);
+  }
 
   const linked = new Set<string>();
   currentLinks.set(memory.id, linked);

@@ -46,10 +46,17 @@ import {
   EncoderMismatchError,
 } from './embeddings.js';
 import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
+import {
+  validateMemoryCandidate,
+  type MemoryCandidate,
+  type MemoryCandidateFilter,
+  type MemoryCandidateLifecycle,
+} from './memory-candidate.js';
+import { writeDurableMemoryCandidate } from './memory-candidate-durable.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -225,6 +232,30 @@ CREATE TABLE IF NOT EXISTS imports (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_import_identity
   ON imports(source_namespace, logical_source_id, source_digest, adapter_name, adapter_version);
+
+CREATE TABLE IF NOT EXISTS memory_candidates (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL CHECK(type IN ('fact','preference','decision','lesson','claim')),
+  claim TEXT NOT NULL,
+  normalized_claim TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  sensitivity TEXT NOT NULL CHECK(sensitivity IN ('low','personal','sensitive','secret')),
+  confidence REAL NOT NULL,
+  source_authority TEXT NOT NULL,
+  trust REAL NOT NULL,
+  event_time TEXT NOT NULL,
+  proposed_at TEXT NOT NULL,
+  evidence TEXT NOT NULL,
+  subject_entity_ids TEXT NOT NULL DEFAULT '[]',
+  extractor TEXT NOT NULL,
+  lifecycle TEXT NOT NULL CHECK(lifecycle IN ('candidate','promoted','rejected')),
+  rejection_reason TEXT,
+  canonical_path TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_lifecycle
+  ON memory_candidates(lifecycle, proposed_at, id);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -436,6 +467,18 @@ export interface GraphStore {
   getAdjacencyMap(): AdjacencyMap;
   importGraph(graph: NacreGraph): void;
   upsertGraph(graph: NacreGraph): void;
+
+  // Candidate memory operations (separate belief store, never entity nodes)
+  createMemoryCandidate(candidate: MemoryCandidate, options?: { memoryDir?: string }): boolean;
+  getMemoryCandidate(id: string): MemoryCandidate | undefined;
+  listMemoryCandidates(filter?: MemoryCandidateFilter): MemoryCandidate[];
+  updateMemoryCandidate(candidate: MemoryCandidate, options?: { memoryDir?: string }): void;
+  transitionMemoryCandidate(
+    from: MemoryCandidateLifecycle,
+    candidate: MemoryCandidate,
+    options?: { memoryDir?: string },
+  ): boolean;
+  deleteMemoryCandidate(id: string): void;
 
   // Metadata
   getMeta(key: string): string | undefined;
@@ -699,6 +742,33 @@ export class SqliteStore implements GraphStore {
             ON imports(source_namespace, logical_source_id, source_digest, adapter_name, adapter_version);
         `);
       }
+      if (ver < 11) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS memory_candidates (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL CHECK(type IN ('fact','preference','decision','lesson','claim')),
+            claim TEXT NOT NULL,
+            normalized_claim TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            sensitivity TEXT NOT NULL CHECK(sensitivity IN ('low','personal','sensitive','secret')),
+            confidence REAL NOT NULL,
+            source_authority TEXT NOT NULL,
+            trust REAL NOT NULL,
+            event_time TEXT NOT NULL,
+            proposed_at TEXT NOT NULL,
+            evidence TEXT NOT NULL,
+            subject_entity_ids TEXT NOT NULL DEFAULT '[]',
+            extractor TEXT NOT NULL,
+            lifecycle TEXT NOT NULL CHECK(lifecycle IN ('candidate','promoted','rejected')),
+            rejection_reason TEXT,
+            canonical_path TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_memory_candidates_lifecycle
+            ON memory_candidates(lifecycle, proposed_at, id);
+        `);
+      }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
         'schema_version',
         String(SCHEMA_VERSION),
@@ -778,7 +848,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY mention_count DESC';
@@ -854,7 +924,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY weight DESC';
@@ -1213,6 +1283,186 @@ export class SqliteStore implements GraphStore {
     ).run(hash.path, hash.hash, hash.lastProcessed);
   }
 
+  // ── Evidence-backed memory candidates ─────────────────────
+
+  createMemoryCandidate(candidate: MemoryCandidate, options: { memoryDir?: string } = {}): boolean {
+    const value = validateMemoryCandidate(candidate);
+    const persist = () => {
+      const result = this.stmt(
+        `INSERT OR IGNORE INTO memory_candidates
+       (id, type, claim, normalized_claim, scope, sensitivity, confidence, source_authority,
+        trust, event_time, proposed_at, evidence, subject_entity_ids, extractor, lifecycle,
+        rejection_reason, canonical_path, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        value.id,
+        value.type,
+        value.claim,
+        value.normalizedClaim,
+        value.scope,
+        value.sensitivity,
+        value.confidence,
+        value.sourceAuthority,
+        value.trust,
+        value.eventTime,
+        value.proposedAt,
+        JSON.stringify(value.evidence),
+        JSON.stringify(value.subjectEntityIds),
+        JSON.stringify(value.extractor),
+        value.lifecycle,
+        value.rejectionReason ?? null,
+        value.canonicalPath ?? null,
+        value.createdAt,
+        value.updatedAt,
+      );
+      if (options.memoryDir) {
+        const durable = result.changes === 1 ? value : this.getMemoryCandidate(value.id);
+        if (!durable) throw new Error(`Memory candidate not found after insert: ${value.id}`);
+        writeDurableMemoryCandidate(options.memoryDir, durable);
+      }
+      return result.changes === 1;
+    };
+    // Keep SQLite and the canonical sidecar in one rollback boundary. The
+    // filesystem write happens before COMMIT, so a confinement/I/O failure
+    // cannot leave a SQLite-only candidate behind.
+    return options.memoryDir ? this.transaction(persist) : persist();
+  }
+
+  getMemoryCandidate(id: string): MemoryCandidate | undefined {
+    const row = this.stmt('SELECT * FROM memory_candidates WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? this.rowToMemoryCandidate(row) : undefined;
+  }
+
+  listMemoryCandidates(filter?: MemoryCandidateFilter): MemoryCandidate[] {
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (filter?.lifecycle) {
+      conditions.push('lifecycle = ?');
+      params.push(filter.lifecycle);
+    }
+    if (filter?.scope) {
+      conditions.push('scope = ?');
+      params.push(filter.scope);
+    }
+    if (filter?.type) {
+      conditions.push('type = ?');
+      params.push(filter.type);
+    }
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const rows = this.db
+      .prepare(`SELECT * FROM memory_candidates${where} ORDER BY proposed_at, id`)
+      .all(...params) as Record<string, unknown>[];
+    return rows.map((row) => this.rowToMemoryCandidate(row));
+  }
+
+  updateMemoryCandidate(candidate: MemoryCandidate, options: { memoryDir?: string } = {}): void {
+    const value = validateMemoryCandidate(candidate);
+    const persist = () => {
+      const result = this.stmt(
+        `UPDATE memory_candidates SET
+       type = ?, claim = ?, normalized_claim = ?, scope = ?, sensitivity = ?, confidence = ?,
+       source_authority = ?, trust = ?, event_time = ?, proposed_at = ?, evidence = ?,
+       subject_entity_ids = ?, extractor = ?, lifecycle = ?, rejection_reason = ?,
+       canonical_path = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        value.type,
+        value.claim,
+        value.normalizedClaim,
+        value.scope,
+        value.sensitivity,
+        value.confidence,
+        value.sourceAuthority,
+        value.trust,
+        value.eventTime,
+        value.proposedAt,
+        JSON.stringify(value.evidence),
+        JSON.stringify(value.subjectEntityIds),
+        JSON.stringify(value.extractor),
+        value.lifecycle,
+        value.rejectionReason ?? null,
+        value.canonicalPath ?? null,
+        value.createdAt,
+        value.updatedAt,
+        value.id,
+      );
+      if (result.changes !== 1) throw new Error(`Memory candidate not found: ${value.id}`);
+      if (options.memoryDir) writeDurableMemoryCandidate(options.memoryDir, value);
+    };
+    if (options.memoryDir) this.transaction(persist);
+    else persist();
+  }
+
+  transitionMemoryCandidate(
+    from: MemoryCandidateLifecycle,
+    candidate: MemoryCandidate,
+    options: { memoryDir?: string } = {},
+  ): boolean {
+    const value = validateMemoryCandidate(candidate);
+    const result = this.stmt(
+      `UPDATE memory_candidates SET
+       type = ?, claim = ?, normalized_claim = ?, scope = ?, sensitivity = ?, confidence = ?,
+       source_authority = ?, trust = ?, event_time = ?, proposed_at = ?, evidence = ?,
+       subject_entity_ids = ?, extractor = ?, lifecycle = ?, rejection_reason = ?,
+       canonical_path = ?, created_at = ?, updated_at = ? WHERE id = ? AND lifecycle = ?`,
+    ).run(
+      value.type,
+      value.claim,
+      value.normalizedClaim,
+      value.scope,
+      value.sensitivity,
+      value.confidence,
+      value.sourceAuthority,
+      value.trust,
+      value.eventTime,
+      value.proposedAt,
+      JSON.stringify(value.evidence),
+      JSON.stringify(value.subjectEntityIds),
+      JSON.stringify(value.extractor),
+      value.lifecycle,
+      value.rejectionReason ?? null,
+      value.canonicalPath ?? null,
+      value.createdAt,
+      value.updatedAt,
+      value.id,
+      from,
+    );
+    if (result.changes !== 1) return false;
+    if (options.memoryDir) writeDurableMemoryCandidate(options.memoryDir, value);
+    return true;
+  }
+
+  deleteMemoryCandidate(id: string): void {
+    this.stmt('DELETE FROM memory_candidates WHERE id = ?').run(id);
+  }
+
+  private rowToMemoryCandidate(row: Record<string, unknown>): MemoryCandidate {
+    return validateMemoryCandidate({
+      id: row.id as string,
+      type: row.type as MemoryCandidate['type'],
+      claim: row.claim as string,
+      normalizedClaim: row.normalized_claim as string,
+      scope: row.scope as string,
+      sensitivity: row.sensitivity as MemoryCandidate['sensitivity'],
+      confidence: row.confidence as number,
+      sourceAuthority: row.source_authority as string,
+      trust: row.trust as number,
+      eventTime: row.event_time as string,
+      proposedAt: row.proposed_at as string,
+      evidence: JSON.parse(row.evidence as string),
+      subjectEntityIds: JSON.parse(row.subject_entity_ids as string),
+      extractor: JSON.parse(row.extractor as string),
+      lifecycle: row.lifecycle as MemoryCandidate['lifecycle'],
+      ...(typeof row.rejection_reason === 'string'
+        ? { rejectionReason: row.rejection_reason }
+        : {}),
+      ...(typeof row.canonical_path === 'string' ? { canonicalPath: row.canonical_path } : {}),
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    });
+  }
+
   // ── Historical import ledger ──────────────────────────────
 
   getImport(id: string): ImportLedgerEntry | undefined {
@@ -1256,6 +1506,22 @@ export class SqliteStore implements GraphStore {
 
   transaction<T>(operation: () => T): T {
     return this.db.transaction(operation)();
+  }
+
+  immediateTransaction<T>(operation: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = operation();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  rawDatabaseForTests(): BetterSqlite3.Database {
+    return this.db;
   }
 
   private rowToImport(row: Record<string, unknown>): ImportLedgerEntry {
@@ -1344,7 +1610,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY e.timestamp DESC';
@@ -1540,7 +1806,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY confidence DESC';
@@ -1665,7 +1931,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY created_at DESC';

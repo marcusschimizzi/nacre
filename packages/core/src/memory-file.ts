@@ -2,6 +2,12 @@ import { randomBytes } from 'node:crypto';
 import YAML from 'yaml';
 import { isValidScope, pathToScope, scopeToDir } from './scopes.js';
 import { ENTITY_TYPES, type EntityType } from './types.js';
+import {
+  validateMemoryEvidenceRef,
+  validateMemoryExtractorIdentity,
+  type MemoryEvidenceRef,
+  type MemoryExtractorIdentity,
+} from './memory-candidate.js';
 
 // ── Canonical memory files (V2-1 truth layer) ────────────────────
 //
@@ -56,6 +62,16 @@ export interface MemoryObject {
   supersededBy?: string;
   /** Provenance refs, e.g. 'episode:ep_…', 'file:docs/REVIEW.md'. */
   sources: string[];
+  /** Evidence-quality and extraction metadata for candidate-promoted memories. */
+  sourceAuthority?: string;
+  trust?: number;
+  eventTime?: string;
+  proposedAt?: string;
+  evidence?: MemoryEvidenceRef[];
+  subjectEntityIds?: string[];
+  extractor?: MemoryExtractorIdentity;
+  candidateCreatedAt?: string;
+  candidateUpdatedAt?: string;
   salience: MemorySalience;
   /** Full markdown body (claim paragraph, prose, optional `## Source` section). */
   body: string;
@@ -120,6 +136,15 @@ const KNOWN_KEYS = new Set([
   'supersedes',
   'superseded_by',
   'sources',
+  'source_authority',
+  'trust',
+  'event_time',
+  'proposed_at',
+  'evidence',
+  'subject_entity_ids',
+  'extractor',
+  'candidate_created_at',
+  'candidate_updated_at',
   'salience',
 ]);
 
@@ -133,6 +158,17 @@ function asDateString(value: unknown, field: string): string {
   if (typeof value === 'string' && value.length > 0) return value;
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   throw new MemoryFileError(`Frontmatter field "${field}" must be a date string`);
+}
+
+function asIsoTimestamp(value: unknown, field: string): string {
+  if (
+    typeof value !== 'string' ||
+    !Number.isFinite(Date.parse(value)) ||
+    new Date(Date.parse(value)).toISOString() !== value
+  ) {
+    throw new MemoryFileError(`Frontmatter field "${field}" must be an ISO timestamp`);
+  }
+  return value;
 }
 
 export function extractWikilinks(body: string): string[] {
@@ -329,8 +365,102 @@ export function parseMemoryFile(content: string, relPath?: string): ParsedMemory
     body,
   };
   if (typeof entityType === 'string') memory.entityType = entityType as EntityType;
+  if (record.source_authority !== undefined) {
+    if (typeof record.source_authority !== 'string' || !record.source_authority.trim()) {
+      throw new MemoryFileError('Invalid "source_authority": expected a non-empty string');
+    }
+    memory.sourceAuthority = record.source_authority;
+  }
+  if (record.trust !== undefined) {
+    if (
+      typeof record.trust !== 'number' ||
+      !Number.isFinite(record.trust) ||
+      record.trust < 0 ||
+      record.trust > 1
+    ) {
+      throw new MemoryFileError('Invalid "trust": expected a number in [0, 1]');
+    }
+    memory.trust = record.trust;
+  }
+  if (record.event_time !== undefined)
+    memory.eventTime = asIsoTimestamp(record.event_time, 'event_time');
+  if (record.proposed_at !== undefined) {
+    memory.proposedAt = asIsoTimestamp(record.proposed_at, 'proposed_at');
+  }
+  if (record.evidence !== undefined) {
+    if (!Array.isArray(record.evidence) || record.evidence.length === 0) {
+      throw new MemoryFileError('Invalid "evidence": expected a non-empty list');
+    }
+    try {
+      memory.evidence = record.evidence.map((ref, index) =>
+        validateMemoryEvidenceRef(ref, `evidence[${index}]`),
+      );
+    } catch (err) {
+      throw new MemoryFileError(err instanceof Error ? err.message : String(err));
+    }
+  }
+  if (Array.isArray(record.subject_entity_ids)) {
+    if (record.subject_entity_ids.some((id) => typeof id !== 'string' || !id.trim())) {
+      throw new MemoryFileError('Invalid "subject_entity_ids": expected a list of strings');
+    }
+    const sorted = [...new Set(record.subject_entity_ids)].sort();
+    if (JSON.stringify(sorted) !== JSON.stringify(record.subject_entity_ids)) {
+      throw new MemoryFileError('Invalid "subject_entity_ids": expected unique sorted strings');
+    }
+    memory.subjectEntityIds = sorted;
+  } else if (record.subject_entity_ids !== undefined) {
+    throw new MemoryFileError('Invalid "subject_entity_ids": expected a list of strings');
+  }
+  if (record.extractor !== undefined) {
+    try {
+      memory.extractor = validateMemoryExtractorIdentity(record.extractor);
+    } catch (err) {
+      throw new MemoryFileError(err instanceof Error ? err.message : String(err));
+    }
+  }
+  if (typeof record.candidate_created_at === 'string') {
+    memory.candidateCreatedAt = asIsoTimestamp(record.candidate_created_at, 'candidate_created_at');
+  }
+  if (typeof record.candidate_updated_at === 'string') {
+    memory.candidateUpdatedAt = asIsoTimestamp(record.candidate_updated_at, 'candidate_updated_at');
+  }
   if (typeof record.supersedes === 'string') memory.supersedes = record.supersedes;
   if (typeof record.superseded_by === 'string') memory.supersededBy = record.superseded_by;
+
+  const hasCandidateMetadata = [
+    'evidence',
+    'extractor',
+    'candidate_created_at',
+    'candidate_updated_at',
+  ].some((key) => record[key] !== undefined);
+  if (hasCandidateMetadata) {
+    const missing = [
+      !claim && 'claim body',
+      !memory.sourceAuthority && 'source_authority',
+      memory.trust === undefined && 'trust',
+      !memory.eventTime && 'event_time',
+      !memory.proposedAt && 'proposed_at',
+      !memory.evidence && 'evidence',
+      !memory.extractor && 'extractor',
+      !memory.candidateCreatedAt && 'candidate_created_at',
+      !memory.candidateUpdatedAt && 'candidate_updated_at',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      throw new MemoryFileError(`Incomplete candidate metadata: missing ${missing.join(', ')}`);
+    }
+    const { eventTime, proposedAt, candidateCreatedAt, candidateUpdatedAt } = memory;
+    if (!eventTime || !proposedAt || !candidateCreatedAt || !candidateUpdatedAt) {
+      throw new MemoryFileError('Incomplete candidate metadata timestamps');
+    }
+    if (Date.parse(eventTime) > Date.parse(proposedAt)) {
+      throw new MemoryFileError('Invalid candidate metadata: event_time must be <= proposed_at');
+    }
+    if (Date.parse(candidateCreatedAt) > Date.parse(candidateUpdatedAt)) {
+      throw new MemoryFileError(
+        'Invalid candidate metadata: candidate_created_at must be <= candidate_updated_at',
+      );
+    }
+  }
 
   return {
     memory,
@@ -371,6 +501,15 @@ export function serializeMemoryFile(memory: MemoryObject): string {
   if (memory.supersedes) fm.supersedes = memory.supersedes;
   if (memory.supersededBy) fm.superseded_by = memory.supersededBy;
   if (memory.sources.length > 0) fm.sources = memory.sources;
+  if (memory.sourceAuthority) fm.source_authority = memory.sourceAuthority;
+  if (memory.trust !== undefined) fm.trust = memory.trust;
+  if (memory.eventTime) fm.event_time = memory.eventTime;
+  if (memory.proposedAt) fm.proposed_at = memory.proposedAt;
+  if (memory.evidence) fm.evidence = memory.evidence;
+  if (memory.subjectEntityIds) fm.subject_entity_ids = memory.subjectEntityIds;
+  if (memory.extractor) fm.extractor = memory.extractor;
+  if (memory.candidateCreatedAt) fm.candidate_created_at = memory.candidateCreatedAt;
+  if (memory.candidateUpdatedAt) fm.candidate_updated_at = memory.candidateUpdatedAt;
   const salience: Record<string, unknown> = {
     reinforcement_count: memory.salience.reinforcementCount,
   };

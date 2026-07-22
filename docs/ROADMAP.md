@@ -110,7 +110,7 @@ make it trustworthy and used; sync makes it multi-device.
 | V2-1 | Truth layer & capture path | Shipped; canonical files rebuild SQLite |
 | V2-2 | Scope model | Shipped; scope isolation and retention pass |
 | **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
-| **V2-4** | **Memory objects & belief lifecycle** | Historical sessions consolidate into canonical, evidence-linked memories |
+| **V2-4** | **Memory objects & belief lifecycle** | Candidate vertical slice shipped; broader consolidation/lineage remains |
 | **V2-5** | **Working memory, admission & receipts** | Bounded recall explains inclusion and rejection |
 | **V2-6** | **Memory evaluation & Lobstar backfill** | Replay quality gates and staged reproducible backfill pass |
 | **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
@@ -183,6 +183,9 @@ Design: [V2-3-HISTORICAL-INGESTION.md](./V2-3-HISTORICAL-INGESTION.md) (accepted
 
 *The centerpiece: add beliefs alongside entities.*
 
+Slice design: [V2-4-MEMORY-CANDIDATES.md](./V2-4-MEMORY-CANDIDATES.md) (smallest
+evidence-backed candidate/promotion vertical slice implemented 2026-07-22).
+
 - [ ] New `Memory` object: typed claim/preference/decision/fact with
       `source`, `confidence`, `sensitivity`, `trust_level`, `scope`,
       `last_confirmed`, `superseded_by`.
@@ -196,6 +199,11 @@ Design: [V2-3-HISTORICAL-INGESTION.md](./V2-3-HISTORICAL-INGESTION.md) (accepted
 - [ ] Candidate → promotion pipeline inside consolidation: raw capture →
       candidate → durable memory, with contradiction detection and
       supersession chains instead of silent overwrite.
+- [x] Dedicated schema-v11 candidate table, deterministic direct-user explicit-form
+      extraction with per-message receipts, explicit idempotent promotion/rejection,
+      durable pending/rejected sidecar replay, canonical provenance round-trip,
+      authenticated historical evidence extraction, and candidate review CLI. Automatic
+      consolidation, contradiction, and supersession remain unchecked above.
 - [ ] Correction and deletion as product operations (correct, retire, forget)
       with lineage — deleted/superseded facts must be verifiably absent from
       recall.
