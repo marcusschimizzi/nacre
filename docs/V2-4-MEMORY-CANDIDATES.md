@@ -1,6 +1,6 @@
-# V2-4 Slice 2 — Evidence-backed Memory Candidates
+# V2-4 Slices 2–3 — Evidence-backed Candidates and Belief Resolution
 
-Status: **smallest end-to-end candidate-memory slice implemented** (2026-07-22)
+Status: **explicit candidate and deterministic belief-lifecycle slices implemented** (2026-07-22)
 
 ## Purpose
 
@@ -74,11 +74,40 @@ nacre candidates list --graph /path/graph.db
 nacre candidates list --graph /path/graph.db --lifecycle candidate --scope project/nacre
 nacre candidates show mem_<id> --graph /path/graph.db
 nacre candidates promote mem_<id> --graph /path/graph.db --memory-dir /path/memory
+nacre candidates resolve mem_<id> --graph /path/graph.db --memory-dir /path/memory
 nacre candidates reject mem_<id> --graph /path/graph.db --memory-dir /path/memory --reason "not durable"
 nacre candidates extract --graph /path/graph.db --memory-dir /path/memory
 ```
 
 Output is JSON for scripting and review.
+
+## Slice 3 explicit resolution contract
+
+`nacre candidates resolve <id> --graph <db> --memory-dir <root>` is an explicit,
+review-driven operation. It never runs extraction or an LLM. It returns a JSON
+receipt with `created`, `corroborated`, `superseded`, `no_op`, or `needs_review`.
+
+- Same normalized claims merge only within one scope. Independent support is a
+  stable source-event identity (`sourceRef` plus message ID), not content bytes:
+  identical text from two events corroborates, while replay of one event does not.
+- Confidence is exactly `1 - product(1 - authority * trust)` over independent
+  supports. Authority is deterministic: direct user `1`, assistant inference
+  `0.6`, and unknown `0.25`. Each receipt and canonical file records the paired
+  source event, authority label/value, and trust; candidate confidence is not an
+  authority proxy.
+- Only the supported copular-negation form is auto-resolved. An explicit
+  correction needs one unique same-scope target, later event time, and authority
+  at least as high as the target. Otherwise it returns `needs_review` with no
+  canonical or candidate lifecycle write.
+- Supersession writes bidirectional lineage and contiguous `[valid_from,
+  valid_until)` event-time intervals. Current and `asOf` recall remove hidden
+  beliefs before semantic admission or graph traversal, including fresh rebuilds.
+- Resolution is serialized per memory root. A durable fsynced intent makes every
+  canonical file, candidate sidecar, and SQLite update replayable. Recovery is
+  idempotent; malformed intents and malformed canonical lineage fail closed.
+- Canonical files and candidate state remain confined below the memory root with
+  private `0700` directories and `0600` files. Session and secret candidates,
+  cross-scope merges, and lower-authority corrections are refused.
 
 ## Threat and privacy boundaries
 
@@ -93,8 +122,8 @@ Output is JSON for scripting and review.
 
 - broad or LLM-based extraction;
 - automatic promotion, promotion thresholds, salience/admission, or reinforcement;
-- candidate merging/corroboration across independent evidence;
-- contradiction, correction lineage, supersession, retirement, forgetting, and temporal belief resolution;
+- broad contradiction forms, ambiguous target selection, retirement, and product-level correction UI;
+- automatic resolution/promotion, learned authority, or probabilistic source dependence;
 - automatic subject-entity resolution;
 - sensitivity inference or production secret/PII scanning;
 - REST/MCP/Hermes integration.

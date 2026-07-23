@@ -56,7 +56,7 @@ import { writeDurableMemoryCandidate } from './memory-candidate-durable.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -78,7 +78,10 @@ CREATE TABLE IF NOT EXISTS nodes (
   hive_exclude        INTEGER NOT NULL DEFAULT 0,
   status              TEXT,
   canonical_path      TEXT,
-  scope               TEXT
+  scope               TEXT,
+  belief_lifecycle    TEXT,
+  valid_from          TEXT,
+  valid_until         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -251,6 +254,7 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
   lifecycle TEXT NOT NULL CHECK(lifecycle IN ('candidate','promoted','rejected')),
   rejection_reason TEXT,
   canonical_path TEXT,
+  resolved_memory_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -285,6 +289,11 @@ function rowToNode(row: Record<string, unknown>): MemoryNode {
   if (typeof row.scope === 'string') {
     node.scope = row.scope;
   }
+  if (row.belief_lifecycle === 'active' || row.belief_lifecycle === 'superseded') {
+    node.beliefLifecycle = row.belief_lifecycle;
+  }
+  if (typeof row.valid_from === 'string') node.validFrom = row.valid_from;
+  if (typeof row.valid_until === 'string') node.validUntil = row.valid_until;
   return node;
 }
 
@@ -769,6 +778,14 @@ export class SqliteStore implements GraphStore {
             ON memory_candidates(lifecycle, proposed_at, id);
         `);
       }
+      if (ver < 12) {
+        db.exec(`
+          ALTER TABLE memory_candidates ADD COLUMN resolved_memory_id TEXT;
+          ALTER TABLE nodes ADD COLUMN belief_lifecycle TEXT;
+          ALTER TABLE nodes ADD COLUMN valid_from TEXT;
+          ALTER TABLE nodes ADD COLUMN valid_until TEXT;
+        `);
+      }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
         'schema_version',
         String(SCHEMA_VERSION),
@@ -860,8 +877,8 @@ export class SqliteStore implements GraphStore {
   putNode(node: MemoryNode): void {
     this.stmt(
       `INSERT OR REPLACE INTO nodes
-       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path, scope)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path, scope, belief_lifecycle, valid_from, valid_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       node.id,
       node.label,
@@ -877,6 +894,9 @@ export class SqliteStore implements GraphStore {
       node.status ?? null,
       node.canonicalPath ?? null,
       node.scope ?? null,
+      node.beliefLifecycle ?? null,
+      node.validFrom ?? null,
+      node.validUntil ?? null,
     );
     this.invalidateCaches();
   }
@@ -1292,8 +1312,8 @@ export class SqliteStore implements GraphStore {
         `INSERT OR IGNORE INTO memory_candidates
        (id, type, claim, normalized_claim, scope, sensitivity, confidence, source_authority,
         trust, event_time, proposed_at, evidence, subject_entity_ids, extractor, lifecycle,
-        rejection_reason, canonical_path, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        rejection_reason, canonical_path, resolved_memory_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         value.id,
         value.type,
@@ -1312,6 +1332,7 @@ export class SqliteStore implements GraphStore {
         value.lifecycle,
         value.rejectionReason ?? null,
         value.canonicalPath ?? null,
+        value.resolvedMemoryId ?? null,
         value.createdAt,
         value.updatedAt,
       );
@@ -1365,7 +1386,7 @@ export class SqliteStore implements GraphStore {
        type = ?, claim = ?, normalized_claim = ?, scope = ?, sensitivity = ?, confidence = ?,
        source_authority = ?, trust = ?, event_time = ?, proposed_at = ?, evidence = ?,
        subject_entity_ids = ?, extractor = ?, lifecycle = ?, rejection_reason = ?,
-       canonical_path = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+       canonical_path = ?, resolved_memory_id = ?, created_at = ?, updated_at = ? WHERE id = ?`,
       ).run(
         value.type,
         value.claim,
@@ -1383,6 +1404,7 @@ export class SqliteStore implements GraphStore {
         value.lifecycle,
         value.rejectionReason ?? null,
         value.canonicalPath ?? null,
+        value.resolvedMemoryId ?? null,
         value.createdAt,
         value.updatedAt,
         value.id,
@@ -1405,7 +1427,7 @@ export class SqliteStore implements GraphStore {
        type = ?, claim = ?, normalized_claim = ?, scope = ?, sensitivity = ?, confidence = ?,
        source_authority = ?, trust = ?, event_time = ?, proposed_at = ?, evidence = ?,
        subject_entity_ids = ?, extractor = ?, lifecycle = ?, rejection_reason = ?,
-       canonical_path = ?, created_at = ?, updated_at = ? WHERE id = ? AND lifecycle = ?`,
+       canonical_path = ?, resolved_memory_id = ?, created_at = ?, updated_at = ? WHERE id = ? AND lifecycle = ?`,
     ).run(
       value.type,
       value.claim,
@@ -1423,6 +1445,7 @@ export class SqliteStore implements GraphStore {
       value.lifecycle,
       value.rejectionReason ?? null,
       value.canonicalPath ?? null,
+      value.resolvedMemoryId ?? null,
       value.createdAt,
       value.updatedAt,
       value.id,
@@ -1458,6 +1481,9 @@ export class SqliteStore implements GraphStore {
         ? { rejectionReason: row.rejection_reason }
         : {}),
       ...(typeof row.canonical_path === 'string' ? { canonicalPath: row.canonical_path } : {}),
+      ...(typeof row.resolved_memory_id === 'string'
+        ? { resolvedMemoryId: row.resolved_memory_id }
+        : {}),
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     });

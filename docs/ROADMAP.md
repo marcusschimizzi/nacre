@@ -50,7 +50,8 @@ Nacre was designed before the research corpus existed. Measured against it:
 2. **Entities aren't beliefs.** Nacre's atom is an entity with excerpts; the
    field's atom is a memory object — a claim with source, confidence,
    sensitivity, trust, and supersession/correction lineage. Nacre models
-   *salience* but not *belief lifecycle*.
+   *salience* broadly; Slice 3 now adds a narrow deterministic belief lifecycle,
+   while generalized semantic consolidation remains open.
 3. **No receipts, no admission layer.** `nacre_brief` injects context without
    recording what was included, rejected, or why; recall gates on similarity
    only, not appropriateness (scope, freshness, sensitivity).
@@ -110,7 +111,7 @@ make it trustworthy and used; sync makes it multi-device.
 | V2-1 | Truth layer & capture path | Shipped; canonical files rebuild SQLite |
 | V2-2 | Scope model | Shipped; scope isolation and retention pass |
 | **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
-| **V2-4** | **Memory objects & belief lifecycle** | Candidate vertical slice shipped; broader consolidation/lineage remains |
+| **V2-4** | **Memory objects & belief lifecycle** | Candidate and first belief-resolution slices shipped; generalized consolidation remains |
 | **V2-5** | **Working memory, admission & receipts** | Bounded recall explains inclusion and rejection |
 | **V2-6** | **Memory evaluation & Lobstar backfill** | Replay quality gates and staged reproducible backfill pass |
 | **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
@@ -196,14 +197,18 @@ evidence-backed candidate/promotion vertical slice implemented 2026-07-22).
 - [ ] Entities become the associative index *over* memories; decay and
       reinforcement govern memory salience (this subsumes the old
       "nodes never decay" issue).
-- [ ] Candidate → promotion pipeline inside consolidation: raw capture →
-      candidate → durable memory, with contradiction detection and
+- [x] Explicit candidate → belief resolution pipeline: candidate →
+      durable memory, with narrow deterministic contradiction handling and
       supersession chains instead of silent overwrite.
 - [x] Dedicated schema-v11 candidate table, deterministic direct-user explicit-form
       extraction with per-message receipts, explicit idempotent promotion/rejection,
       durable pending/rejected sidecar replay, canonical provenance round-trip,
       authenticated historical evidence extraction, and candidate review CLI. Automatic
-      consolidation, contradiction, and supersession remain unchecked above.
+      Slice 3 adds explicit `candidates resolve`, same-claim corroboration by
+      independent source-event identity, deterministic per-support confidence,
+      narrow authority-gated correction/supersession, temporal recall filtering,
+      schema v12 rebuild fields, and crash-recoverable serialized transactions.
+      Automatic resolution, broad contradiction semantics, and LLM extraction remain deferred.
 - [ ] Correction and deletion as product operations (correct, retire, forget)
       with lineage — deleted/superseded facts must be verifiably absent from
       recall.

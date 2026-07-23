@@ -84,12 +84,44 @@ describe('candidates command surface', () => {
     const value = seed(store);
     store.close();
     const bin = join(import.meta.dirname, '../../dist/index.js');
+    const memoryDir = join(root, 'memory');
 
     const list = spawnSync(process.execPath, [bin, 'candidates', 'list', '--graph', db], {
       encoding: 'utf8',
     });
     assert.equal(list.status, 0, list.stderr);
     assert.match(list.stdout, new RegExp(value.id));
+
+    const resolve = spawnSync(
+      process.execPath,
+      [bin, 'candidates', 'resolve', value.id, '--graph', db, '--memory-dir', memoryDir],
+      { encoding: 'utf8' },
+    );
+    assert.equal(resolve.status, 0, resolve.stderr);
+    const receipt = JSON.parse(resolve.stdout) as {
+      decision: string;
+      candidateId: string;
+      memoryId: string;
+    };
+    assert.deepEqual(receipt, {
+      decision: 'created',
+      candidateId: value.id,
+      memoryId: value.id,
+      reason: 'no_matching_canonical_belief',
+      confidence: 1,
+      confidenceInputs: {
+        independentEvidenceCount: 1,
+        supports: [
+          {
+            sourceEventId: 'openclaw:s#message:m|m',
+            sourceAuthority: 'direct_user',
+            authority: 1,
+            trust: 1,
+          },
+        ],
+        formula: '1 - product(1 - support.authority * support.trust)',
+      },
+    });
 
     const badLifecycle = spawnSync(
       process.execPath,

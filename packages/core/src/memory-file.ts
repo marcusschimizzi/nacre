@@ -3,11 +3,14 @@ import YAML from 'yaml';
 import { isValidScope, pathToScope, scopeToDir } from './scopes.js';
 import { ENTITY_TYPES, type EntityType } from './types.js';
 import {
+  validateMemoryCandidate,
   validateMemoryEvidenceRef,
   validateMemoryExtractorIdentity,
+  type MemoryCandidate,
   type MemoryEvidenceRef,
   type MemoryExtractorIdentity,
 } from './memory-candidate.js';
+import { beliefConfidence, beliefConfidenceInputs } from './memory-belief-confidence.js';
 
 // ── Canonical memory files (V2-1 truth layer) ────────────────────
 //
@@ -60,6 +63,25 @@ export interface MemoryObject {
   lastConfirmed: string;
   supersedes?: string;
   supersededBy?: string;
+  /** Belief lifecycle and event-time validity; canonical files are authoritative. */
+  lifecycle?: 'active' | 'superseded';
+  validFrom?: string;
+  validUntil?: string;
+  /** Candidate identities aggregated into this belief (evidence identity remains separate). */
+  candidateIds?: string[];
+  /** Complete promoted candidate records required to rebuild candidate→belief resolution. */
+  candidateRecords?: MemoryCandidate[];
+  independentEvidenceCount?: number;
+  confidenceInputs?: {
+    independentEvidenceCount: number;
+    supports: Array<{
+      sourceEventId: string;
+      sourceAuthority: string;
+      authority: number;
+      trust: number;
+    }>;
+    formula: string;
+  };
   /** Provenance refs, e.g. 'episode:ep_…', 'file:docs/REVIEW.md'. */
   sources: string[];
   /** Evidence-quality and extraction metadata for candidate-promoted memories. */
@@ -135,6 +157,13 @@ const KNOWN_KEYS = new Set([
   'last_confirmed',
   'supersedes',
   'superseded_by',
+  'lifecycle',
+  'valid_from',
+  'valid_until',
+  'candidate_ids',
+  'candidate_records',
+  'independent_evidence_count',
+  'confidence_inputs',
   'sources',
   'source_authority',
   'trust',
@@ -426,6 +455,163 @@ export function parseMemoryFile(content: string, relPath?: string): ParsedMemory
   }
   if (typeof record.supersedes === 'string') memory.supersedes = record.supersedes;
   if (typeof record.superseded_by === 'string') memory.supersededBy = record.superseded_by;
+  if (memory.supersedes !== undefined && !isMemoryId(memory.supersedes)) {
+    throw new MemoryFileError('Invalid lineage: "supersedes" must be a memory id');
+  }
+  if (memory.supersededBy !== undefined && !isMemoryId(memory.supersededBy)) {
+    throw new MemoryFileError('Invalid lineage: "superseded_by" must be a memory id');
+  }
+  if (memory.supersedes === memory.id || memory.supersededBy === memory.id) {
+    throw new MemoryFileError('Invalid lineage: a belief cannot supersede itself');
+  }
+  if (record.lifecycle !== undefined) {
+    if (record.lifecycle !== 'active' && record.lifecycle !== 'superseded') {
+      throw new MemoryFileError('Invalid "lifecycle": expected active or superseded');
+    }
+    memory.lifecycle = record.lifecycle;
+  }
+  if (record.valid_from !== undefined)
+    memory.validFrom = asIsoTimestamp(record.valid_from, 'valid_from');
+  if (record.valid_until !== undefined)
+    memory.validUntil = asIsoTimestamp(record.valid_until, 'valid_until');
+  if (memory.lifecycle === 'active' && (memory.supersededBy || memory.validUntil)) {
+    throw new MemoryFileError(
+      'Invalid lineage: active belief cannot have superseded_by or valid_until',
+    );
+  }
+  if (memory.lifecycle === 'superseded' && (!memory.supersededBy || !memory.validUntil)) {
+    throw new MemoryFileError(
+      'Invalid lineage: superseded belief requires superseded_by and valid_until',
+    );
+  }
+  if (memory.validFrom && memory.validUntil && memory.validFrom >= memory.validUntil) {
+    throw new MemoryFileError('Invalid validity interval: valid_from must precede valid_until');
+  }
+  if (record.candidate_ids !== undefined) {
+    if (
+      !Array.isArray(record.candidate_ids) ||
+      record.candidate_ids.some((id) => typeof id !== 'string' || !isMemoryId(id))
+    ) {
+      throw new MemoryFileError('Invalid "candidate_ids": expected memory ids');
+    }
+    const ids = [...new Set(record.candidate_ids)].sort() as string[];
+    if (JSON.stringify(ids) !== JSON.stringify(record.candidate_ids)) {
+      throw new MemoryFileError('Invalid "candidate_ids": expected unique sorted ids');
+    }
+    memory.candidateIds = ids;
+  }
+  if (record.candidate_records !== undefined) {
+    if (!Array.isArray(record.candidate_records)) {
+      throw new MemoryFileError('Invalid "candidate_records": expected array');
+    }
+    try {
+      const records = record.candidate_records.map((value) =>
+        validateMemoryCandidate(value as MemoryCandidate),
+      );
+      const sorted = [...records].sort((a, b) => a.id.localeCompare(b.id));
+      if (
+        records.some((value, index) => value.id !== sorted[index]?.id) ||
+        new Set(records.map((value) => value.id)).size !== records.length
+      ) {
+        throw new Error('expected unique records sorted by id');
+      }
+      if (records.some((value) => value.lifecycle !== 'promoted' || !value.resolvedMemoryId)) {
+        throw new Error('expected promoted records with resolvedMemoryId');
+      }
+      memory.candidateRecords = records;
+    } catch (error) {
+      throw new MemoryFileError(
+        `Invalid "candidate_records": ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  if (record.independent_evidence_count !== undefined) {
+    if (
+      !Number.isInteger(record.independent_evidence_count) ||
+      (record.independent_evidence_count as number) < 1
+    ) {
+      throw new MemoryFileError('Invalid "independent_evidence_count": expected positive integer');
+    }
+    memory.independentEvidenceCount = record.independent_evidence_count as number;
+  }
+  if (record.confidence_inputs !== undefined) {
+    const inputs = record.confidence_inputs as Record<string, unknown>;
+    if (
+      !inputs ||
+      typeof inputs !== 'object' ||
+      Array.isArray(inputs) ||
+      !Number.isInteger(inputs.independent_evidence_count) ||
+      !Array.isArray(inputs.supports) ||
+      typeof inputs.formula !== 'string'
+    ) {
+      throw new MemoryFileError('Invalid "confidence_inputs"');
+    }
+    const supports = inputs.supports.map((support) => {
+      const value = support as Record<string, unknown>;
+      if (
+        typeof value.source_event_id !== 'string' ||
+        typeof value.source_authority !== 'string' ||
+        typeof value.authority !== 'number' ||
+        value.authority < 0 ||
+        value.authority > 1 ||
+        typeof value.trust !== 'number' ||
+        value.trust < 0 ||
+        value.trust > 1
+      ) {
+        throw new MemoryFileError('Invalid "confidence_inputs.supports"');
+      }
+      return {
+        sourceEventId: value.source_event_id,
+        sourceAuthority: value.source_authority,
+        authority: value.authority,
+        trust: value.trust,
+      };
+    });
+    if (supports.length !== inputs.independent_evidence_count) {
+      throw new MemoryFileError('Invalid "confidence_inputs": support count mismatch');
+    }
+    memory.confidenceInputs = {
+      independentEvidenceCount: inputs.independent_evidence_count as number,
+      supports,
+      formula: inputs.formula,
+    };
+  }
+
+  if (memory.candidateRecords) {
+    if (!memory.candidateIds || !memory.confidenceInputs || !memory.independentEvidenceCount) {
+      throw new MemoryFileError(
+        'Invalid belief provenance: candidate records require ids, evidence count, and confidence inputs',
+      );
+    }
+    const recordIds = memory.candidateRecords.map((candidate) => candidate.id);
+    if (JSON.stringify(recordIds) !== JSON.stringify(memory.candidateIds)) {
+      throw new MemoryFileError('Invalid belief provenance: candidate_ids disagree with records');
+    }
+    if (
+      memory.candidateRecords.some(
+        (candidate) =>
+          candidate.resolvedMemoryId !== memory.id || candidate.canonicalPath !== relPath,
+      )
+    ) {
+      throw new MemoryFileError(
+        'Invalid belief provenance: candidate resolution does not identify this canonical memory',
+      );
+    }
+    const expectedInputs = beliefConfidenceInputs(memory.candidateRecords);
+    if (JSON.stringify(memory.confidenceInputs) !== JSON.stringify(expectedInputs)) {
+      throw new MemoryFileError(
+        'Invalid belief provenance: confidence inputs disagree with candidate records',
+      );
+    }
+    if (
+      memory.independentEvidenceCount !== expectedInputs.independentEvidenceCount ||
+      memory.confidence !== beliefConfidence(expectedInputs)
+    ) {
+      throw new MemoryFileError(
+        'Invalid belief provenance: confidence or evidence count disagrees with its inputs',
+      );
+    }
+  }
 
   const hasCandidateMetadata = [
     'evidence',
@@ -500,6 +686,25 @@ export function serializeMemoryFile(memory: MemoryObject): string {
   };
   if (memory.supersedes) fm.supersedes = memory.supersedes;
   if (memory.supersededBy) fm.superseded_by = memory.supersededBy;
+  if (memory.lifecycle) fm.lifecycle = memory.lifecycle;
+  if (memory.validFrom) fm.valid_from = memory.validFrom;
+  if (memory.validUntil) fm.valid_until = memory.validUntil;
+  if (memory.candidateIds) fm.candidate_ids = memory.candidateIds;
+  if (memory.candidateRecords) fm.candidate_records = memory.candidateRecords;
+  if (memory.independentEvidenceCount !== undefined)
+    fm.independent_evidence_count = memory.independentEvidenceCount;
+  if (memory.confidenceInputs) {
+    fm.confidence_inputs = {
+      independent_evidence_count: memory.confidenceInputs.independentEvidenceCount,
+      supports: memory.confidenceInputs.supports.map((support) => ({
+        source_event_id: support.sourceEventId,
+        source_authority: support.sourceAuthority,
+        authority: support.authority,
+        trust: support.trust,
+      })),
+      formula: memory.confidenceInputs.formula,
+    };
+  }
   if (memory.sources.length > 0) fm.sources = memory.sources;
   if (memory.sourceAuthority) fm.source_authority = memory.sourceAuthority;
   if (memory.trust !== undefined) fm.trust = memory.trust;

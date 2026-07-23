@@ -76,6 +76,40 @@ describe('MemoryCandidate persistence', () => {
     store.close();
   });
 
+  it('migrates schema v11 to v12 without losing legacy candidate CRUD fields', () => {
+    const root = mkdtempSync(join(tmpdir(), 'nacre-schema-v11-'));
+    const dbPath = join(root, 'graph.db');
+    const legacy = openStore(dbPath);
+    const value = candidate();
+    legacy.createMemoryCandidate(value);
+    const db = legacy.rawDatabaseForTests();
+    db.exec(`
+      ALTER TABLE memory_candidates DROP COLUMN resolved_memory_id;
+      ALTER TABLE nodes DROP COLUMN belief_lifecycle;
+      ALTER TABLE nodes DROP COLUMN valid_from;
+      ALTER TABLE nodes DROP COLUMN valid_until;
+      UPDATE meta SET value = '11' WHERE key = 'schema_version';
+    `);
+    legacy.close();
+
+    const migrated = openStore(dbPath);
+    assert.deepEqual(migrated.getMemoryCandidate(value.id), value);
+    const promoted = {
+      ...value,
+      lifecycle: 'promoted' as const,
+      canonicalPath: 'user/preferences/test.md',
+      resolvedMemoryId: 'mem_aaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+    migrated.updateMemoryCandidate(promoted);
+    assert.equal(
+      migrated.getMemoryCandidate(value.id)?.resolvedMemoryId,
+      promoted.resolvedMemoryId,
+    );
+    assert.equal(migrated.getMeta('schema_version'), '12');
+    migrated.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('rejects malformed candidates at the store CRUD boundary', () => {
     const store = openStore();
     assert.throws(

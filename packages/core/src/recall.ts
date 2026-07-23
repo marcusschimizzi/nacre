@@ -251,6 +251,39 @@ export async function recall(
     adj = store.getAdjacencyMap();
   }
 
+  // Validity is an admission boundary, not merely a final result filter:
+  // stale/future beliefs cannot seed or bridge graph traversal, nor receive
+  // semantic boosts through episode links.
+  const effectiveAt = opts.asOf ?? nowStr;
+  const hiddenBeliefIds = new Set(
+    Object.values(graph.nodes)
+      .filter(
+        (node) =>
+          (node.validFrom !== undefined && effectiveAt < node.validFrom) ||
+          (node.validUntil !== undefined && effectiveAt >= node.validUntil) ||
+          (!opts.asOf && node.beliefLifecycle === 'superseded'),
+      )
+      .map((node) => node.id),
+  );
+  if (hiddenBeliefIds.size > 0) {
+    graph = {
+      ...graph,
+      nodes: Object.fromEntries(
+        Object.entries(graph.nodes).filter(([id]) => !hiddenBeliefIds.has(id)),
+      ),
+      edges: Object.fromEntries(
+        Object.entries(graph.edges).filter(
+          ([, edge]) => !hiddenBeliefIds.has(edge.source) && !hiddenBeliefIds.has(edge.target),
+        ),
+      ),
+    };
+    for (const id of hiddenBeliefIds) {
+      semanticMap.delete(id);
+      episodeHits.delete(id);
+    }
+    adj = buildAdjacencyMap(graph);
+  }
+
   const terms = extractQueryTerms(opts.query);
 
   const seedIds: string[] = [];
@@ -296,6 +329,11 @@ export async function recall(
   for (const id of candidateIds) {
     const node = graph.nodes[id];
     if (!node) continue;
+
+    const effectiveAt = opts.asOf ?? nowStr;
+    if (node.validFrom && effectiveAt < node.validFrom) continue;
+    if (node.validUntil && effectiveAt >= node.validUntil) continue;
+    if (!opts.asOf && node.beliefLifecycle === 'superseded') continue;
 
     if (!nodeVisibleInScopes(node, opts.scopes)) continue;
 

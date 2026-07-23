@@ -59,6 +59,10 @@ export interface MemoryNode {
    * nodes — entities are the shared vocabulary, visible from every scope.
    */
   scope?: string;
+  /** File-derived belief lifecycle and event-time validity. */
+  beliefLifecycle?: 'active' | 'superseded';
+  validFrom?: string;
+  validUntil?: string;
 }
 
 export type EdgeType = 'explicit' | 'co-occurrence' | 'temporal' | 'causal';

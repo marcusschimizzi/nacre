@@ -10,6 +10,8 @@ export * from './memory-file.js';
 export * from './memory-candidate.js';
 export * from './memory-extraction.js';
 export * from './memory-candidate-lifecycle.js';
+export * from './memory-consolidate.js';
+export * from './memory-resolution-transaction.js';
 export * from './memory-compile.js';
 export * from './capture.js';
 export * from './memory-promote.js';

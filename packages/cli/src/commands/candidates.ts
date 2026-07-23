@@ -3,6 +3,8 @@ import {
   SqliteStore,
   promoteMemoryCandidate,
   rejectMemoryCandidate,
+  resolveMemoryCandidate,
+  type MemoryResolutionReceipt,
   type MemoryCandidate,
   type MemoryCandidateLifecycle,
 } from '@nacre/core';
@@ -16,17 +18,21 @@ export type CandidateActionOptions =
   | (BaseCandidateAction & { action: 'list'; lifecycle?: MemoryCandidateLifecycle; scope?: string })
   | (BaseCandidateAction & { action: 'show'; id: string })
   | (BaseCandidateAction & { action: 'promote'; id: string; memoryDir: string })
+  | (BaseCandidateAction & { action: 'resolve'; id: string; memoryDir: string })
   | (BaseCandidateAction & { action: 'reject'; id: string; reason: string; memoryDir: string });
 
 export function executeCandidateAction(
   options: Extract<CandidateActionOptions, { action: 'list' }>,
 ): MemoryCandidate[];
 export function executeCandidateAction(
-  options: Exclude<CandidateActionOptions, { action: 'list' }>,
+  options: Extract<CandidateActionOptions, { action: 'show' | 'promote' | 'reject' }>,
 ): MemoryCandidate;
 export function executeCandidateAction(
+  options: Extract<CandidateActionOptions, { action: 'resolve' }>,
+): MemoryResolutionReceipt;
+export function executeCandidateAction(
   options: CandidateActionOptions,
-): MemoryCandidate | MemoryCandidate[] {
+): MemoryCandidate | MemoryCandidate[] | MemoryResolutionReceipt {
   const store = SqliteStore.open(options.graph);
   try {
     if (options.action === 'list') {
@@ -40,6 +46,9 @@ export function executeCandidateAction(
     if (options.action === 'show') return candidate;
     if (options.action === 'promote') {
       return promoteMemoryCandidate(store, options.memoryDir, options.id).candidate;
+    }
+    if (options.action === 'resolve') {
+      return resolveMemoryCandidate(store, options.memoryDir, options.id);
     }
     return rejectMemoryCandidate(store, options.memoryDir, options.id, options.reason);
   } finally {
@@ -111,6 +120,33 @@ export default defineCommand({
           formatJSON(
             executeCandidateAction({
               action: 'promote',
+              graph: args.graph as string,
+              id: args.id as string,
+              memoryDir: args['memory-dir'] as string,
+            }),
+          ),
+        );
+      },
+    }),
+    resolve: defineCommand({
+      meta: {
+        name: 'resolve',
+        description: 'Explicitly resolve a candidate into the belief lifecycle',
+      },
+      args: {
+        id: { type: 'positional', description: 'Candidate id', required: true },
+        graph: { type: 'string', description: 'Path to graph database (.db)', required: true },
+        'memory-dir': {
+          type: 'string',
+          description: 'Canonical memory root',
+          required: true,
+        },
+      },
+      run({ args }) {
+        console.log(
+          formatJSON(
+            executeCandidateAction({
+              action: 'resolve',
               graph: args.graph as string,
               id: args.id as string,
               memoryDir: args['memory-dir'] as string,

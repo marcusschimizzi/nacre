@@ -9,7 +9,9 @@ import {
   tombstonedIds,
 } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
+import { validateCanonicalBeliefSet, type CanonicalBelief } from './belief-validation.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
+import { recoverMemoryResolutionTransactions } from './memory-resolution-transaction.js';
 import { normalizeMemoryClaim } from './memory-extraction.js';
 import { SESSION_SCOPE, resolveWriteScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
@@ -109,6 +111,46 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     warnings: [],
     errors: [],
   };
+  if (!existsSync(memoryDir)) return result;
+  // A prepared resolution intent is authoritative. Finish it before reading
+  // canonical files so rebuild can never observe a one-file half-state.
+  recoverMemoryResolutionTransactions(store, memoryDir);
+  // Lineage is a graph-wide invariant. Validate all parseable canonical files
+  // before writing any derived rows so malformed references/cycles fail closed.
+  const beliefPreflight: CanonicalBelief[] = [];
+  const fatalBeliefParseErrors: string[] = [];
+  for (const path of listMemoryFiles(memoryDir)) {
+    const content = readFileSync(join(memoryDir, path), 'utf8');
+    try {
+      beliefPreflight.push({
+        path,
+        parsed: parseMemoryFile(content, path),
+      });
+    } catch (error) {
+      // Per-file parse errors retain the established partial-compile behavior;
+      // malformed belief/candidate lineage is different: compiling peers would
+      // publish a derived view of a truth set whose ownership cannot be known.
+      if (
+        /candidate_records|candidate_ids|supersedes|superseded_by|valid_(?:from|until)|lifecycle:/.test(
+          content,
+        )
+      ) {
+        fatalBeliefParseErrors.push(
+          `${path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  if (fatalBeliefParseErrors.length > 0) {
+    result.errors.push(...fatalBeliefParseErrors.map((error) => `belief preflight: ${error}`));
+    return result;
+  }
+  try {
+    validateCanonicalBeliefSet(beliefPreflight);
+  } catch (error) {
+    result.errors.push(`belief lineage: ${error instanceof Error ? error.message : String(error)}`);
+    return result;
+  }
   // Entity ids each compiled memory currently links — the file-derived truth
   // for that memory's explicit edges.
   const currentLinks = new Map<string, Set<string>>();
@@ -163,6 +205,12 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
         result.warnings.push(`${relPath}: ${warning}`);
       }
       compileMemory(store, parsed, relPath, result, currentLinks);
+      for (const candidate of parsed.memory.candidateRecords ?? []) {
+        const rebuilt = { ...candidate, canonicalPath: relPath };
+        const existing = store.getMemoryCandidate(rebuilt.id);
+        if (existing) store.updateMemoryCandidate(rebuilt);
+        else store.createMemoryCandidate(rebuilt);
+      }
     } catch (err) {
       if (err instanceof MemoryFileError) {
         result.errors.push(`${relPath}: ${err.message}`);
@@ -393,6 +441,9 @@ function compileMemory(
     status: 'promoted',
     canonicalPath: relPath,
     scope: memory.scope,
+    ...(memory.lifecycle ? { beliefLifecycle: memory.lifecycle } : {}),
+    ...(memory.validFrom ? { validFrom: memory.validFrom } : {}),
+    ...(memory.validUntil ? { validUntil: memory.validUntil } : {}),
   };
   store.putNode(memoryNode);
   result.memories++;

@@ -38,6 +38,8 @@ export interface MemoryCandidate {
   lifecycle: MemoryCandidateLifecycle;
   rejectionReason?: string;
   canonicalPath?: string;
+  /** Canonical belief identity, distinct from this evidence-specific candidate id. */
+  resolvedMemoryId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -241,8 +243,13 @@ export function validateMemoryCandidate(candidate: MemoryCandidate): MemoryCandi
       throw new MemoryCandidateValidationError('promoted candidates require canonicalPath');
     }
     assertConfinedCanonicalPath(candidate.canonicalPath);
+    if (candidate.resolvedMemoryId !== undefined && !isMemoryId(candidate.resolvedMemoryId)) {
+      throw new MemoryCandidateValidationError('resolvedMemoryId must be a memory id');
+    }
   } else if (candidate.canonicalPath !== undefined) {
     throw new MemoryCandidateValidationError('only promoted candidates may have canonicalPath');
+  } else if (candidate.resolvedMemoryId !== undefined) {
+    throw new MemoryCandidateValidationError('only promoted candidates may have resolvedMemoryId');
   }
   return {
     ...candidate,
