@@ -336,7 +336,12 @@ export function parseMemoryFile(content: string, relPath?: string): ParsedMemory
   }
 
   const confidence = record.confidence ?? 1;
-  if (typeof confidence !== 'number' || confidence < 0 || confidence > 1) {
+  if (
+    typeof confidence !== 'number' ||
+    !Number.isFinite(confidence) ||
+    confidence < 0 ||
+    confidence > 1
+  ) {
     throw new MemoryFileError(
       `Invalid "confidence": ${JSON.stringify(confidence)} (expected a number in [0, 1])`,
     );

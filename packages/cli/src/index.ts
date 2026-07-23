@@ -22,6 +22,7 @@ import hiveCmd from './commands/hive.js';
 import rebuildCmd from './commands/rebuild.js';
 import exportCmd from './commands/export.js';
 import candidatesCmd from './commands/candidates.js';
+import salienceCmd from './commands/salience.js';
 
 const main = defineCommand({
   meta: {
@@ -54,6 +55,7 @@ const main = defineCommand({
     rebuild: rebuildCmd,
     export: exportCmd,
     candidates: candidatesCmd,
+    salience: salienceCmd,
   },
 });
 

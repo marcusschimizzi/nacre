@@ -131,6 +131,15 @@ describe('parseMemoryFile', () => {
         ),
       MemoryFileError,
     );
+    assert.throws(
+      () =>
+        parseMemoryFile(
+          base(
+            'id: mem_0011aabbccdd\ntype: fact\nscope: user\ncreated: 2026-07-17\nconfidence: .nan',
+          ),
+        ),
+      MemoryFileError,
+    );
   });
 
   it('path-encoded scope wins over frontmatter scope, with a warning', () => {

@@ -111,7 +111,7 @@ make it trustworthy and used; sync makes it multi-device.
 | V2-1 | Truth layer & capture path | Shipped; canonical files rebuild SQLite |
 | V2-2 | Scope model | Shipped; scope isolation and retention pass |
 | **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
-| **V2-4** | **Memory objects & belief lifecycle** | Candidate and first belief-resolution slices shipped; generalized consolidation remains |
+| **V2-4** | **Memory objects & belief lifecycle** | Candidate, belief-resolution, and deterministic-salience slices shipped; generalized consolidation remains |
 | **V2-5** | **Working memory, admission & receipts** | Bounded recall explains inclusion and rejection |
 | **V2-6** | **Memory evaluation & Lobstar backfill** | Replay quality gates and staged reproducible backfill pass |
 | **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
@@ -187,6 +187,9 @@ Design: [V2-3-HISTORICAL-INGESTION.md](./V2-3-HISTORICAL-INGESTION.md) (accepted
 Slice design: [V2-4-MEMORY-CANDIDATES.md](./V2-4-MEMORY-CANDIDATES.md) (smallest
 evidence-backed candidate/promotion vertical slice implemented 2026-07-22).
 
+Salience design: [V2-4-MEMORY-SALIENCE.md](./V2-4-MEMORY-SALIENCE.md)
+(deterministic scoring and inspection vertical slice implemented 2026-07-23).
+
 - [ ] New `Memory` object: typed claim/preference/decision/fact with
       `source`, `confidence`, `sensitivity`, `trust_level`, `scope`,
       `last_confirmed`, `superseded_by`.
@@ -209,6 +212,10 @@ evidence-backed candidate/promotion vertical slice implemented 2026-07-22).
       narrow authority-gated correction/supersession, temporal recall filtering,
       schema v12 rebuild fields, and crash-recoverable serialized transactions.
       Automatic resolution, broad contradiction semantics, and LLM extraction remain deferred.
+- [x] Deterministic salience receipts with event-time support filtering,
+      independent-event corroboration, authority/trust provenance, freshness,
+      fixed graph centrality, historical validity gates, stable ranking, and a
+      non-mutating CLI inspection surface. Admission and recall integration remain deferred.
 - [ ] Correction and deletion as product operations (correct, retire, forget)
       with lineage — deleted/superseded facts must be verifiably absent from
       recall.
