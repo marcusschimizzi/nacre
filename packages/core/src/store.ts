@@ -53,10 +53,17 @@ import {
   type MemoryCandidateLifecycle,
 } from './memory-candidate.js';
 import { writeDurableMemoryCandidate } from './memory-candidate-durable.js';
+import {
+  stableAdmissionJson,
+  validateAdmissionReceipt,
+  type AdmissionKind,
+  type AdmissionReceipt,
+} from './memory-admission.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
+export const MAX_ADMISSION_RECEIPT_PAYLOAD_BYTES = 1_048_576;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -260,6 +267,15 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_memory_candidates_lifecycle
   ON memory_candidates(lifecycle, proposed_at, id);
+
+CREATE TABLE IF NOT EXISTS admission_receipts (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('brief','recall')),
+  evaluated_at TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admission_receipts_evaluated
+  ON admission_receipts(evaluated_at DESC, id ASC);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -402,6 +418,11 @@ export interface EmbeddingWrite {
   provider: string;
 }
 
+export interface AdmissionReceiptFilter {
+  kind?: AdmissionKind;
+  limit?: number;
+}
+
 export interface GraphStore {
   // Node operations
   getNode(id: string): MemoryNode | undefined;
@@ -489,6 +510,11 @@ export interface GraphStore {
   ): boolean;
   deleteMemoryCandidate(id: string): void;
 
+  // Derived admission receipts (never canonical truth)
+  putAdmissionReceipt(receipt: AdmissionReceipt): boolean;
+  getAdmissionReceipt(id: string): AdmissionReceipt | undefined;
+  listAdmissionReceipts(filter?: AdmissionReceiptFilter): AdmissionReceipt[];
+
   // Metadata
   getMeta(key: string): string | undefined;
   setMeta(key: string, value: string): void;
@@ -556,6 +582,8 @@ export class SqliteStore implements GraphStore {
    */
   static open(dbPath?: string | null): SqliteStore {
     const resolvedPath = dbPath ?? ':memory:';
+    const existedBeforeOpen =
+      resolvedPath !== ':memory:' && resolvedPath !== '' && existsSync(resolvedPath);
 
     // Ensure parent directory exists for file-based DBs
     if (resolvedPath !== ':memory:' && resolvedPath !== '') {
@@ -566,6 +594,30 @@ export class SqliteStore implements GraphStore {
     }
 
     const db = new Database(resolvedPath);
+
+    const existingMeta = db
+      .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
+      .get() as { present: number } | undefined;
+    if (!existingMeta) {
+      if (existedBeforeOpen) {
+        db.close();
+        throw new Error('Unsupported schema metadata: existing database has no schema version');
+      }
+    } else {
+      const existingVersion = db
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined;
+      if (
+        !existingVersion ||
+        !/^\d+$/.test(existingVersion.value) ||
+        Number(existingVersion.value) < 1 ||
+        Number(existingVersion.value) > SCHEMA_VERSION
+      ) {
+        const detail = existingVersion?.value ?? 'missing';
+        db.close();
+        throw new Error(`Unsupported or malformed schema version: ${detail}`);
+      }
+    }
 
     // Performance settings
     db.pragma('journal_mode = WAL');
@@ -784,6 +836,18 @@ export class SqliteStore implements GraphStore {
           ALTER TABLE nodes ADD COLUMN belief_lifecycle TEXT;
           ALTER TABLE nodes ADD COLUMN valid_from TEXT;
           ALTER TABLE nodes ADD COLUMN valid_until TEXT;
+        `);
+      }
+      if (ver < 13) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS admission_receipts (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL CHECK(kind IN ('brief','recall')),
+            evaluated_at TEXT NOT NULL,
+            payload TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_admission_receipts_evaluated
+            ON admission_receipts(evaluated_at DESC, id ASC);
         `);
       }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
@@ -1301,6 +1365,106 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       'INSERT OR REPLACE INTO processed_files (path, hash, last_processed) VALUES (?, ?, ?)',
     ).run(hash.path, hash.hash, hash.lastProcessed);
+  }
+
+  // ── Derived admission receipts ─────────────────────────────
+
+  private parseAdmissionReceiptPayload(
+    payload: string,
+    expectedId: string,
+    rowKind?: string,
+    rowEvaluatedAt?: string,
+  ): AdmissionReceipt {
+    if (Buffer.byteLength(payload, 'utf8') > MAX_ADMISSION_RECEIPT_PAYLOAD_BYTES) {
+      throw new Error(`Corrupt admission receipt ${expectedId}: payload exceeds bound`);
+    }
+    try {
+      const value = validateAdmissionReceipt(JSON.parse(payload));
+      if (value.id !== expectedId) throw new Error('receipt id disagrees with row');
+      if (
+        (rowKind !== undefined && value.kind !== rowKind) ||
+        (rowEvaluatedAt !== undefined && value.evaluatedAt !== rowEvaluatedAt)
+      ) {
+        throw new Error('receipt row metadata disagrees with payload');
+      }
+      return value;
+    } catch (error) {
+      throw new Error(
+        `Corrupt admission receipt ${expectedId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  putAdmissionReceipt(receipt: AdmissionReceipt): boolean {
+    const payload = stableAdmissionJson(receipt);
+    if (Buffer.byteLength(payload, 'utf8') > MAX_ADMISSION_RECEIPT_PAYLOAD_BYTES) {
+      throw new Error('admission receipt payload exceeds bound');
+    }
+    validateAdmissionReceipt(receipt);
+    const result = this.stmt(
+      'INSERT OR IGNORE INTO admission_receipts (id, kind, evaluated_at, payload) VALUES (?, ?, ?, ?)',
+    ).run(receipt.id, receipt.kind, receipt.evaluatedAt, payload);
+    if (result.changes === 1) return true;
+
+    const existing = this.stmt(
+      'SELECT kind, evaluated_at, payload FROM admission_receipts WHERE id = ?',
+    ).get(receipt.id) as { kind: string; evaluated_at: string; payload: string } | undefined;
+    if (!existing) throw new Error(`admission receipt insert lost: ${receipt.id}`);
+    const prior = this.parseAdmissionReceiptPayload(
+      existing.payload,
+      receipt.id,
+      existing.kind,
+      existing.evaluated_at,
+    );
+    if (stableAdmissionJson(prior) !== payload) {
+      throw new Error(`admission receipt id collision: ${receipt.id}`);
+    }
+    return false;
+  }
+
+  getAdmissionReceipt(id: string): AdmissionReceipt | undefined {
+    if (!/^rcpt_[0-9a-f]{64}$/.test(id))
+      throw new Error('receipt id must be rcpt_<64 lowercase hex>');
+    const row = this.stmt(
+      'SELECT kind, evaluated_at, payload FROM admission_receipts WHERE id = ?',
+    ).get(id) as { kind: string; evaluated_at: string; payload: string } | undefined;
+    return row
+      ? this.parseAdmissionReceiptPayload(row.payload, id, row.kind, row.evaluated_at)
+      : undefined;
+  }
+
+  listAdmissionReceipts(filter: AdmissionReceiptFilter = {}): AdmissionReceipt[] {
+    const limit = filter.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+      throw new Error('receipt list limit must be an integer from 1 to 1000');
+    }
+    if (filter.kind !== undefined && filter.kind !== 'brief' && filter.kind !== 'recall') {
+      throw new Error('receipt list kind must be brief or recall');
+    }
+    const rows = filter.kind
+      ? (this.db
+          .prepare(
+            'SELECT id, kind, evaluated_at, payload FROM admission_receipts WHERE kind = ? ORDER BY evaluated_at DESC, id ASC LIMIT ?',
+          )
+          .all(filter.kind, limit) as Array<{
+          id: string;
+          kind: string;
+          evaluated_at: string;
+          payload: string;
+        }>)
+      : (this.db
+          .prepare(
+            'SELECT id, kind, evaluated_at, payload FROM admission_receipts ORDER BY evaluated_at DESC, id ASC LIMIT ?',
+          )
+          .all(limit) as Array<{
+          id: string;
+          kind: string;
+          evaluated_at: string;
+          payload: string;
+        }>);
+    return rows.map((row) =>
+      this.parseAdmissionReceiptPayload(row.payload, row.id, row.kind, row.evaluated_at),
+    );
   }
 
   // ── Evidence-backed memory candidates ─────────────────────

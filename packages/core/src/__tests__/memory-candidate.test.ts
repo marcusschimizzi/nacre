@@ -76,7 +76,7 @@ describe('MemoryCandidate persistence', () => {
     store.close();
   });
 
-  it('migrates schema v11 to v12 without losing legacy candidate CRUD fields', () => {
+  it('migrates schema v11 to the current schema without losing legacy candidate CRUD fields', () => {
     const root = mkdtempSync(join(tmpdir(), 'nacre-schema-v11-'));
     const dbPath = join(root, 'graph.db');
     const legacy = openStore(dbPath);
@@ -105,7 +105,7 @@ describe('MemoryCandidate persistence', () => {
       migrated.getMemoryCandidate(value.id)?.resolvedMemoryId,
       promoted.resolvedMemoryId,
     );
-    assert.equal(migrated.getMeta('schema_version'), '12');
+    assert.equal(migrated.getMeta('schema_version'), '13');
     migrated.close();
     rmSync(root, { recursive: true, force: true });
   });

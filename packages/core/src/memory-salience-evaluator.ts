@@ -69,7 +69,7 @@ export interface SalienceReceipt {
   tieBreak: string;
 }
 
-const TYPE_RELEVANCE: Record<MemoryObjectType, number> = {
+export const TYPE_RELEVANCE: Readonly<Record<MemoryObjectType, number>> = {
   claim: 0.6,
   preference: 0.85,
   decision: 1,

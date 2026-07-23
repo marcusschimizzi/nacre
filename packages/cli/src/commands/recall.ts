@@ -1,6 +1,12 @@
 import { defineCommand } from 'citty';
+import { readFileSync, realpathSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 import {
+  admitWorkingMemory,
+  assertConfinedCanonicalPath,
+  computeDeterministicEntityDegrees,
   EncoderMismatchError,
+  parseMemoryFile,
   parseScopesFilter,
   SqliteStore,
   readMemorySource,
@@ -9,8 +15,36 @@ import {
   resolveMemoryDir,
   resolveProvider,
   type EntityType,
+  type AdmissionPolicy,
+  type AdmissionReceipt,
 } from '@nacre/core';
 import { formatJSON } from '../output.js';
+
+const NO_PROVIDER_DEGRADATION =
+  'semantic_recall_unavailable:embeddings_exist_without_provider;graph_only_results_non_authoritative';
+
+function strictIso(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function parseCanonicalRecallCandidate(
+  memoryDir: string,
+  canonicalPath: string,
+  expectedId: string,
+) {
+  assertConfinedCanonicalPath(canonicalPath);
+  const root = realpathSync(memoryDir);
+  const file = realpathSync(resolve(root, canonicalPath));
+  if (!file.startsWith(`${root}${sep}`))
+    throw new Error(`canonical path is not confined to memory root: ${canonicalPath}`);
+  const parsed = parseMemoryFile(readFileSync(file, 'utf8'), canonicalPath);
+  if (parsed.memory.id !== expectedId) {
+    throw new Error(`canonical memory id disagrees with recall result: ${expectedId}`);
+  }
+  return { memory: parsed.memory, claim: parsed.claim };
+}
 
 export default defineCommand({
   meta: {
@@ -80,6 +114,23 @@ export default defineCommand({
       description:
         'Comma-separated scope filter (user, agent, project/<name>, session). Default: every durable scope; session only when listed',
     },
+    admit: {
+      type: 'boolean',
+      description: 'Explicitly admit canonical recall results into bounded working context',
+    },
+    'memory-dir': {
+      type: 'string',
+      description: 'Canonical memory root (required with --admit)',
+    },
+    at: {
+      type: 'string',
+      description: 'Strict ISO admission evaluation timestamp (required with --admit)',
+    },
+    'include-session': { type: 'boolean', description: 'Explicitly allow session scope admission' },
+    'token-budget': { type: 'string', description: 'Maximum UTF-8 estimated tokens' },
+    'min-confidence': { type: 'string', description: 'Minimum evidence confidence' },
+    'max-sensitivity': { type: 'string', description: 'Maximum sensitivity enum value' },
+    'stale-days': { type: 'string', description: 'Stateful claim staleness threshold in days' },
   },
   async run({ args }) {
     const graphPath = args.graph as string;
@@ -87,6 +138,30 @@ export default defineCommand({
       console.error('Recall requires a SQLite graph (.db file)');
       process.exit(1);
     }
+    const admissionRequested = args.admit === true;
+    const admissionMemoryDir = args['memory-dir'] as string | undefined;
+    const admissionOnlyOptionPresent =
+      admissionMemoryDir !== undefined ||
+      args.at !== undefined ||
+      args['include-session'] === true ||
+      args['token-budget'] !== undefined ||
+      args['min-confidence'] !== undefined ||
+      args['max-sensitivity'] !== undefined ||
+      args['stale-days'] !== undefined;
+    if (!admissionRequested && admissionOnlyOptionPresent) {
+      throw new Error('working-memory admission options require explicit --admit');
+    }
+    if (admissionRequested && !admissionMemoryDir) throw new Error('--admit requires --memory-dir');
+    if (admissionRequested && !strictIso(args.at))
+      throw new Error('--admit requires strict --at ISO timestamp');
+    const recallAsOf = args['as-of'] as string | undefined;
+    if (admissionRequested && recallAsOf !== undefined && recallAsOf !== args.at) {
+      throw new Error('admitted recall requires --as-of and --at to match exactly');
+    }
+
+    const effectiveRecallAsOf = admissionRequested
+      ? (args.at as string)
+      : (args['as-of'] as string | undefined);
 
     const store = SqliteStore.open(graphPath);
 
@@ -97,10 +172,12 @@ export default defineCommand({
         allowNull: true,
       });
 
+      const degradations: string[] = [];
       if (!provider && store.embeddingCount() > 0) {
         console.warn(
           'Embeddings exist but no provider available for query embedding. Falling back to graph-only recall.',
         );
+        if (admissionRequested) degradations.push(NO_PROVIDER_DEGRADATION);
       }
 
       const types = args.types
@@ -110,6 +187,12 @@ export default defineCommand({
 
       const hivePath = args.hive as string | undefined;
       const hiveOnly = args['hive-only'] as boolean | undefined;
+
+      if (admissionRequested && hivePath) {
+        throw new Error(
+          'admitted recall does not yet support --hive; use private canonical recall',
+        );
+      }
 
       if (hiveOnly && !hivePath) {
         console.error('--hive-only requires --hive <path>');
@@ -135,7 +218,7 @@ export default defineCommand({
             since: args.since as string | undefined,
             until: args.until as string | undefined,
             hops: parseInt(args.hops as string, 10),
-            asOf: args['as-of'] as string | undefined,
+            asOf: effectiveRecallAsOf,
             scopes,
             hiveOnly: hiveOnly ?? false,
             // --hive without --hive-only = explicit tap: full weight, no discount
@@ -150,7 +233,7 @@ export default defineCommand({
             since: args.since as string | undefined,
             until: args.until as string | undefined,
             hops: parseInt(args.hops as string, 10),
-            asOf: args['as-of'] as string | undefined,
+            asOf: effectiveRecallAsOf,
             scopes,
           });
         }
@@ -166,9 +249,52 @@ export default defineCommand({
         hiveStore?.close();
       }
 
+      let admissionReceipt: AdmissionReceipt | undefined;
+      let visibleResults = response.results;
+      if (admissionRequested) {
+        if (!admissionMemoryDir) throw new Error('--admit requires --memory-dir');
+        const candidates = response.results.flatMap((result) => {
+          const canonicalPath = store.getNode(result.id)?.canonicalPath;
+          if (!canonicalPath) return [];
+          return [
+            {
+              ...parseCanonicalRecallCandidate(admissionMemoryDir, canonicalPath, result.id),
+              retrievalRelevance: result.score,
+            },
+          ];
+        });
+        const policyScopes = parseScopesFilter(args.scopes as string | undefined);
+        admissionReceipt = admitWorkingMemory(candidates, {
+          kind: 'recall',
+          query: args.query as string,
+          evaluatedAt: args.at as string,
+          entityDegrees: computeDeterministicEntityDegrees(store.listEdges()),
+          degradations,
+          policy: {
+            ...(policyScopes ? { scopes: policyScopes } : {}),
+            ...(args['include-session'] ? { includeSession: true } : {}),
+            ...(args['token-budget'] ? { tokenBudget: Number(args['token-budget']) } : {}),
+            ...(args['min-confidence']
+              ? { minEvidenceConfidence: Number(args['min-confidence']) }
+              : {}),
+            ...(args['max-sensitivity']
+              ? { maxSensitivity: args['max-sensitivity'] as AdmissionPolicy['maxSensitivity'] }
+              : {}),
+            ...(args['stale-days'] ? { staleStatefulAfterDays: Number(args['stale-days']) } : {}),
+          },
+        });
+        store.putAdmissionReceipt(admissionReceipt);
+        const included = new Set(admissionReceipt.included);
+        visibleResults = response.results.filter((result) => included.has(result.id));
+      }
+
       // --source applies to every output format: enrich results with the
       // verbatim claim + Source evidence from canonical files up front.
-      const memoryDir = args.source ? resolveMemoryDir(graphPath) : null;
+      const memoryDir = args.source
+        ? admissionRequested
+          ? admissionMemoryDir
+          : resolveMemoryDir(graphPath)
+        : null;
       const verbatimById = new Map<string, { claim: string; source?: string }>();
       if (memoryDir) {
         for (const r of response.results) {
@@ -182,7 +308,7 @@ export default defineCommand({
         const output = memoryDir
           ? {
               ...response,
-              results: response.results.map((r) => {
+              results: visibleResults.map((r) => {
                 const verbatim = verbatimById.get(r.id);
                 return verbatim
                   ? {
@@ -193,8 +319,23 @@ export default defineCommand({
                   : r;
               }),
             }
-          : response;
+          : { ...response, results: visibleResults };
+        if (admissionReceipt) Object.assign(output, { receipt: admissionReceipt });
         console.log(formatJSON(output));
+        return;
+      }
+
+      if (admissionReceipt) {
+        if (admissionReceipt.degradations.length > 0 && visibleResults.length === 0) {
+          console.log(
+            'Recall degraded; graph-only search returned no admissible canonical memories. This is not authoritative evidence of no match.',
+          );
+        } else {
+          console.log(admissionReceipt.renderedBrief);
+        }
+        console.log(`Admission receipt: ${admissionReceipt.id}`);
+        for (const degradation of admissionReceipt.degradations)
+          console.log(`Degradation: ${degradation}`);
         return;
       }
 

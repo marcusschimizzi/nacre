@@ -186,7 +186,8 @@ export async function recall(
   const weights: RecallWeights = { ...DEFAULT_RECALL_WEIGHTS, ...opts.weights };
   const limit = opts.limit ?? 10;
   const hops = opts.hops ?? 2;
-  const now = new Date();
+  const now = opts.asOf ? new Date(opts.asOf) : new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error('asOf must be a valid ISO timestamp');
   const nowStr = now.toISOString();
 
   const semanticMap = new Map<string, number>();
@@ -340,7 +341,7 @@ export async function recall(
     if (opts.types && !opts.types.includes(node.type)) continue;
 
     if (opts.since && node.lastReinforced < opts.since) continue;
-    if (opts.until && node.lastReinforced > opts.until) continue;
+    if (opts.until && node.lastReinforced >= opts.until) continue;
 
     const semantic = semanticMap.get(id) ?? 0;
     const graphScore = graphMap.get(id) ?? 0;
@@ -368,7 +369,8 @@ export async function recall(
   const episodesByNode = store.getEntityEpisodesBatch(top.map((c) => c.id));
 
   for (const candidate of top) {
-    const node = graph.nodes[candidate.id]!;
+    const node = graph.nodes[candidate.id];
+    if (!node) continue;
 
     // Build connections from the in-memory adjacency map — the full edge set is
     // already loaded into graph.edges — instead of two store.listEdges queries

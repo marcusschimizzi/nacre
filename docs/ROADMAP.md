@@ -2,7 +2,7 @@
 
 > From personal memory graph to cross-agent memory substrate.
 
-Last updated: 2026-07-22
+Last updated: 2026-07-23
 
 ---
 
@@ -112,7 +112,7 @@ make it trustworthy and used; sync makes it multi-device.
 | V2-2 | Scope model | Shipped; scope isolation and retention pass |
 | **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
 | **V2-4** | **Memory objects & belief lifecycle** | Candidate, belief-resolution, and deterministic-salience slices shipped; generalized consolidation remains |
-| **V2-5** | **Working memory, admission & receipts** | Bounded recall explains inclusion and rejection |
+| **V2-5** | **Working memory, admission & receipts** | Shipped; deterministic admission, bounded briefing, explicit recall admission, and derived receipts pass independent review |
 | **V2-6** | **Memory evaluation & Lobstar backfill** | Replay quality gates and staged reproducible backfill pass |
 | **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
 | **V2-8** | **Multi-device sync** | Existing sync goals, renumbered |
@@ -224,16 +224,24 @@ Salience design: [V2-4-MEMORY-SALIENCE.md](./V2-4-MEMORY-SALIENCE.md)
 
 *Make injection trustworthy and debuggable.*
 
-- [ ] Receipts on `brief` and `recall`: query, filters, included memories,
+Design and operations: [V2-5-WORKING-MEMORY.md](./V2-5-WORKING-MEMORY.md)
+(explicit admission vertical slice accepted 2026-07-23).
+
+- [x] Receipts on opt-in working-memory `brief` and `recall --admit`: query, filters, included memories,
       rejected memories (and why), score breakdowns, token cost. Persisted
       and inspectable (`nacre receipts`).
-- [ ] Admission layer between candidate retrieval and context assembly:
+- [x] Admission layer between candidate retrieval and context assembly:
       gate on scope, freshness, sensitivity, and supersession state — not
       just similarity ("similarity is not appropriateness").
-- [ ] Provenance guard: superseded or low-trust memories cannot authorize
+- [x] Provenance guard: every admitted memory is context-only; superseded or low-trust memories cannot authorize
       destructive/external actions.
-- [ ] Outage contract: recall degrades loudly when embeddings/index are
+- [x] Outage contract: admitted recall degrades loudly when embeddings exist but a provider is
       unavailable — never masks failure as an empty result.
+- [x] Derived receipt operations are explicit: deleting/rebuilding SQLite removes receipt history
+      without touching canonical truth; rebuild does not synthesize past queries, while identical
+      replay recreates the same content-addressed receipt.
+- [ ] Automatic agent injection, receipt retention/export/sync policy, provider retry orchestration,
+      and replay quality metrics remain deferred to V2-6/V2-7.
 
 ### V2-6: Memory evaluation & Lobstar backfill
 
