@@ -393,10 +393,16 @@ export async function recall(
 
   let procedures: RecallProcedureMatch[] = [];
   if (opts.includeProcedures !== false) {
+    const procLimit = opts.procedureLimit ?? 3;
+    // Over-fetch before the scope filter (same pattern as similar/search):
+    // filtering after the limit would let out-of-scope procedures consume
+    // result slots and starve the page.
     const procMatches = findRelevantProcedures(store, opts.query, [], {
-      limit: opts.procedureLimit ?? 3,
+      limit: procLimit * 3,
       minScore: 0.1,
-    }).filter((m) => recordVisibleInScopes(m.procedure, opts.scopes));
+    })
+      .filter((m) => recordVisibleInScopes(m.procedure, opts.scopes))
+      .slice(0, procLimit);
     procedures = procMatches.map(
       (m): RecallProcedureMatch => ({
         id: m.procedure.id,

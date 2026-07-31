@@ -50,6 +50,8 @@ export interface Memory {
   excerpts?: string[];
   connections?: Array<{ label: string; type: string; relationship: string; weight: number }>;
   episodes?: Array<{ id: string; title: string; type: string }>;
+  /** V2-2 scope the memory lives in (unset on entities and legacy rows). */
+  scope?: string;
 }
 
 export interface GraphStats {

@@ -104,6 +104,13 @@ describe('session scratch purge (D4)', () => {
       }),
     );
     store.putEmbedding('mem_old1', 'node', 'old scratch', new Float32Array(8).fill(0.5), 'mock');
+    store.putEmbedding(
+      'ep_old',
+      'episode',
+      'old session episode',
+      new Float32Array(8).fill(0.5),
+      'mock',
+    );
     store.putEpisode({
       id: 'ep_old',
       timestamp: '2026-07-01T09:00:00Z',
@@ -149,6 +156,11 @@ describe('session scratch purge (D4)', () => {
     assert.deepEqual(purged, { nodes: 1, episodes: 1, procedures: 1 });
     assert.equal(store.getNode('mem_old1'), undefined);
     assert.equal(store.getEmbedding('mem_old1'), undefined);
+    assert.equal(
+      store.getEmbedding('ep_old'),
+      undefined,
+      'purged episode text must not outlive retention in the embeddings table',
+    );
     assert.ok(store.getNode('mem_new1'), 'fresh scratch survives');
     assert.ok(store.getNode('mem_dur1'), 'durable scopes are never purged, however old');
     store.close();

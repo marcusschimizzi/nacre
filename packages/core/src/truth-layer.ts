@@ -76,6 +76,9 @@ export function purgeExpiredScratch(
     const cutoff = cutoffFor(episode.scope as string);
     if (cutoff === null || (episode.lastAccessed || episode.timestamp) >= cutoff) continue;
     store.deleteEpisode(episode.id);
+    // Episodes are embedded too — without this the scratch text outlives its
+    // retention window inside the embeddings table.
+    store.deleteEmbedding(episode.id);
     purged.episodes++;
   }
   for (const procedure of store.listProcedures()) {
