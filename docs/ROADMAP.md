@@ -113,7 +113,7 @@ make it trustworthy and used; sync makes it multi-device.
 | **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
 | **V2-4** | **Memory objects & belief lifecycle** | Candidate, belief-resolution, and deterministic-salience slices shipped; generalized consolidation remains |
 | **V2-5** | **Working memory, admission & receipts** | Shipped; deterministic admission, bounded briefing, explicit recall admission, and derived receipts pass independent review |
-| **V2-6** | **Memory evaluation & Lobstar backfill** | Replay quality gates and staged reproducible backfill pass |
+| **V2-6** | **Memory evaluation & Lobstar backfill** | First deterministic replay/admission quality-gate slice shipped; staged private backfill remains |
 | **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
 | **V2-8** | **Multi-device sync** | Existing sync goals, renumbered |
 
@@ -247,16 +247,19 @@ Design and operations: [V2-5-WORKING-MEMORY.md](./V2-5-WORKING-MEMORY.md)
 
 *Our research edge, turned into CI.*
 
-- [ ] Replay corpus: recorded conversations/sessions with probe points.
-- [ ] Retrieval QA: P@k, R@k, NDCG, latency on a fixed query set.
-- [ ] Forgetting-absence scoring: corrected/retired facts must not resurface
-      (Memora/FAMA pattern) — explicit credit for current values, explicit
-      penalty for leaking stale ones.
-- [ ] Module-level failure attribution: label failures as extraction,
-      storage, retrieval, or use (MemTrace pattern).
-- [ ] Context-tokens-per-turn reported alongside recall quality — token
-      economy is the value proposition.
-- [ ] Runs in CI; the score goes up, never down.
+Slice design: [V2-6-MEMORY-EVALUATION.md](./V2-6-MEMORY-EVALUATION.md)
+(first deterministic replay/admission quality-gate slice implemented 2026-08-10).
+
+- [x] Deterministic, machine-readable replay report over explicit event-time working-memory probes.
+- [x] Canonical admission-candidate P@k, R@k, NDCG, admission precision/recall, forbidden leakage, provenance completeness, and exact context-token metrics with hard thresholds.
+- [x] Content-addressed, machine-auditable reports with receipt/oracle/ranked/included IDs and byte-identical output across fresh roots.
+- [x] Built `nacre evaluate replay` command; malformed inputs fail closed, threshold failure exits nonzero, and canonical memory bytes remain unchanged.
+- [x] Synthetic direct-dialogue → candidate → correction/supersession → historical/current admission acceptance history; copied context creates no candidate.
+- [ ] Production extraction and semantic-query retrieval failure attribution; the current report marks those stages unmeasured rather than reporting false zeroes.
+- [ ] Deterministic explicit-recall query corpus and latency measurements.
+- [ ] Five-session and representative 25-session private Lobstar pilots.
+- [ ] Runs in CI with a versioned score-regression baseline.
+- [ ] Broad checkpointed Lobstar backfill after pilot approval.
 
 ### V2-7: Agent integration — Hermes first
 

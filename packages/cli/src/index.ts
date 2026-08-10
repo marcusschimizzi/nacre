@@ -24,6 +24,7 @@ import exportCmd from './commands/export.js';
 import candidatesCmd from './commands/candidates.js';
 import salienceCmd from './commands/salience.js';
 import receiptsCmd from './commands/receipts.js';
+import evaluateCmd from './commands/evaluate.js';
 
 const main = defineCommand({
   meta: {
@@ -58,6 +59,7 @@ const main = defineCommand({
     candidates: candidatesCmd,
     salience: salienceCmd,
     receipts: receiptsCmd,
+    evaluate: evaluateCmd,
   },
 });
 
