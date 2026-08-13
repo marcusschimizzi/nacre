@@ -1,5 +1,3 @@
-import { lstatSync, opendirSync, readFileSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
 import { defineCommand } from 'citty';
 import {
   admitWorkingMemory,
@@ -11,14 +9,17 @@ import {
   type ReplayEvaluationThresholds,
 } from '@nacre/core';
 import { formatJSON } from '../output.js';
+import recall from './evaluate-recall.js';
+import {
+  assertCanonicalTreeUnchanged,
+  MAX_CANONICAL_MEMORY_BYTES,
+  readRegularFileBounded,
+  scanCanonicalTree,
+} from './evaluation-input.js';
 
 const MANIFEST_VERSION = 'nacre.replay-manifest.v1' as const;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
-const MAX_CANONICAL_MEMORY_BYTES = 1024 * 1024;
-const MAX_CANONICAL_MEMORY_FILES = 10_000;
-const MAX_CANONICAL_TOTAL_BYTES = 64 * 1024 * 1024;
-const MAX_CANONICAL_TREE_ENTRIES = 20_000;
-const MAX_CANONICAL_TREE_DEPTH = 64;
+
 const MAX_REPLAY_PROBES = 1_000;
 const MAX_REPLAY_IDS_PER_SET = 1_000;
 const THRESHOLD_KEYS = [
@@ -42,6 +43,23 @@ const POLICY_KEYS = [
   'maxCandidates',
   'maxClaimBytes',
 ] as const;
+const REPLAY_CLI_OPTIONS = new Set(['memory-dir', 'format']);
+
+function rejectUnknownReplayOptions(rawArgs: string[]): void {
+  let positionals = 0;
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const value = rawArgs[index];
+    if (!value.startsWith('-')) {
+      positionals += 1;
+      if (positionals > 1) throw new Error(`Unexpected positional argument: ${value}`);
+      continue;
+    }
+    if (!value.startsWith('--')) throw new Error(`Unknown option: ${value}`);
+    const name = value.slice(2).split('=', 1)[0];
+    if (!REPLAY_CLI_OPTIONS.has(name)) throw new Error(`Unknown option: --${name}`);
+    if (!value.includes('=')) index += 1;
+  }
+}
 
 interface ReplayManifestProbe {
   id: string;
@@ -84,16 +102,13 @@ function exactObject(
 }
 
 function parseManifest(path: string): ReplayManifest {
-  const manifestStat = lstatSync(path);
-  if (manifestStat.isSymbolicLink() || !manifestStat.isFile()) {
-    throw new Error('Replay manifest must be a regular file, not a symbolic link');
-  }
-  if (manifestStat.size > MAX_MANIFEST_BYTES) {
-    throw new Error('Replay manifest exceeds the 4 MiB input limit');
-  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
+    parsed = JSON.parse(
+      readRegularFileBounded(path, MAX_MANIFEST_BYTES, 'Replay manifest (4 MiB limit)').toString(
+        'utf8',
+      ),
+    );
   } catch (error) {
     throw new Error(
       `Unable to parse replay manifest: ${error instanceof Error ? error.message : String(error)}`,
@@ -135,94 +150,24 @@ function parseManifest(path: string): ReplayManifest {
   return manifest as unknown as ReplayManifest;
 }
 
-interface CanonicalInputFile {
-  path: string;
-  file: string;
-}
-
-function scanCanonicalTree(rootInput: string): CanonicalInputFile[] {
-  const root = resolve(rootInput);
-  const rootStat = lstatSync(root);
-  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
-    throw new Error('Canonical memory root must be a real directory, not a symbolic link');
-  }
-  const pending = [{ directory: root, relative: '', depth: 0, ignored: false }];
-  const files: CanonicalInputFile[] = [];
-  let entries = 0;
-  let totalBytes = 0;
-
-  while (pending.length > 0) {
-    const current = pending.pop();
-    if (!current) break;
-    const directory = opendirSync(current.directory);
-    try {
-      for (;;) {
-        const entry = directory.readSync();
-        if (!entry) break;
-        entries += 1;
-        if (entries > MAX_CANONICAL_TREE_ENTRIES) {
-          throw new Error(
-            `Canonical memory tree exceeds the ${MAX_CANONICAL_TREE_ENTRIES} entry limit`,
-          );
-        }
-        const child = current.relative ? `${current.relative}/${entry.name}` : entry.name;
-        const absolute = resolve(current.directory, entry.name);
-        if (!absolute.startsWith(`${root}${sep}`)) {
-          throw new Error(`Canonical memory path escapes the memory root: ${child}`);
-        }
-        const childStat = lstatSync(absolute);
-        if (childStat.isSymbolicLink()) {
-          throw new Error(`Canonical memory tree contains a symbolic link: ${child}`);
-        }
-        if (childStat.isDirectory()) {
-          const depth = current.depth + 1;
-          if (depth > MAX_CANONICAL_TREE_DEPTH) {
-            throw new Error(
-              `Canonical memory tree exceeds the ${MAX_CANONICAL_TREE_DEPTH} level depth limit`,
-            );
-          }
-          pending.push({
-            directory: absolute,
-            relative: child,
-            depth,
-            ignored: current.ignored || entry.name.startsWith('.'),
-          });
-          continue;
-        }
-        if (!childStat.isFile()) {
-          throw new Error(`Canonical memory tree contains a special file: ${child}`);
-        }
-        if (current.ignored || entry.name.startsWith('.') || !entry.name.endsWith('.md')) continue;
-        if (files.length >= MAX_CANONICAL_MEMORY_FILES) {
-          throw new Error(
-            `Canonical memory tree exceeds the ${MAX_CANONICAL_MEMORY_FILES} file limit`,
-          );
-        }
-        if (childStat.size > MAX_CANONICAL_MEMORY_BYTES) {
-          throw new Error(`Canonical memory must be no larger than 1 MiB: ${child}`);
-        }
-        totalBytes += childStat.size;
-        if (totalBytes > MAX_CANONICAL_TOTAL_BYTES) {
-          throw new Error('Canonical memory tree exceeds the 64 MiB aggregate input limit');
-        }
-        files.push({ file: absolute, path: child });
-      }
-    } finally {
-      directory.closeSync();
-    }
-  }
-  return files.sort((a, b) => a.path.localeCompare(b.path));
-}
-
 export function executeReplayEvaluation(
   options: ExecuteReplayEvaluationOptions,
 ): ReplayEvaluationReport {
   const manifest = parseManifest(options.manifestPath);
   const files = scanCanonicalTree(options.memoryDir);
-  const candidates = files.map(({ file, path }) => {
-    const parsed = parseMemoryFile(readFileSync(file, 'utf8'), path);
+  const candidates = files.map(({ file, path, identity }) => {
+    const parsed = parseMemoryFile(
+      readRegularFileBounded(
+        file,
+        MAX_CANONICAL_MEMORY_BYTES,
+        `Canonical memory ${path}`,
+        identity,
+      ).toString('utf8'),
+      path,
+    );
     return { memory: parsed.memory, claim: parsed.claim };
   });
+  assertCanonicalTreeUnchanged(options.memoryDir, files);
   const corpus: ReplayCorpusInput = {
     version: 'nacre.replay-corpus.v1',
     id: manifest.id,
@@ -239,7 +184,9 @@ export function executeReplayEvaluation(
       forbiddenMemoryIds: probe.forbiddenMemoryIds,
     })),
   };
-  return evaluateReplayCorpus(corpus);
+  const report = evaluateReplayCorpus(corpus);
+  assertCanonicalTreeUnchanged(options.memoryDir, files);
+  return report;
 }
 
 const replay = defineCommand({
@@ -264,7 +211,8 @@ const replay = defineCommand({
       default: 'text',
     },
   },
-  run({ args }) {
+  run({ args, rawArgs }) {
+    rejectUnknownReplayOptions(rawArgs);
     const format = args.format as string;
     if (format !== 'text' && format !== 'json') throw new Error(`Invalid format: ${format}`);
     const report = executeReplayEvaluation({
@@ -284,5 +232,5 @@ const replay = defineCommand({
 
 export default defineCommand({
   meta: { name: 'evaluate', description: 'Run deterministic memory quality evaluations' },
-  subCommands: { replay },
+  subCommands: { replay, recall },
 });

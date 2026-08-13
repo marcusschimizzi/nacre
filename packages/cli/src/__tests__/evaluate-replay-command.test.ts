@@ -148,6 +148,22 @@ describe('built replay evaluation command', () => {
     );
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /^PASS 1\/1 probes; 0 forbidden leaks; \d+ context tokens\n$/);
+    const unknownOption = spawnSync(
+      process.execPath,
+      [
+        bin,
+        'evaluate',
+        'replay',
+        manifestPath,
+        '--memory-dir',
+        memoryDir,
+        '--definitely-unknown',
+        'value',
+      ],
+      { encoding: 'utf8' },
+    );
+    assert.notEqual(unknownOption.status, 0);
+    assert.match(unknownOption.stderr, /unknown option/i);
     assert.deepEqual(snapshotTree(memoryDir), before);
     rmSync(freshRoot, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });

@@ -305,6 +305,111 @@ describe('recall — integration', () => {
     assert.ok(hasAnySemantic || response.results.some((r) => r.scores.graph > 0));
   });
 
+  it('breaks exact retrieval score ties by stable node id', async () => {
+    const tied = SqliteStore.open();
+    try {
+      for (const id of ['mem_bbbbbbbbbbbb', 'mem_aaaaaaaaaaaa']) {
+        const node = makeNode({
+          id,
+          label: 'identical retrieval candidate',
+          type: 'decision',
+          firstSeen: '2026-01-01',
+          lastReinforced: '2026-01-01',
+          mentionCount: 1,
+          reinforcementCount: 0,
+        });
+        tied.putNode(node);
+        tied.putEmbedding(id, 'node', node.label, await embedder.embed(node.label), embedder.name);
+      }
+
+      const response = await recall(tied, embedder, {
+        query: 'deterministic tie',
+        asOf: '2026-07-01T00:00:00.000Z',
+        includeProcedures: false,
+      });
+      assert.deepEqual(
+        response.results.map((result) => result.id),
+        ['mem_aaaaaaaaaaaa', 'mem_bbbbbbbbbbbb'],
+      );
+      assert.equal(response.results[0].score, response.results[1].score);
+    } finally {
+      tied.close();
+    }
+  });
+
+  it('fails closed instead of falling back to live state when an exact replay snapshot is required', async () => {
+    await assert.rejects(
+      recall(store, embedder, {
+        query: 'Nacre',
+        asOf: '2025-01-01T00:00:00.000Z',
+        requireSnapshot: true,
+      }),
+      /snapshot.*required|requires.*snapshot/i,
+    );
+  });
+
+  it('fails closed when strict historical recall would use embeddings newer than its snapshot', async () => {
+    const historical = SqliteStore.open();
+    try {
+      historical.putNode(makeNode({ id: 'n-historical', label: 'Historical' }));
+      historical.putEmbedding(
+        'n-historical',
+        'node',
+        'Historical',
+        await embedder.embed('Historical'),
+        embedder.name,
+      );
+      historical.createSnapshot('manual');
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      historical.putEmbedding(
+        'n-historical',
+        'node',
+        'Future replacement',
+        await embedder.embed('Future replacement'),
+        embedder.name,
+      );
+
+      await assert.rejects(
+        recall(historical, embedder, {
+          query: 'Historical',
+          asOf: '2099-01-01T00:00:00.000Z',
+          requireSnapshot: true,
+        }),
+        /embeddings no newer than snapshot/i,
+      );
+    } finally {
+      historical.close();
+    }
+  });
+
+  it('does not attach or score live episodes during strict historical recall', async () => {
+    const historical = SqliteStore.open();
+    try {
+      historical.putNode(makeNode({ id: 'n-historical', label: 'Historical' }));
+      historical.putEmbedding(
+        'n-historical',
+        'node',
+        'Historical',
+        await embedder.embed('Historical'),
+        embedder.name,
+      );
+      historical.createSnapshot('manual');
+      historical.putEpisode(makeEpisode({ id: 'ep-future', title: 'Future episode' }));
+      historical.linkEpisodeEntity('ep-future', 'n-historical', 'topic');
+
+      const response = await recall(historical, embedder, {
+        query: 'Historical',
+        asOf: '2099-01-01T00:00:00.000Z',
+        requireSnapshot: true,
+      });
+      const result = response.results.find((candidate) => candidate.id === 'n-historical');
+      assert.ok(result);
+      assert.equal(result.episodes, undefined);
+    } finally {
+      historical.close();
+    }
+  });
+
   it('works without embedding provider (graph-only)', async () => {
     const response = await recall(store, null, { query: 'Nacre' });
     assert.ok(response.results.length > 0);

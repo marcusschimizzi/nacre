@@ -454,6 +454,7 @@ export interface GraphStore {
     content: string,
     vector: Float32Array,
     provider: string,
+    createdAt?: string,
   ): void;
   putEmbeddingsBatch(records: EmbeddingWrite[]): void;
   getEmbedding(id: string): EmbeddingRecord | undefined;
@@ -462,6 +463,7 @@ export interface GraphStore {
   clearAllEmbeddings(): number;
   embeddingCount(): number;
   embeddingCountByType(type: string): number;
+  getLatestEmbeddingCreatedAt(): string | undefined;
 
   // Episode operations
   putEpisode(episode: Episode): void;
@@ -484,7 +486,11 @@ export interface GraphStore {
   procedureCount(): number;
 
   // Snapshot operations
-  createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot;
+  createSnapshot(
+    trigger: SnapshotTrigger,
+    metadata?: Record<string, unknown>,
+    createdAt?: string,
+  ): Snapshot;
   getSnapshot(id: string): Snapshot | undefined;
   listSnapshots(opts?: SnapshotFilter): Snapshot[];
   getSnapshotGraph(id: string): NacreGraph;
@@ -528,6 +534,7 @@ export interface GraphStore {
 
 export class SqliteStore implements GraphStore {
   private db: BetterSqlite3.Database;
+  private readonly readOnly: boolean;
 
   // Prepared statements (lazily cached for performance)
   private _stmts: Record<string, BetterSqlite3.Statement> = {};
@@ -541,8 +548,9 @@ export class SqliteStore implements GraphStore {
   private _aliasIndex: Map<string, string> | null = null;
   private _cacheDataVersion = -1;
 
-  private constructor(db: BetterSqlite3.Database) {
+  private constructor(db: BetterSqlite3.Database, readOnly = false) {
     this.db = db;
+    this.readOnly = readOnly;
   }
 
   /**
@@ -859,6 +867,38 @@ export class SqliteStore implements GraphStore {
     return new SqliteStore(db);
   }
 
+  /**
+   * Open an existing current-schema graph without migrations or database writes.
+   * SQLite may still create WAL sidecars, so source-preserving callers should open an isolated copy.
+   */
+  static openReadOnly(dbPath: string): SqliteStore {
+    if (!dbPath || dbPath === ':memory:' || !existsSync(dbPath)) {
+      throw new Error('Read-only graph must be an existing database file');
+    }
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      const existingMeta = db
+        .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
+        .get() as { present: number } | undefined;
+      if (!existingMeta)
+        throw new Error('Unsupported schema metadata: existing database has no schema version');
+      const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
+        | { value: string }
+        | undefined;
+      if (!version || version.value !== String(SCHEMA_VERSION)) {
+        throw new Error(
+          `Read-only graph requires current schema version ${SCHEMA_VERSION}; found ${version?.value ?? 'missing'}`,
+        );
+      }
+      db.pragma('query_only = ON');
+      db.pragma('foreign_keys = ON');
+      return new SqliteStore(db, true);
+    } catch (error) {
+      db.close();
+      throw error;
+    }
+  }
+
   private stmt(sql: string): BetterSqlite3.Statement {
     if (!this._stmts[sql]) {
       this._stmts[sql] = this.db.prepare(sql);
@@ -1162,7 +1202,7 @@ export class SqliteStore implements GraphStore {
       | undefined;
     if (!row) return undefined;
     const derived = makeFingerprint(row.provider, row.dimensions);
-    this.setMeta('encoder_fingerprint', derived);
+    if (!this.readOnly) this.setMeta('encoder_fingerprint', derived);
     return derived;
   }
 
@@ -1184,8 +1224,16 @@ export class SqliteStore implements GraphStore {
     content: string,
     vector: Float32Array,
     provider: string,
+    createdAt?: string,
   ): void {
     this.assertEncoder(makeFingerprint(provider, vector.length));
+    const embeddingCreatedAt = createdAt ?? new Date().toISOString();
+    if (
+      !Number.isFinite(Date.parse(embeddingCreatedAt)) ||
+      new Date(embeddingCreatedAt).toISOString() !== embeddingCreatedAt
+    ) {
+      throw new Error('Embedding createdAt must be a strict ISO timestamp');
+    }
     this.stmt(
       `INSERT OR REPLACE INTO embeddings
        (id, type, content, vector, dimensions, provider, created_at, vector_norm)
@@ -1197,7 +1245,7 @@ export class SqliteStore implements GraphStore {
       vectorToBuffer(vector),
       vector.length,
       provider,
-      new Date().toISOString(),
+      embeddingCreatedAt,
       vectorNorm(vector),
     );
   }
@@ -1275,7 +1323,7 @@ export class SqliteStore implements GraphStore {
       }
     }
 
-    scored.sort((a, b) => b.similarity - a.similarity);
+    scored.sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id));
     return scored.slice(0, limit);
   }
 
@@ -1304,6 +1352,13 @@ export class SqliteStore implements GraphStore {
       count: number;
     };
     return row.count;
+  }
+
+  getLatestEmbeddingCreatedAt(): string | undefined {
+    const row = this.stmt('SELECT MAX(created_at) AS createdAt FROM embeddings').get() as {
+      createdAt: string | null;
+    };
+    return row.createdAt ?? undefined;
   }
 
   // ── Forgotten ids (store-side tombstones) ────────────────
@@ -2027,8 +2082,15 @@ export class SqliteStore implements GraphStore {
 
   // ── Snapshots ────────────────────────────────────────────
 
-  createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot {
-    const now = new Date().toISOString();
+  createSnapshot(
+    trigger: SnapshotTrigger,
+    metadata?: Record<string, unknown>,
+    createdAt?: string,
+  ): Snapshot {
+    const now = createdAt ?? new Date().toISOString();
+    if (!Number.isFinite(Date.parse(now)) || new Date(now).toISOString() !== now) {
+      throw new Error('Snapshot createdAt must be a strict ISO timestamp');
+    }
     const id = `snap_${now}_${randomUUID().slice(0, 8)}`;
     // Scratch (session / unknown scopes) never enters durable temporal
     // history — snapshots outlive the retention purge, so freezing scratch
@@ -2124,7 +2186,7 @@ export class SqliteStore implements GraphStore {
       sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
-    sql += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY created_at DESC, id ASC';
 
     if (opts?.limit) {
       sql += ' LIMIT ?';

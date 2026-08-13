@@ -193,6 +193,18 @@ describe('SqliteStore embedding operations', () => {
     assert.ok(results.length <= 2);
   });
 
+  it('searchSimilar resolves exact-score ties by id before applying limit', async () => {
+    const vector = await embedder.embed('exact tie');
+    for (const id of ['node_c', 'node_a', 'node_b']) {
+      store.putEmbedding(id, 'node', 'exact tie', vector, embedder.name);
+    }
+    const results = store.searchSimilar(vector, { limit: 2, minSimilarity: 0.999 });
+    assert.deepEqual(
+      results.map((result) => result.id),
+      ['node_a', 'node_b'],
+    );
+  });
+
   it('searchSimilar respects minSimilarity threshold', async () => {
     const queryVec = await embedder.embed('something very specific');
     const results = store.searchSimilar(queryVec, { minSimilarity: 0.99 });

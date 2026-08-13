@@ -206,30 +206,33 @@ export async function recall(
       semanticMap.set(hit.id, Math.max(semanticMap.get(hit.id) ?? 0, hit.similarity));
     }
 
-    const epHits = store.searchSimilar(queryVec, {
-      limit,
-      type: 'episode',
-    });
-    for (const hit of epHits) {
-      const episode = store.getEpisode(hit.id);
-      // An out-of-scope episode must not boost visible nodes' ranking.
-      if (episode && !recordVisibleInScopes(episode, opts.scopes)) continue;
-      const links = store.getEpisodeEntities(hit.id);
-      for (const link of links) {
-        semanticMap.set(
-          link.nodeId,
-          Math.max(semanticMap.get(link.nodeId) ?? 0, hit.similarity * EPISODE_SEMANTIC_DISCOUNT),
-        );
-        if (episode) {
-          const existing = episodeHits.get(link.nodeId) ?? [];
-          existing.push(episode);
-          episodeHits.set(link.nodeId, existing);
+    if (!opts.requireSnapshot) {
+      const epHits = store.searchSimilar(queryVec, {
+        limit,
+        type: 'episode',
+      });
+      for (const hit of epHits) {
+        const episode = store.getEpisode(hit.id);
+        // An out-of-scope episode must not boost visible nodes' ranking.
+        if (episode && !recordVisibleInScopes(episode, opts.scopes)) continue;
+        const links = store.getEpisodeEntities(hit.id);
+        for (const link of links) {
+          semanticMap.set(
+            link.nodeId,
+            Math.max(semanticMap.get(link.nodeId) ?? 0, hit.similarity * EPISODE_SEMANTIC_DISCOUNT),
+          );
+          if (episode) {
+            const existing = episodeHits.get(link.nodeId) ?? [];
+            existing.push(episode);
+            episodeHits.set(link.nodeId, existing);
+          }
         }
       }
     }
   }
 
   let graph: NacreGraph;
+  let snapshotTimestamp: string | undefined;
   // Adjacency for the graph walk AND connection-building below. For the live
   // graph, reuse the store's memoized adjacency map; for an asOf snapshot graph,
   // build it from that snapshot (the store's cache is the live graph's).
@@ -239,8 +242,12 @@ export async function recall(
     const snapshots = store.listSnapshots({ until: opts.asOf, limit: 1 });
     if (snapshots.length > 0) {
       graph = store.getSnapshotGraph(snapshots[0].id);
+      snapshotTimestamp = snapshots[0].createdAt;
       adj = buildAdjacencyMap(graph);
     } else {
+      if (opts.requireSnapshot) {
+        throw new Error(`exact as-of recall requires a snapshot at or before ${opts.asOf}`);
+      }
       console.warn(
         `No snapshot found before ${opts.asOf}. Using live graph instead. Run 'nacre snapshots create' to create one.`,
       );
@@ -250,6 +257,15 @@ export async function recall(
   } else {
     graph = store.getFullGraph();
     adj = store.getAdjacencyMap();
+  }
+
+  if (opts.requireSnapshot && provider && snapshotTimestamp) {
+    const latestEmbedding = store.getLatestEmbeddingCreatedAt();
+    if (latestEmbedding && latestEmbedding > snapshotTimestamp) {
+      throw new Error(
+        `exact as-of recall requires embeddings no newer than snapshot ${snapshotTimestamp}`,
+      );
+    }
   }
 
   // Validity is an admission boundary, not merely a final result filter:
@@ -360,13 +376,15 @@ export async function recall(
     scored.push({ id, combined, semantic, graphScore, recency, importance });
   }
 
-  scored.sort((a, b) => b.combined - a.combined);
+  scored.sort((a, b) => b.combined - a.combined || a.id.localeCompare(b.id));
   const top = scored.slice(0, limit);
 
   const results: RecallResult[] = [];
   // Batch every candidate's episode lookup into two queries instead of an N+1
   // (one getEntityEpisodes + a per-episode links query) per result.
-  const episodesByNode = store.getEntityEpisodesBatch(top.map((c) => c.id));
+  const episodesByNode = opts.requireSnapshot
+    ? new Map<string, Episode[]>()
+    : store.getEntityEpisodesBatch(top.map((c) => c.id));
 
   for (const candidate of top) {
     const node = graph.nodes[candidate.id];

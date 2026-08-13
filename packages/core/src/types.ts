@@ -499,6 +499,8 @@ export interface RecallOptions {
   includeProcedures?: boolean;
   procedureLimit?: number;
   asOf?: string;
+  /** Fail closed when asOf has no eligible snapshot instead of using live graph state. */
+  requireSnapshot?: boolean;
   /**
    * Scope filter (V2-2 D2). Undefined = every durable scope, never session;
    * session scratch must be requested explicitly. Entities are always visible.

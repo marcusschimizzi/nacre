@@ -113,7 +113,7 @@ make it trustworthy and used; sync makes it multi-device.
 | **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
 | **V2-4** | **Memory objects & belief lifecycle** | Candidate, belief-resolution, and deterministic-salience slices shipped; generalized consolidation remains |
 | **V2-5** | **Working memory, admission & receipts** | Shipped; deterministic admission, bounded briefing, explicit recall admission, and derived receipts pass independent review |
-| **V2-6** | **Memory evaluation & Lobstar backfill** | First deterministic replay/admission quality-gate slice shipped; staged private backfill remains |
+| **V2-6** | **Memory evaluation & Lobstar backfill** | Deterministic admission and synthetic fixture-only mock-provider explicit-recall mechanics shipped; no production/private-data quality claim; staged private backfill remains |
 | **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
 | **V2-8** | **Multi-device sync** | Existing sync goals, renumbered |
 
@@ -255,8 +255,9 @@ Slice design: [V2-6-MEMORY-EVALUATION.md](./V2-6-MEMORY-EVALUATION.md)
 - [x] Content-addressed, machine-auditable reports with receipt/oracle/ranked/included IDs and byte-identical output across fresh roots.
 - [x] Built `nacre evaluate replay` command; malformed inputs fail closed, threshold failure exits nonzero, and canonical memory bytes remain unchanged.
 - [x] Synthetic direct-dialogue → candidate → correction/supersession → historical/current admission acceptance history; copied context creates no candidate.
-- [ ] Production extraction and semantic-query retrieval failure attribution; the current report marks those stages unmeasured rather than reporting false zeroes.
-- [ ] Deterministic explicit-recall query corpus and latency measurements.
+- [ ] Production extraction failure attribution; both accepted reports mark extraction unmeasured rather than reporting false zeroes.
+- [x] Synthetic fixture-only deterministic mock-provider explicit-recall corpus with raw ranks and score components, explicit canonical mappings, pinned retrieval and graph configuration, snapshot-local embedding reconstruction from snapshot-carried node text, stable tie-breaking, separate retrieval/admission leakage, and source-preserving built CLI execution. This proves mechanics only, not production or private-corpus quality.
+- [ ] Latency measurements as a separate operational artifact outside deterministic content-addressed quality reports.
 - [ ] Five-session and representative 25-session private Lobstar pilots.
 - [ ] Runs in CI with a versioned score-regression baseline.
 - [ ] Broad checkpointed Lobstar backfill after pilot approval.
