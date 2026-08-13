@@ -1,4 +1,5 @@
 import { existsSync, copyFileSync, writeFileSync } from 'node:fs';
+import { filterGraphByScopes } from '@nacre/core';
 import { resolve, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { defineCommand } from 'citty';
@@ -49,7 +50,7 @@ export default defineCommand({
     try {
       if (loaded.format === 'sqlite') {
         // Export SQLite graph to JSON for the viz
-        writeFileSync(dest, JSON.stringify(loaded.graph, null, 2), 'utf8');
+        writeFileSync(dest, JSON.stringify(filterGraphByScopes(loaded.graph), null, 2), 'utf8');
         console.log(`Exported SQLite graph → ${dest}`);
       } else {
         // Copy JSON directly

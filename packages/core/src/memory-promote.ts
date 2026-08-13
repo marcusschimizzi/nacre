@@ -6,13 +6,13 @@ import { ENTITY_TYPES, type EntityType } from './types.js';
 import {
   MEMORY_OBJECT_TYPES,
   MemoryFileError,
-  isValidScope,
   memoryFilePath,
   parseMemoryFile,
   serializeMemoryFile,
   type MemoryObject,
   type MemoryObjectType,
 } from './memory-file.js';
+import { SESSION_SCOPE, isValidScope, pathToScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 
 // ── Capture → canonical promotion (V2-1 truth layer) ─────────────
@@ -73,13 +73,26 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
         result.skipped++;
         continue;
       }
+      // A session-scoped spool entry should not exist (session writes
+      // short-circuit the spool); if one appears (hand-edited, foreign
+      // client), NEVER durable-ize scratch — skip it, loudly. Replay applies
+      // the same rule so consolidate and rebuild agree.
+      if (entry.payload.scope === SESSION_SCOPE) {
+        result.warnings.push(
+          `${entry.id}: session-scoped spool entry — scratch is never promoted; skipped`,
+        );
+        result.skipped++;
+        continue;
+      }
       // A canonical file for this id already exists SOMEWHERE in the memory
       // dir — possibly moved by hand (renames are id-preserving). The file is
       // the truth; reattach rather than write a duplicate at the slug path.
       const existingPath = idIndex.get(id);
       if (existingPath) {
         result.skipped++;
-        markPromoted(store, id, existingPath);
+        // Stamp the path-derived scope (path wins) so the row is correct even
+        // when promoteCaptured runs standalone, before any compile.
+        markPromoted(store, id, existingPath, pathToScope(existingPath));
         continue;
       }
       if (id !== entry.id) {
@@ -166,7 +179,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       if (relPath === null) {
         // A canonical file with this id already exists — the file is the truth.
         result.skipped++;
-        markPromoted(store, id, existingPathForId(memoryDir, memory));
+        markPromoted(store, id, existingPathForId(memoryDir, memory), memory.scope);
         continue;
       }
 
@@ -175,7 +188,7 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
       writeFileSync(absPath, serializeMemoryFile(memory), 'utf-8');
       idIndex.set(id, relPath);
       result.promoted.push(relPath);
-      markPromoted(store, id, relPath);
+      markPromoted(store, id, relPath, memory.scope);
     } catch (err) {
       result.errors.push(`${entry.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -184,11 +197,17 @@ export function promoteCaptured(store: SqliteStore, memoryDir: string): PromoteR
   return result;
 }
 
-function markPromoted(store: SqliteStore, id: string, relPath: string | undefined): void {
+function markPromoted(
+  store: SqliteStore,
+  id: string,
+  relPath: string | undefined,
+  scope?: string,
+): void {
   const node = store.getNode(id);
   if (!node) return;
   node.status = 'promoted';
   if (relPath) node.canonicalPath = relPath;
+  if (scope) node.scope = scope;
   store.putNode(node);
 }
 

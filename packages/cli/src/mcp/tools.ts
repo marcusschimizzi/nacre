@@ -4,6 +4,11 @@ import {
   type SqliteStore,
   resolveProvider,
   resolveMemoryDir,
+  resolveScopeForWrite,
+  resolveScopePolicy,
+  SESSION_SCOPE,
+  filterGraphByScopes,
+  parseScopesFilter,
   recall,
   generateBrief,
   extractQueryTerms,
@@ -49,6 +54,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         .optional()
         .default(false)
         .describe('Include verbatim claim + Source evidence from canonical memory files'),
+      scopes: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Scope filter, e.g. ['user','project/nacre']. Default: every durable scope; add 'session' explicitly to see scratch.",
+        ),
     },
     async (args) => {
       let response: Awaited<ReturnType<typeof recall>>;
@@ -64,6 +75,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
           limit: args.limit,
           types: args.types as EntityType[] | undefined,
           since: args.since,
+          scopes: parseScopesFilter(args.scopes),
         });
       } catch (err) {
         // A misconfigured encoder is a persistent configuration error, not an
@@ -79,6 +91,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             limit: args.limit,
             types: args.types as EntityType[] | undefined,
             since: args.since,
+            scopes: parseScopesFilter(args.scopes),
           });
           degradedNote =
             '⚠ Semantic recall unavailable (embedding provider error) — graph-only results.\n\n';
@@ -143,9 +156,13 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
     {
       focus: z.string().optional().describe('Optional topic to focus the briefing on'),
       top: z.number().optional().default(10).describe('Number of top entities to include'),
+      scopes: z
+        .array(z.string())
+        .optional()
+        .describe('Scope filter. Default: every durable scope; never session unless listed.'),
     },
     (args) => {
-      const graph = store.getFullGraph();
+      const graph = filterGraphByScopes(store.getFullGraph(), parseScopesFilter(args.scopes));
       const result = generateBrief(graph, {
         top: args.top,
         recentDays: 7,
@@ -182,6 +199,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         .describe('Memory type'),
       importance: z.number().optional().default(0.5).describe('0-1, how important (affects decay)'),
       entities: z.array(z.string()).optional().describe('Related entity names to link'),
+      scope: z
+        .string()
+        .optional()
+        .describe(
+          "Where the memory belongs: 'user', 'agent', 'project/<name>', or 'session' (scratch — expires, never becomes a file). Default: configured memory.defaultScope, else 'agent'.",
+        ),
     },
     async (args) => {
       const typeMap: Record<string, EntityType> = {
@@ -200,11 +223,19 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
       const nodeType = typeMap[args.type] || 'concept';
       const id = mintMemoryId();
       const timestamp = now();
+      const scope = resolveScopeForWrite(graphPath, args.scope);
+      const scopeNote =
+        args.scope && args.scope !== scope
+          ? ` ⚠ Unknown scope "${args.scope}" — landed in '${scope}'.`
+          : '';
+      const sessionWrite = scope === SESSION_SCOPE;
 
       // Two-phase write (V2-1): the spool append is the durable act; the
       // candidate row below makes the memory immediately recallable. The
-      // canonical file materializes at the next consolidation.
-      const memoryDir = resolveMemoryDir(graphPath);
+      // canonical file materializes at the next consolidation. Session
+      // scratch short-circuits the spool entirely — it is not durable by
+      // definition and must never be promoted (D4).
+      const memoryDir = sessionWrite ? null : resolveMemoryDir(graphPath);
       if (memoryDir) {
         appendCapture(memoryDir, {
           id,
@@ -217,6 +248,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
             // Preserve the node type through promotion (e.g. event → fact
             // would otherwise reclassify the compiled node as concept).
             entityType: nodeType,
+            scope,
             links: args.entities,
           },
         });
@@ -233,7 +265,9 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         reinforcementCount: Math.ceil(args.importance * 3),
         sourceFiles: ['mcp'],
         excerpts: [{ file: 'mcp', text: args.content, date: timestamp }],
-        status: 'candidate',
+        // Session scratch is not a candidate — there is nothing to promote.
+        ...(sessionWrite ? {} : { status: 'candidate' as const }),
+        scope,
       };
 
       store.putNode(node);
@@ -278,10 +312,12 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         content: [
           {
             type: 'text',
-            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}).${linkMsg}${searchMsg}${
-              memoryDir
-                ? ' Captured to the truth layer (canonical file at next consolidation).'
-                : ' ⚠ No memory directory configured — this memory lives only in the database.'
+            text: `Remembered: "${node.label}" (${nodeType}, id: ${id}). Scope: ${scope}.${scopeNote}${linkMsg}${searchMsg}${
+              sessionWrite
+                ? ` Scratch — expires after ${resolveScopePolicy(graphPath, SESSION_SCOPE).retentionDays ?? '∞'} days, never promoted to a file.`
+                : memoryDir
+                  ? ' Captured to the truth layer (canonical file at next consolidation).'
+                  : ' ⚠ No memory directory configured — this memory lives only in the database.'
             }`,
           },
         ],
@@ -404,6 +440,7 @@ export function registerTools(server: McpServer, store: SqliteStore, graphPath: 
         createdAt: timestamp,
         updatedAt: timestamp,
         flaggedForReview: false,
+        scope: resolveScopeForWrite(graphPath),
       };
 
       store.putProcedure(proc);

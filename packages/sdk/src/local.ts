@@ -1,6 +1,10 @@
 import {
   SqliteStore,
+  SESSION_SCOPE,
+  filterGraphByScopes,
+  parseScopesFilter,
   resolveProvider,
+  resolveScopeForWrite,
   recall as coreRecall,
   generateBrief,
   extractQueryTerms,
@@ -53,15 +57,19 @@ function toMemory(node: MemoryNode, score?: number): Memory {
     type: node.type,
     score,
     excerpts: node.excerpts.map((e) => e.text),
+    // D3: the landing scope is visible in every write response.
+    ...(node.scope ? { scope: node.scope } : {}),
   };
 }
 
 export class LocalBackend implements Backend {
   private store: SqliteStore;
   private embedder: EmbeddingProvider | null;
+  private graphPath: string;
 
   constructor(opts: NacreOptions) {
     if (!opts.path) throw new Error('Local mode requires path');
+    this.graphPath = opts.path;
     this.store = SqliteStore.open(opts.path);
     this.embedder = resolveProvider({
       provider: opts.embedder,
@@ -82,6 +90,12 @@ export class LocalBackend implements Backend {
     const id = generateId(content);
     const timestamp = new Date().toISOString();
 
+    // Scope + lifecycle stamping (V2-2): without these the row classified
+    // as an unscoped ENTITY — visible under every scope filter, hive-
+    // included, and unpurgeable. Durable writes are candidates (exportable
+    // to the truth layer); session scratch carries no status. Resolution is
+    // the same chain as MCP/API (D3): explicit → memory.defaultScope → agent.
+    const scope = resolveScopeForWrite(this.graphPath, opts?.scope);
     const node: MemoryNode = {
       id,
       label: content.slice(0, 100),
@@ -93,6 +107,8 @@ export class LocalBackend implements Backend {
       reinforcementCount: Math.ceil((opts?.importance ?? 0.5) * 3),
       sourceFiles: ['sdk'],
       excerpts: [{ file: 'sdk', text: content, date: timestamp }],
+      ...(scope === SESSION_SCOPE ? {} : { status: 'candidate' as const }),
+      scope,
     };
 
     this.store.putNode(node);
@@ -130,6 +146,7 @@ export class LocalBackend implements Backend {
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
+        scopes: opts?.scopes,
       });
       return response.results.map((r) => ({
         id: r.id,
@@ -157,6 +174,7 @@ export class LocalBackend implements Backend {
         types: opts?.types as EntityType[] | undefined,
         since: opts?.since,
         until: opts?.until,
+        scopes: opts?.scopes,
       });
       return response.results.map((r) => ({
         id: r.id,
@@ -169,7 +187,7 @@ export class LocalBackend implements Backend {
   }
 
   async brief(opts?: BriefOptions): Promise<string> {
-    const graph = this.store.getFullGraph();
+    const graph = filterGraphByScopes(this.store.getFullGraph(), parseScopesFilter(opts?.scopes));
     const result = generateBrief(graph, {
       top: opts?.top ?? 10,
       recentDays: 7,

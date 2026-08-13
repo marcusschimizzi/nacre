@@ -203,6 +203,64 @@ describe('MCP Server', () => {
       }
     });
 
+    it('accepts an explicit scope and names it in the response', async () => {
+      const memoryDir = mkdtempSync(join(tmpdir(), 'nacre-mcp-scope-'));
+      process.env.NACRE_MEMORY_DIR = memoryDir;
+      try {
+        const result = await client.callTool({
+          name: 'nacre_remember',
+          arguments: { content: 'Project-scoped memory', scope: 'project/nacre' },
+        });
+        const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+        assert.ok(text.includes('Scope: project/nacre'));
+
+        const { entries } = readCaptureEntries(memoryDir);
+        const entry = entries.find((e) => e.payload.content === 'Project-scoped memory');
+        assert.equal(entry?.payload.scope, 'project/nacre');
+        assert.equal(store.getNode(entry?.id ?? '')?.scope, 'project/nacre');
+      } finally {
+        delete process.env.NACRE_MEMORY_DIR;
+        rmSync(memoryDir, { recursive: true, force: true });
+      }
+    });
+
+    it('session scope: no spool entry, no candidate status, response says scratch', async () => {
+      const memoryDir = mkdtempSync(join(tmpdir(), 'nacre-mcp-session-'));
+      process.env.NACRE_MEMORY_DIR = memoryDir;
+      try {
+        const result = await client.callTool({
+          name: 'nacre_remember',
+          arguments: { content: 'Ephemeral working note', scope: 'session' },
+        });
+        const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+        assert.ok(text.includes('Scope: session'));
+        assert.ok(text.includes('Scratch'));
+        assert.ok(text.includes('never promoted'));
+
+        // Never touches the truth layer.
+        const { entries } = readCaptureEntries(memoryDir);
+        assert.ok(!entries.some((e) => e.payload.content === 'Ephemeral working note'));
+
+        const node = store.listNodes().find((n) => n.label.includes('Ephemeral working note'));
+        assert.ok(node);
+        assert.equal(node.scope, 'session');
+        assert.equal(node.status, undefined, 'scratch is not a promotion candidate');
+      } finally {
+        delete process.env.NACRE_MEMORY_DIR;
+        rmSync(memoryDir, { recursive: true, force: true });
+      }
+    });
+
+    it('an unknown scope lands in the default with a visible note', async () => {
+      const result = await client.callTool({
+        name: 'nacre_remember',
+        arguments: { content: 'Oddly scoped memory', scope: 'galaxy' },
+      });
+      const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+      assert.ok(text.includes('Scope: agent'));
+      assert.ok(text.includes('Unknown scope "galaxy"'));
+    });
+
     it('warns when no memory directory is configured (database-only write)', async () => {
       const result = await client.callTool({
         name: 'nacre_remember',

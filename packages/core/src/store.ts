@@ -31,9 +31,11 @@ import type {
   SnapshotTrigger,
   SnapshotFilter,
   EntityHistory,
+  ImportLedgerEntry,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { generateEdgeId } from './graph.js';
+import { isDurableScope } from './scopes.js';
 import {
   bufferToVector,
   vectorToBuffer,
@@ -44,10 +46,24 @@ import {
   EncoderMismatchError,
 } from './embeddings.js';
 import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
+import {
+  validateMemoryCandidate,
+  type MemoryCandidate,
+  type MemoryCandidateFilter,
+  type MemoryCandidateLifecycle,
+} from './memory-candidate.js';
+import { writeDurableMemoryCandidate } from './memory-candidate-durable.js';
+import {
+  stableAdmissionJson,
+  validateAdmissionReceipt,
+  type AdmissionKind,
+  type AdmissionReceipt,
+} from './memory-admission.js';
 
 // ── Schema ──────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 13;
+export const MAX_ADMISSION_RECEIPT_PAYLOAD_BYTES = 1_048_576;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -68,7 +84,11 @@ CREATE TABLE IF NOT EXISTS nodes (
   excerpts            TEXT NOT NULL DEFAULT '[]',
   hive_exclude        INTEGER NOT NULL DEFAULT 0,
   status              TEXT,
-  canonical_path      TEXT
+  canonical_path      TEXT,
+  scope               TEXT,
+  belief_lifecycle    TEXT,
+  valid_from          TEXT,
+  valid_until         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -125,7 +145,8 @@ CREATE TABLE IF NOT EXISTS episodes (
   last_accessed   TEXT,
   source          TEXT NOT NULL,
   source_type     TEXT NOT NULL,
-  created_at      TEXT NOT NULL
+  created_at      TEXT NOT NULL,
+  scope           TEXT
 );
 
 CREATE TABLE IF NOT EXISTS episode_entities (
@@ -156,7 +177,8 @@ CREATE TABLE IF NOT EXISTS procedures (
   last_applied TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  flagged_for_review INTEGER NOT NULL DEFAULT 0
+  flagged_for_review INTEGER NOT NULL DEFAULT 0,
+  scope TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_procedures_type ON procedures(type);
@@ -201,6 +223,59 @@ CREATE TABLE IF NOT EXISTS forgotten (
   origin TEXT NOT NULL,
   reason TEXT
 );
+
+CREATE TABLE IF NOT EXISTS imports (
+  id TEXT PRIMARY KEY,
+  source_namespace TEXT NOT NULL,
+  logical_source_id TEXT NOT NULL,
+  source_digest TEXT NOT NULL,
+  adapter_name TEXT NOT NULL,
+  adapter_version TEXT NOT NULL,
+  status TEXT NOT NULL,
+  ingested_at TEXT NOT NULL,
+  completed_at TEXT,
+  message_count INTEGER NOT NULL DEFAULT 0,
+  episode_count INTEGER NOT NULL DEFAULT 0,
+  evidence_path TEXT NOT NULL,
+  report TEXT,
+  error TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_import_identity
+  ON imports(source_namespace, logical_source_id, source_digest, adapter_name, adapter_version);
+
+CREATE TABLE IF NOT EXISTS memory_candidates (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL CHECK(type IN ('fact','preference','decision','lesson','claim')),
+  claim TEXT NOT NULL,
+  normalized_claim TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  sensitivity TEXT NOT NULL CHECK(sensitivity IN ('low','personal','sensitive','secret')),
+  confidence REAL NOT NULL,
+  source_authority TEXT NOT NULL,
+  trust REAL NOT NULL,
+  event_time TEXT NOT NULL,
+  proposed_at TEXT NOT NULL,
+  evidence TEXT NOT NULL,
+  subject_entity_ids TEXT NOT NULL DEFAULT '[]',
+  extractor TEXT NOT NULL,
+  lifecycle TEXT NOT NULL CHECK(lifecycle IN ('candidate','promoted','rejected')),
+  rejection_reason TEXT,
+  canonical_path TEXT,
+  resolved_memory_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_lifecycle
+  ON memory_candidates(lifecycle, proposed_at, id);
+
+CREATE TABLE IF NOT EXISTS admission_receipts (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('brief','recall')),
+  evaluated_at TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admission_receipts_evaluated
+  ON admission_receipts(evaluated_at DESC, id ASC);
 `;
 
 // ── Serialization helpers ───────────────────────────────────────
@@ -227,6 +302,14 @@ function rowToNode(row: Record<string, unknown>): MemoryNode {
   if (typeof row.canonical_path === 'string') {
     node.canonicalPath = row.canonical_path;
   }
+  if (typeof row.scope === 'string') {
+    node.scope = row.scope;
+  }
+  if (row.belief_lifecycle === 'active' || row.belief_lifecycle === 'superseded') {
+    node.beliefLifecycle = row.belief_lifecycle;
+  }
+  if (typeof row.valid_from === 'string') node.validFrom = row.valid_from;
+  if (typeof row.valid_until === 'string') node.validUntil = row.valid_until;
   return node;
 }
 
@@ -264,6 +347,7 @@ function rowToProcedure(row: Record<string, unknown>): Procedure {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     flaggedForReview: (row.flagged_for_review as number) === 1,
+    ...(typeof row.scope === 'string' ? { scope: row.scope } : {}),
   };
 }
 
@@ -286,6 +370,7 @@ function rowToEpisode(row: Record<string, unknown>): Episode {
     lastAccessed: row.last_accessed as string,
     source: row.source as string,
     sourceType: row.source_type as Episode['sourceType'],
+    ...(typeof row.scope === 'string' ? { scope: row.scope } : {}),
   };
 }
 
@@ -333,6 +418,11 @@ export interface EmbeddingWrite {
   provider: string;
 }
 
+export interface AdmissionReceiptFilter {
+  kind?: AdmissionKind;
+  limit?: number;
+}
+
 export interface GraphStore {
   // Node operations
   getNode(id: string): MemoryNode | undefined;
@@ -364,6 +454,7 @@ export interface GraphStore {
     content: string,
     vector: Float32Array,
     provider: string,
+    createdAt?: string,
   ): void;
   putEmbeddingsBatch(records: EmbeddingWrite[]): void;
   getEmbedding(id: string): EmbeddingRecord | undefined;
@@ -372,6 +463,7 @@ export interface GraphStore {
   clearAllEmbeddings(): number;
   embeddingCount(): number;
   embeddingCountByType(type: string): number;
+  getLatestEmbeddingCreatedAt(): string | undefined;
 
   // Episode operations
   putEpisode(episode: Episode): void;
@@ -394,7 +486,11 @@ export interface GraphStore {
   procedureCount(): number;
 
   // Snapshot operations
-  createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot;
+  createSnapshot(
+    trigger: SnapshotTrigger,
+    metadata?: Record<string, unknown>,
+    createdAt?: string,
+  ): Snapshot;
   getSnapshot(id: string): Snapshot | undefined;
   listSnapshots(opts?: SnapshotFilter): Snapshot[];
   getSnapshotGraph(id: string): NacreGraph;
@@ -407,6 +503,23 @@ export interface GraphStore {
   getAdjacencyMap(): AdjacencyMap;
   importGraph(graph: NacreGraph): void;
   upsertGraph(graph: NacreGraph): void;
+
+  // Candidate memory operations (separate belief store, never entity nodes)
+  createMemoryCandidate(candidate: MemoryCandidate, options?: { memoryDir?: string }): boolean;
+  getMemoryCandidate(id: string): MemoryCandidate | undefined;
+  listMemoryCandidates(filter?: MemoryCandidateFilter): MemoryCandidate[];
+  updateMemoryCandidate(candidate: MemoryCandidate, options?: { memoryDir?: string }): void;
+  transitionMemoryCandidate(
+    from: MemoryCandidateLifecycle,
+    candidate: MemoryCandidate,
+    options?: { memoryDir?: string },
+  ): boolean;
+  deleteMemoryCandidate(id: string): void;
+
+  // Derived admission receipts (never canonical truth)
+  putAdmissionReceipt(receipt: AdmissionReceipt): boolean;
+  getAdmissionReceipt(id: string): AdmissionReceipt | undefined;
+  listAdmissionReceipts(filter?: AdmissionReceiptFilter): AdmissionReceipt[];
 
   // Metadata
   getMeta(key: string): string | undefined;
@@ -421,6 +534,7 @@ export interface GraphStore {
 
 export class SqliteStore implements GraphStore {
   private db: BetterSqlite3.Database;
+  private readonly readOnly: boolean;
 
   // Prepared statements (lazily cached for performance)
   private _stmts: Record<string, BetterSqlite3.Statement> = {};
@@ -434,8 +548,9 @@ export class SqliteStore implements GraphStore {
   private _aliasIndex: Map<string, string> | null = null;
   private _cacheDataVersion = -1;
 
-  private constructor(db: BetterSqlite3.Database) {
+  private constructor(db: BetterSqlite3.Database, readOnly = false) {
     this.db = db;
+    this.readOnly = readOnly;
   }
 
   /**
@@ -475,6 +590,8 @@ export class SqliteStore implements GraphStore {
    */
   static open(dbPath?: string | null): SqliteStore {
     const resolvedPath = dbPath ?? ':memory:';
+    const existedBeforeOpen =
+      resolvedPath !== ':memory:' && resolvedPath !== '' && existsSync(resolvedPath);
 
     // Ensure parent directory exists for file-based DBs
     if (resolvedPath !== ':memory:' && resolvedPath !== '') {
@@ -485,6 +602,30 @@ export class SqliteStore implements GraphStore {
     }
 
     const db = new Database(resolvedPath);
+
+    const existingMeta = db
+      .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
+      .get() as { present: number } | undefined;
+    if (!existingMeta) {
+      if (existedBeforeOpen) {
+        db.close();
+        throw new Error('Unsupported schema metadata: existing database has no schema version');
+      }
+    } else {
+      const existingVersion = db
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined;
+      if (
+        !existingVersion ||
+        !/^\d+$/.test(existingVersion.value) ||
+        Number(existingVersion.value) < 1 ||
+        Number(existingVersion.value) > SCHEMA_VERSION
+      ) {
+        const detail = existingVersion?.value ?? 'missing';
+        db.close();
+        throw new Error(`Unsupported or malformed schema version: ${detail}`);
+      }
+    }
 
     // Performance settings
     db.pragma('journal_mode = WAL');
@@ -624,6 +765,17 @@ export class SqliteStore implements GraphStore {
           db.exec('ALTER TABLE nodes ADD COLUMN canonical_path TEXT');
         }
       }
+      if (ver < 9) {
+        // V2-2 scope model: memories, episodes, and procedures carry a scope
+        // (user / agent / project/<name> / session). NULL = unscoped entity
+        // on nodes; pre-scope legacy (treated as agent) elsewhere.
+        for (const table of ['nodes', 'episodes', 'procedures']) {
+          const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+          if (!cols.some((c) => c.name === 'scope')) {
+            db.exec(`ALTER TABLE ${table} ADD COLUMN scope TEXT`);
+          }
+        }
+      }
       if (ver < 8) {
         // Store-side forget records: forget intent must survive even when no
         // memory dir resolves at forget time (spool tombstones alone can be
@@ -637,6 +789,75 @@ export class SqliteStore implements GraphStore {
           );
         `);
       }
+      if (ver < 10) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS imports (
+            id TEXT PRIMARY KEY,
+            source_namespace TEXT NOT NULL,
+            logical_source_id TEXT NOT NULL,
+            source_digest TEXT NOT NULL,
+            adapter_name TEXT NOT NULL,
+            adapter_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            ingested_at TEXT NOT NULL,
+            completed_at TEXT,
+            message_count INTEGER NOT NULL DEFAULT 0,
+            episode_count INTEGER NOT NULL DEFAULT 0,
+            evidence_path TEXT NOT NULL,
+            report TEXT,
+            error TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_import_identity
+            ON imports(source_namespace, logical_source_id, source_digest, adapter_name, adapter_version);
+        `);
+      }
+      if (ver < 11) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS memory_candidates (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL CHECK(type IN ('fact','preference','decision','lesson','claim')),
+            claim TEXT NOT NULL,
+            normalized_claim TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            sensitivity TEXT NOT NULL CHECK(sensitivity IN ('low','personal','sensitive','secret')),
+            confidence REAL NOT NULL,
+            source_authority TEXT NOT NULL,
+            trust REAL NOT NULL,
+            event_time TEXT NOT NULL,
+            proposed_at TEXT NOT NULL,
+            evidence TEXT NOT NULL,
+            subject_entity_ids TEXT NOT NULL DEFAULT '[]',
+            extractor TEXT NOT NULL,
+            lifecycle TEXT NOT NULL CHECK(lifecycle IN ('candidate','promoted','rejected')),
+            rejection_reason TEXT,
+            canonical_path TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_memory_candidates_lifecycle
+            ON memory_candidates(lifecycle, proposed_at, id);
+        `);
+      }
+      if (ver < 12) {
+        db.exec(`
+          ALTER TABLE memory_candidates ADD COLUMN resolved_memory_id TEXT;
+          ALTER TABLE nodes ADD COLUMN belief_lifecycle TEXT;
+          ALTER TABLE nodes ADD COLUMN valid_from TEXT;
+          ALTER TABLE nodes ADD COLUMN valid_until TEXT;
+        `);
+      }
+      if (ver < 13) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS admission_receipts (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL CHECK(kind IN ('brief','recall')),
+            evaluated_at TEXT NOT NULL,
+            payload TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_admission_receipts_evaluated
+            ON admission_receipts(evaluated_at DESC, id ASC);
+        `);
+      }
       db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
         'schema_version',
         String(SCHEMA_VERSION),
@@ -644,6 +865,38 @@ export class SqliteStore implements GraphStore {
     }
 
     return new SqliteStore(db);
+  }
+
+  /**
+   * Open an existing current-schema graph without migrations or database writes.
+   * SQLite may still create WAL sidecars, so source-preserving callers should open an isolated copy.
+   */
+  static openReadOnly(dbPath: string): SqliteStore {
+    if (!dbPath || dbPath === ':memory:' || !existsSync(dbPath)) {
+      throw new Error('Read-only graph must be an existing database file');
+    }
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      const existingMeta = db
+        .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
+        .get() as { present: number } | undefined;
+      if (!existingMeta)
+        throw new Error('Unsupported schema metadata: existing database has no schema version');
+      const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
+        | { value: string }
+        | undefined;
+      if (!version || version.value !== String(SCHEMA_VERSION)) {
+        throw new Error(
+          `Read-only graph requires current schema version ${SCHEMA_VERSION}; found ${version?.value ?? 'missing'}`,
+        );
+      }
+      db.pragma('query_only = ON');
+      db.pragma('foreign_keys = ON');
+      return new SqliteStore(db, true);
+    } catch (error) {
+      db.close();
+      throw error;
+    }
   }
 
   private stmt(sql: string): BetterSqlite3.Statement {
@@ -716,7 +969,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY mention_count DESC';
@@ -728,8 +981,8 @@ export class SqliteStore implements GraphStore {
   putNode(node: MemoryNode): void {
     this.stmt(
       `INSERT OR REPLACE INTO nodes
-       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, label, type, aliases, first_seen, last_reinforced, mention_count, reinforcement_count, source_files, excerpts, hive_exclude, status, canonical_path, scope, belief_lifecycle, valid_from, valid_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       node.id,
       node.label,
@@ -744,6 +997,10 @@ export class SqliteStore implements GraphStore {
       node.hiveExclude ? 1 : 0,
       node.status ?? null,
       node.canonicalPath ?? null,
+      node.scope ?? null,
+      node.beliefLifecycle ?? null,
+      node.validFrom ?? null,
+      node.validUntil ?? null,
     );
     this.invalidateCaches();
   }
@@ -791,7 +1048,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY weight DESC';
@@ -945,7 +1202,7 @@ export class SqliteStore implements GraphStore {
       | undefined;
     if (!row) return undefined;
     const derived = makeFingerprint(row.provider, row.dimensions);
-    this.setMeta('encoder_fingerprint', derived);
+    if (!this.readOnly) this.setMeta('encoder_fingerprint', derived);
     return derived;
   }
 
@@ -967,8 +1224,16 @@ export class SqliteStore implements GraphStore {
     content: string,
     vector: Float32Array,
     provider: string,
+    createdAt?: string,
   ): void {
     this.assertEncoder(makeFingerprint(provider, vector.length));
+    const embeddingCreatedAt = createdAt ?? new Date().toISOString();
+    if (
+      !Number.isFinite(Date.parse(embeddingCreatedAt)) ||
+      new Date(embeddingCreatedAt).toISOString() !== embeddingCreatedAt
+    ) {
+      throw new Error('Embedding createdAt must be a strict ISO timestamp');
+    }
     this.stmt(
       `INSERT OR REPLACE INTO embeddings
        (id, type, content, vector, dimensions, provider, created_at, vector_norm)
@@ -980,7 +1245,7 @@ export class SqliteStore implements GraphStore {
       vectorToBuffer(vector),
       vector.length,
       provider,
-      new Date().toISOString(),
+      embeddingCreatedAt,
       vectorNorm(vector),
     );
   }
@@ -1058,7 +1323,7 @@ export class SqliteStore implements GraphStore {
       }
     }
 
-    scored.sort((a, b) => b.similarity - a.similarity);
+    scored.sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id));
     return scored.slice(0, limit);
   }
 
@@ -1087,6 +1352,13 @@ export class SqliteStore implements GraphStore {
       count: number;
     };
     return row.count;
+  }
+
+  getLatestEmbeddingCreatedAt(): string | undefined {
+    const row = this.stmt('SELECT MAX(created_at) AS createdAt FROM embeddings').get() as {
+      createdAt: string | null;
+    };
+    return row.createdAt ?? undefined;
   }
 
   // ── Forgotten ids (store-side tombstones) ────────────────
@@ -1150,14 +1422,380 @@ export class SqliteStore implements GraphStore {
     ).run(hash.path, hash.hash, hash.lastProcessed);
   }
 
+  // ── Derived admission receipts ─────────────────────────────
+
+  private parseAdmissionReceiptPayload(
+    payload: string,
+    expectedId: string,
+    rowKind?: string,
+    rowEvaluatedAt?: string,
+  ): AdmissionReceipt {
+    if (Buffer.byteLength(payload, 'utf8') > MAX_ADMISSION_RECEIPT_PAYLOAD_BYTES) {
+      throw new Error(`Corrupt admission receipt ${expectedId}: payload exceeds bound`);
+    }
+    try {
+      const value = validateAdmissionReceipt(JSON.parse(payload));
+      if (value.id !== expectedId) throw new Error('receipt id disagrees with row');
+      if (
+        (rowKind !== undefined && value.kind !== rowKind) ||
+        (rowEvaluatedAt !== undefined && value.evaluatedAt !== rowEvaluatedAt)
+      ) {
+        throw new Error('receipt row metadata disagrees with payload');
+      }
+      return value;
+    } catch (error) {
+      throw new Error(
+        `Corrupt admission receipt ${expectedId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  putAdmissionReceipt(receipt: AdmissionReceipt): boolean {
+    const payload = stableAdmissionJson(receipt);
+    if (Buffer.byteLength(payload, 'utf8') > MAX_ADMISSION_RECEIPT_PAYLOAD_BYTES) {
+      throw new Error('admission receipt payload exceeds bound');
+    }
+    validateAdmissionReceipt(receipt);
+    const result = this.stmt(
+      'INSERT OR IGNORE INTO admission_receipts (id, kind, evaluated_at, payload) VALUES (?, ?, ?, ?)',
+    ).run(receipt.id, receipt.kind, receipt.evaluatedAt, payload);
+    if (result.changes === 1) return true;
+
+    const existing = this.stmt(
+      'SELECT kind, evaluated_at, payload FROM admission_receipts WHERE id = ?',
+    ).get(receipt.id) as { kind: string; evaluated_at: string; payload: string } | undefined;
+    if (!existing) throw new Error(`admission receipt insert lost: ${receipt.id}`);
+    const prior = this.parseAdmissionReceiptPayload(
+      existing.payload,
+      receipt.id,
+      existing.kind,
+      existing.evaluated_at,
+    );
+    if (stableAdmissionJson(prior) !== payload) {
+      throw new Error(`admission receipt id collision: ${receipt.id}`);
+    }
+    return false;
+  }
+
+  getAdmissionReceipt(id: string): AdmissionReceipt | undefined {
+    if (!/^rcpt_[0-9a-f]{64}$/.test(id))
+      throw new Error('receipt id must be rcpt_<64 lowercase hex>');
+    const row = this.stmt(
+      'SELECT kind, evaluated_at, payload FROM admission_receipts WHERE id = ?',
+    ).get(id) as { kind: string; evaluated_at: string; payload: string } | undefined;
+    return row
+      ? this.parseAdmissionReceiptPayload(row.payload, id, row.kind, row.evaluated_at)
+      : undefined;
+  }
+
+  listAdmissionReceipts(filter: AdmissionReceiptFilter = {}): AdmissionReceipt[] {
+    const limit = filter.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+      throw new Error('receipt list limit must be an integer from 1 to 1000');
+    }
+    if (filter.kind !== undefined && filter.kind !== 'brief' && filter.kind !== 'recall') {
+      throw new Error('receipt list kind must be brief or recall');
+    }
+    const rows = filter.kind
+      ? (this.db
+          .prepare(
+            'SELECT id, kind, evaluated_at, payload FROM admission_receipts WHERE kind = ? ORDER BY evaluated_at DESC, id ASC LIMIT ?',
+          )
+          .all(filter.kind, limit) as Array<{
+          id: string;
+          kind: string;
+          evaluated_at: string;
+          payload: string;
+        }>)
+      : (this.db
+          .prepare(
+            'SELECT id, kind, evaluated_at, payload FROM admission_receipts ORDER BY evaluated_at DESC, id ASC LIMIT ?',
+          )
+          .all(limit) as Array<{
+          id: string;
+          kind: string;
+          evaluated_at: string;
+          payload: string;
+        }>);
+    return rows.map((row) =>
+      this.parseAdmissionReceiptPayload(row.payload, row.id, row.kind, row.evaluated_at),
+    );
+  }
+
+  // ── Evidence-backed memory candidates ─────────────────────
+
+  createMemoryCandidate(candidate: MemoryCandidate, options: { memoryDir?: string } = {}): boolean {
+    const value = validateMemoryCandidate(candidate);
+    const persist = () => {
+      const result = this.stmt(
+        `INSERT OR IGNORE INTO memory_candidates
+       (id, type, claim, normalized_claim, scope, sensitivity, confidence, source_authority,
+        trust, event_time, proposed_at, evidence, subject_entity_ids, extractor, lifecycle,
+        rejection_reason, canonical_path, resolved_memory_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        value.id,
+        value.type,
+        value.claim,
+        value.normalizedClaim,
+        value.scope,
+        value.sensitivity,
+        value.confidence,
+        value.sourceAuthority,
+        value.trust,
+        value.eventTime,
+        value.proposedAt,
+        JSON.stringify(value.evidence),
+        JSON.stringify(value.subjectEntityIds),
+        JSON.stringify(value.extractor),
+        value.lifecycle,
+        value.rejectionReason ?? null,
+        value.canonicalPath ?? null,
+        value.resolvedMemoryId ?? null,
+        value.createdAt,
+        value.updatedAt,
+      );
+      if (options.memoryDir) {
+        const durable = result.changes === 1 ? value : this.getMemoryCandidate(value.id);
+        if (!durable) throw new Error(`Memory candidate not found after insert: ${value.id}`);
+        writeDurableMemoryCandidate(options.memoryDir, durable);
+      }
+      return result.changes === 1;
+    };
+    // Keep SQLite and the canonical sidecar in one rollback boundary. The
+    // filesystem write happens before COMMIT, so a confinement/I/O failure
+    // cannot leave a SQLite-only candidate behind.
+    return options.memoryDir ? this.transaction(persist) : persist();
+  }
+
+  getMemoryCandidate(id: string): MemoryCandidate | undefined {
+    const row = this.stmt('SELECT * FROM memory_candidates WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? this.rowToMemoryCandidate(row) : undefined;
+  }
+
+  listMemoryCandidates(filter?: MemoryCandidateFilter): MemoryCandidate[] {
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (filter?.lifecycle) {
+      conditions.push('lifecycle = ?');
+      params.push(filter.lifecycle);
+    }
+    if (filter?.scope) {
+      conditions.push('scope = ?');
+      params.push(filter.scope);
+    }
+    if (filter?.type) {
+      conditions.push('type = ?');
+      params.push(filter.type);
+    }
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const rows = this.db
+      .prepare(`SELECT * FROM memory_candidates${where} ORDER BY proposed_at, id`)
+      .all(...params) as Record<string, unknown>[];
+    return rows.map((row) => this.rowToMemoryCandidate(row));
+  }
+
+  updateMemoryCandidate(candidate: MemoryCandidate, options: { memoryDir?: string } = {}): void {
+    const value = validateMemoryCandidate(candidate);
+    const persist = () => {
+      const result = this.stmt(
+        `UPDATE memory_candidates SET
+       type = ?, claim = ?, normalized_claim = ?, scope = ?, sensitivity = ?, confidence = ?,
+       source_authority = ?, trust = ?, event_time = ?, proposed_at = ?, evidence = ?,
+       subject_entity_ids = ?, extractor = ?, lifecycle = ?, rejection_reason = ?,
+       canonical_path = ?, resolved_memory_id = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        value.type,
+        value.claim,
+        value.normalizedClaim,
+        value.scope,
+        value.sensitivity,
+        value.confidence,
+        value.sourceAuthority,
+        value.trust,
+        value.eventTime,
+        value.proposedAt,
+        JSON.stringify(value.evidence),
+        JSON.stringify(value.subjectEntityIds),
+        JSON.stringify(value.extractor),
+        value.lifecycle,
+        value.rejectionReason ?? null,
+        value.canonicalPath ?? null,
+        value.resolvedMemoryId ?? null,
+        value.createdAt,
+        value.updatedAt,
+        value.id,
+      );
+      if (result.changes !== 1) throw new Error(`Memory candidate not found: ${value.id}`);
+      if (options.memoryDir) writeDurableMemoryCandidate(options.memoryDir, value);
+    };
+    if (options.memoryDir) this.transaction(persist);
+    else persist();
+  }
+
+  transitionMemoryCandidate(
+    from: MemoryCandidateLifecycle,
+    candidate: MemoryCandidate,
+    options: { memoryDir?: string } = {},
+  ): boolean {
+    const value = validateMemoryCandidate(candidate);
+    const result = this.stmt(
+      `UPDATE memory_candidates SET
+       type = ?, claim = ?, normalized_claim = ?, scope = ?, sensitivity = ?, confidence = ?,
+       source_authority = ?, trust = ?, event_time = ?, proposed_at = ?, evidence = ?,
+       subject_entity_ids = ?, extractor = ?, lifecycle = ?, rejection_reason = ?,
+       canonical_path = ?, resolved_memory_id = ?, created_at = ?, updated_at = ? WHERE id = ? AND lifecycle = ?`,
+    ).run(
+      value.type,
+      value.claim,
+      value.normalizedClaim,
+      value.scope,
+      value.sensitivity,
+      value.confidence,
+      value.sourceAuthority,
+      value.trust,
+      value.eventTime,
+      value.proposedAt,
+      JSON.stringify(value.evidence),
+      JSON.stringify(value.subjectEntityIds),
+      JSON.stringify(value.extractor),
+      value.lifecycle,
+      value.rejectionReason ?? null,
+      value.canonicalPath ?? null,
+      value.resolvedMemoryId ?? null,
+      value.createdAt,
+      value.updatedAt,
+      value.id,
+      from,
+    );
+    if (result.changes !== 1) return false;
+    if (options.memoryDir) writeDurableMemoryCandidate(options.memoryDir, value);
+    return true;
+  }
+
+  deleteMemoryCandidate(id: string): void {
+    this.stmt('DELETE FROM memory_candidates WHERE id = ?').run(id);
+  }
+
+  private rowToMemoryCandidate(row: Record<string, unknown>): MemoryCandidate {
+    return validateMemoryCandidate({
+      id: row.id as string,
+      type: row.type as MemoryCandidate['type'],
+      claim: row.claim as string,
+      normalizedClaim: row.normalized_claim as string,
+      scope: row.scope as string,
+      sensitivity: row.sensitivity as MemoryCandidate['sensitivity'],
+      confidence: row.confidence as number,
+      sourceAuthority: row.source_authority as string,
+      trust: row.trust as number,
+      eventTime: row.event_time as string,
+      proposedAt: row.proposed_at as string,
+      evidence: JSON.parse(row.evidence as string),
+      subjectEntityIds: JSON.parse(row.subject_entity_ids as string),
+      extractor: JSON.parse(row.extractor as string),
+      lifecycle: row.lifecycle as MemoryCandidate['lifecycle'],
+      ...(typeof row.rejection_reason === 'string'
+        ? { rejectionReason: row.rejection_reason }
+        : {}),
+      ...(typeof row.canonical_path === 'string' ? { canonicalPath: row.canonical_path } : {}),
+      ...(typeof row.resolved_memory_id === 'string'
+        ? { resolvedMemoryId: row.resolved_memory_id }
+        : {}),
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    });
+  }
+
+  // ── Historical import ledger ──────────────────────────────
+
+  getImport(id: string): ImportLedgerEntry | undefined {
+    const row = this.stmt('SELECT * FROM imports WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? this.rowToImport(row) : undefined;
+  }
+
+  listImports(): ImportLedgerEntry[] {
+    const rows = this.stmt('SELECT * FROM imports ORDER BY ingested_at, id').all() as Record<
+      string,
+      unknown
+    >[];
+    return rows.map((row) => this.rowToImport(row));
+  }
+
+  putImport(entry: ImportLedgerEntry): void {
+    this.stmt(
+      `INSERT OR REPLACE INTO imports
+       (id, source_namespace, logical_source_id, source_digest, adapter_name, adapter_version,
+        status, ingested_at, completed_at, message_count, episode_count, evidence_path, report, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      entry.id,
+      entry.sourceNamespace,
+      entry.logicalSourceId,
+      entry.sourceDigest,
+      entry.adapterName,
+      entry.adapterVersion,
+      entry.status,
+      entry.ingestedAt,
+      entry.completedAt ?? null,
+      entry.messageCount,
+      entry.episodeCount,
+      entry.evidencePath,
+      entry.report ? JSON.stringify(entry.report) : null,
+      entry.error ?? null,
+    );
+  }
+
+  transaction<T>(operation: () => T): T {
+    return this.db.transaction(operation)();
+  }
+
+  immediateTransaction<T>(operation: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = operation();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  rawDatabaseForTests(): BetterSqlite3.Database {
+    return this.db;
+  }
+
+  private rowToImport(row: Record<string, unknown>): ImportLedgerEntry {
+    return {
+      id: row.id as string,
+      sourceNamespace: row.source_namespace as string,
+      logicalSourceId: row.logical_source_id as string,
+      sourceDigest: row.source_digest as string,
+      adapterName: row.adapter_name as string,
+      adapterVersion: row.adapter_version as string,
+      status: row.status as ImportLedgerEntry['status'],
+      ingestedAt: row.ingested_at as string,
+      completedAt: (row.completed_at as string) ?? undefined,
+      messageCount: row.message_count as number,
+      episodeCount: row.episode_count as number,
+      evidencePath: row.evidence_path as string,
+      report: row.report ? JSON.parse(row.report as string) : undefined,
+      error: (row.error as string) ?? undefined,
+    };
+  }
+
   // ── Episodes ──────────────────────────────────────────────
 
   putEpisode(episode: Episode): void {
     this.stmt(
       `INSERT OR REPLACE INTO episodes
        (id, timestamp, end_timestamp, type, title, summary, content, sequence, parent_id,
-        importance, access_count, last_accessed, source, source_type, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        importance, access_count, last_accessed, source, source_type, created_at, scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       episode.id,
       episode.timestamp,
@@ -1174,6 +1812,7 @@ export class SqliteStore implements GraphStore {
       episode.source,
       episode.sourceType,
       new Date().toISOString(),
+      episode.scope ?? null,
     );
   }
 
@@ -1216,7 +1855,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY e.timestamp DESC';
@@ -1365,8 +2004,8 @@ export class SqliteStore implements GraphStore {
     this.stmt(
       `INSERT OR REPLACE INTO procedures
        (id, statement, type, trigger_keywords, trigger_contexts, source_episodes, source_nodes,
-        confidence, applications, contradictions, stability, last_applied, created_at, updated_at, flagged_for_review)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        confidence, applications, contradictions, stability, last_applied, created_at, updated_at, flagged_for_review, scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       procedure.id,
       procedure.statement,
@@ -1383,6 +2022,7 @@ export class SqliteStore implements GraphStore {
       procedure.createdAt,
       procedure.updatedAt,
       procedure.flaggedForReview ? 1 : 0,
+      procedure.scope ?? null,
     );
   }
 
@@ -1411,7 +2051,7 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ' ORDER BY confidence DESC';
@@ -1442,11 +2082,23 @@ export class SqliteStore implements GraphStore {
 
   // ── Snapshots ────────────────────────────────────────────
 
-  createSnapshot(trigger: SnapshotTrigger, metadata?: Record<string, unknown>): Snapshot {
-    const now = new Date().toISOString();
+  createSnapshot(
+    trigger: SnapshotTrigger,
+    metadata?: Record<string, unknown>,
+    createdAt?: string,
+  ): Snapshot {
+    const now = createdAt ?? new Date().toISOString();
+    if (!Number.isFinite(Date.parse(now)) || new Date(now).toISOString() !== now) {
+      throw new Error('Snapshot createdAt must be a strict ISO timestamp');
+    }
     const id = `snap_${now}_${randomUUID().slice(0, 8)}`;
-    const nodes = this.listNodes();
-    const edges = this.listEdges();
+    // Scratch (session / unknown scopes) never enters durable temporal
+    // history — snapshots outlive the retention purge, so freezing scratch
+    // here would make "expires after N days" a lie.
+    const scratch = (scope?: string) => scope !== undefined && !isDurableScope(scope);
+    const nodes = this.listNodes().filter((n) => !scratch(n.scope));
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const edges = this.listEdges().filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
     const epCount = this.episodeCount();
 
     const snapshot: Snapshot = {
@@ -1531,10 +2183,10 @@ export class SqliteStore implements GraphStore {
     }
 
     if (conditions.length) {
-      sql += ' WHERE ' + conditions.join(' AND ');
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
-    sql += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY created_at DESC, id ASC';
 
     if (opts?.limit) {
       sql += ' LIMIT ?';

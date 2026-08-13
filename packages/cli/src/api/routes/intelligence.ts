@@ -7,6 +7,10 @@ import {
   analyzeSignificance,
   generateSuggestions,
   consolidateTruthLayer,
+  filterGraphByScopes,
+  loadConfig,
+  parseScopesFilter,
+  purgeExpiredScratch,
   resolveMemoryDir,
   type PendingEdge,
 } from '@nacre/core';
@@ -29,7 +33,8 @@ export function intelligenceRoutes(
   app.get('/brief', (c) => {
     const top = parseInt(c.req.query('top') ?? '20', 10);
     const recentDays = parseInt(c.req.query('recentDays') ?? '7', 10);
-    const graph = store.getFullGraph();
+    const scopes = parseScopesFilter(c.req.query('scopes'));
+    const graph = filterGraphByScopes(store.getFullGraph(), scopes);
     const result = generateBrief(graph, { top, recentDays, now: new Date() });
 
     if (c.req.query('format') === 'text') {
@@ -39,20 +44,20 @@ export function intelligenceRoutes(
   });
 
   app.get('/alerts', (c) => {
-    const graph = store.getFullGraph();
+    const graph = filterGraphByScopes(store.getFullGraph());
     const result = generateAlerts(graph, { now: new Date() });
     return c.json({ data: result });
   });
 
   app.get('/insights', (c) => {
     const recentDays = parseInt(c.req.query('recentDays') ?? '7', 10);
-    const graph = store.getFullGraph();
+    const graph = filterGraphByScopes(store.getFullGraph());
     const result = analyzeSignificance(graph, { recentDays, now: new Date() });
     return c.json({ data: result });
   });
 
   app.get('/suggest', (c) => {
-    const graph = store.getFullGraph();
+    const graph = filterGraphByScopes(store.getFullGraph());
     const pendingStr = store.getMeta('pending_edges');
     const pendingEdges: PendingEdge[] = pendingStr ? JSON.parse(pendingStr) : [];
     const maxSuggestions = parseInt(c.req.query('max') ?? '10', 10);
@@ -112,13 +117,26 @@ export function intelligenceRoutes(
     // The truth-layer sequence runs on EVERY consolidation surface — without
     // it, API/MCP captures would never be promoted to canonical files.
     let truthLayer: ReturnType<typeof consolidateTruthLayer> | null = null;
+    let standalonePurge: ReturnType<typeof purgeExpiredScratch> | null = null;
+    if (!memoryDir && target.endsWith('.db')) {
+      // Session scratch expires even on database-only setups.
+      const sameStore = target === graphPath;
+      const purgeStore = sameStore ? store : SqliteStore.open(target);
+      try {
+        standalonePurge = purgeExpiredScratch(purgeStore, loadConfig(target).scopes);
+      } finally {
+        if (!sameStore) purgeStore.close();
+      }
+    }
     if (memoryDir) {
       // Reuse the bound store when consolidating into the served graph;
       // otherwise open the target store for the duration.
       const sameStore = target === graphPath;
       const truthStore = sameStore ? store : SqliteStore.open(target);
       try {
-        truthLayer = consolidateTruthLayer(truthStore, memoryDir);
+        truthLayer = consolidateTruthLayer(truthStore, memoryDir, {
+          scopeOverrides: loadConfig(target).scopes,
+        });
       } finally {
         if (!sameStore) truthStore.close();
       }
@@ -138,10 +156,12 @@ export function intelligenceRoutes(
             compiledMemories: truthLayer.compiled.memories,
             removed: truthLayer.compiled.removed,
             edgesRemoved: truthLayer.compiled.edgesRemoved,
+            purged: truthLayer.purged,
             warnings: truthLayer.warnings,
             errors: truthLayer.errors,
           }
         : null,
+      ...(standalonePurge ? { purged: standalonePurge } : {}),
     };
 
     // Same contract as CLI consolidate (non-zero exit): truth-layer errors

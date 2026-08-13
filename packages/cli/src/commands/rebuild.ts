@@ -3,9 +3,16 @@ import { defineCommand } from 'citty';
 import {
   SqliteStore,
   compileMemoryDir,
+  rebuildDurableMemoryCandidates,
+  rebuildHistoricalEvidence,
   replayCaptureCandidates,
   resolveProvider,
 } from '@nacre/core';
+import { extractFromConversation } from '@nacre/parser';
+
+export function rebuildHistoricalWithDefaultExtractor(store: SqliteStore, memoryDir: string) {
+  return rebuildHistoricalEvidence(store, memoryDir, { extractEntities: extractFromConversation });
+}
 
 export default defineCommand({
   meta: {
@@ -62,10 +69,12 @@ export default defineCommand({
     const store = SqliteStore.open(graphPath);
     try {
       const result = compileMemoryDir(store, memoryDir);
+      const durableCandidates = rebuildDurableMemoryCandidates(store, memoryDir);
       // The rebuild contract covers BOTH durable tiers: canonical files and
       // the unpromoted capture spool. Replay after compile so promoted
       // entries (same id as their file) are recognized and skipped.
       const replay = replayCaptureCandidates(store, memoryDir);
+      const historical = await rebuildHistoricalWithDefaultExtractor(store, memoryDir);
 
       console.log(`Compiled ${result.files} memory files from ${memoryDir}:`);
       console.log(`  Memories:        ${result.memories}`);
@@ -73,6 +82,12 @@ export default defineCommand({
       console.log(`  Edges:           ${result.edges}`);
       console.log(
         `  Capture replay:  ${replay.candidates} unpromoted candidates (${replay.skipped} already promoted)`,
+      );
+      console.log(
+        `  Candidate replay: ${durableCandidates.replayed} pending/rejected (${durableCandidates.skipped} canonical promoted)`,
+      );
+      console.log(
+        `  Historical replay: ${historical.episodesCreated} episodes from ${historical.importsCompleted} imports`,
       );
 
       if (result.warnings.length > 0) {
@@ -83,7 +98,7 @@ export default defineCommand({
       // Fail BEFORE embedding: a partial graph must never be stamped with an
       // encoder fingerprint and left on disk looking complete. Remove the
       // partial database entirely — this command created it this run.
-      const allErrors = [...result.errors, ...replay.errors];
+      const allErrors = [...result.errors, ...durableCandidates.errors, ...replay.errors];
       if (allErrors.length > 0) {
         console.error(`\nErrors (${allErrors.length}) — these files/entries were NOT compiled:`);
         for (const error of allErrors) console.error(`  ✖ ${error}`);

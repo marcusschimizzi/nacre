@@ -2,6 +2,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { OnnxEmbedder, OllamaEmbedder, OpenAIEmbedder, MockEmbedder } from './embeddings.js';
 import type { EmbeddingProvider } from './embeddings.js';
+import {
+  resolveWriteScope,
+  scopePolicy,
+  type ScopePolicy,
+  type ScopePolicyOverrides,
+} from './scopes.js';
 
 export type ProviderName = 'onnx' | 'ollama' | 'openai' | 'mock';
 
@@ -19,12 +25,16 @@ export interface SnapshotConfig {
 export interface MemoryDirConfig {
   /** Canonical memory directory (truth layer), absolute or relative to the graph's directory. */
   dir?: string;
+  /** Scope for writes that don't specify one. Must be durable; default 'agent'. */
+  defaultScope?: string;
 }
 
 export interface NacreConfig {
   embeddings?: EmbeddingConfig;
   snapshots?: SnapshotConfig;
   memory?: MemoryDirConfig;
+  /** Per-scope policy overrides, keyed by exact scope or class (see scopes.ts). */
+  scopes?: ScopePolicyOverrides;
 }
 
 export interface ResolveProviderOptions {
@@ -69,6 +79,20 @@ export function resolveMemoryDir(graphPath: string | null): string | null {
 
   const conventional = join(base, 'memory');
   return existsSync(conventional) ? conventional : null;
+}
+
+/**
+ * The scope a write to this graph lands in: explicit argument →
+ * memory.defaultScope from nacre.config.json → 'agent'. Callers surface the
+ * result in their responses so the default is always visible, never silent.
+ */
+export function resolveScopeForWrite(graphPath: string | null, explicit?: string): string {
+  return resolveWriteScope(explicit, loadConfig(graphPath).memory?.defaultScope);
+}
+
+/** Effective policy for a scope on this graph (built-ins + config overrides). */
+export function resolveScopePolicy(graphPath: string | null, scope: string): ScopePolicy {
+  return scopePolicy(scope, loadConfig(graphPath).scopes);
 }
 
 export function resolveProvider(opts?: ResolveProviderOptions): EmbeddingProvider | null {

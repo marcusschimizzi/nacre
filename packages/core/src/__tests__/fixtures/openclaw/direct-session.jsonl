@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"sess-synthetic-direct","agentId":"main","timestamp":"2026-01-15T09:59:00.000Z"}
+{"type":"message","id":"msg-user-1","parentId":null,"timestamp":"2026-01-15T10:00:00.000Z","message":{"role":"user","content":"Please remember that Project Pearl uses the synthetic blue pipeline."}}
+{"type":"message","id":"msg-assistant-1","parentId":"msg-user-1","timestamp":"2026-01-15T10:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Understood. Project Pearl uses the synthetic blue pipeline."},{"type":"toolCall","id":"call-1","name":"lookup","arguments":{"project":"Pearl"}}]}}
+{"type":"message","id":"msg-tool-1","parentId":"msg-assistant-1","timestamp":"2026-01-15T10:01:30.000Z","message":{"role":"toolResult","toolCallId":"call-1","toolName":"lookup","content":[{"type":"text","text":"Synthetic lookup result: blue."}]}}
+{"type":"message","id":"msg-history-1","parentId":"msg-tool-1","timestamp":"2026-01-15T10:02:00.000Z","message":{"role":"user","content":"Recent Conversation History:\nuser: Project Pearl uses the synthetic blue pipeline.\nassistant: Confirmed."}}

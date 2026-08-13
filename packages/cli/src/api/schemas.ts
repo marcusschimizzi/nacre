@@ -7,6 +7,13 @@ export const memoryCreateSchema = z.object({
     .optional()
     .default('concept'),
   label: z.string().min(1).max(1024).optional(),
+  scope: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      "Where the memory belongs: 'user', 'agent', 'project/<name>', or 'session' (scratch). Default: configured memory.defaultScope, else 'agent'.",
+    ),
 });
 
 export const feedbackSchema = z.object({

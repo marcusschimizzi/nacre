@@ -6,15 +6,13 @@ import {
   memoryFilePath,
   memorySlug,
   mintMemoryId,
-  isValidScope,
-  scopeToDir,
-  pathToScope,
   extractClaim,
   extractSource,
   extractWikilinks,
   MemoryFileError,
   type MemoryObject,
 } from '../memory-file.js';
+import { isValidScope, pathToScope, scopeToDir } from '../scopes.js';
 
 const EXAMPLE = `---
 id: mem_a1b2c3d4e5f6
@@ -24,7 +22,7 @@ confidence: 0.9
 sensitivity: low
 created: 2026-07-17
 last_confirmed: 2026-07-17
-supersedes: mem_x9y8aabbccdd
+supersedes: mem_f9e8aabbccdd
 sources:
   - episode:ep_2026-06-08_1
   - file:docs/REVIEW-2026-06.md
@@ -64,7 +62,7 @@ describe('parseMemoryFile', () => {
     assert.equal(parsed.memory.type, 'decision');
     assert.equal(parsed.memory.scope, 'project/nacre');
     assert.equal(parsed.memory.confidence, 0.9);
-    assert.equal(parsed.memory.supersedes, 'mem_x9y8aabbccdd');
+    assert.equal(parsed.memory.supersedes, 'mem_f9e8aabbccdd');
     assert.deepEqual(parsed.memory.sources, [
       'episode:ep_2026-06-08_1',
       'file:docs/REVIEW-2026-06.md',
@@ -129,6 +127,15 @@ describe('parseMemoryFile', () => {
         parseMemoryFile(
           base(
             'id: mem_0011aabbccdd\ntype: fact\nscope: user\ncreated: 2026-07-17\nconfidence: 1.5',
+          ),
+        ),
+      MemoryFileError,
+    );
+    assert.throws(
+      () =>
+        parseMemoryFile(
+          base(
+            'id: mem_0011aabbccdd\ntype: fact\nscope: user\ncreated: 2026-07-17\nconfidence: .nan',
           ),
         ),
       MemoryFileError,

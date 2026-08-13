@@ -17,6 +17,7 @@ import { buildAdjacencyMap, type AdjacencyMap } from './graph.js';
 import { computeCurrentWeight, daysBetween } from './decay.js';
 import { normalize } from './resolve.js';
 import { findNode, searchNodes } from './query.js';
+import { nodeVisibleInScopes, recordVisibleInScopes } from './scopes.js';
 import { findRelevantProcedures } from './procedures.js';
 import { getHiveOriginFactor } from './hive.js';
 
@@ -185,7 +186,8 @@ export async function recall(
   const weights: RecallWeights = { ...DEFAULT_RECALL_WEIGHTS, ...opts.weights };
   const limit = opts.limit ?? 10;
   const hops = opts.hops ?? 2;
-  const now = new Date();
+  const now = opts.asOf ? new Date(opts.asOf) : new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error('asOf must be a valid ISO timestamp');
   const nowStr = now.toISOString();
 
   const semanticMap = new Map<string, number>();
@@ -204,28 +206,33 @@ export async function recall(
       semanticMap.set(hit.id, Math.max(semanticMap.get(hit.id) ?? 0, hit.similarity));
     }
 
-    const epHits = store.searchSimilar(queryVec, {
-      limit,
-      type: 'episode',
-    });
-    for (const hit of epHits) {
-      const links = store.getEpisodeEntities(hit.id);
-      const episode = store.getEpisode(hit.id);
-      for (const link of links) {
-        semanticMap.set(
-          link.nodeId,
-          Math.max(semanticMap.get(link.nodeId) ?? 0, hit.similarity * EPISODE_SEMANTIC_DISCOUNT),
-        );
-        if (episode) {
-          const existing = episodeHits.get(link.nodeId) ?? [];
-          existing.push(episode);
-          episodeHits.set(link.nodeId, existing);
+    if (!opts.requireSnapshot) {
+      const epHits = store.searchSimilar(queryVec, {
+        limit,
+        type: 'episode',
+      });
+      for (const hit of epHits) {
+        const episode = store.getEpisode(hit.id);
+        // An out-of-scope episode must not boost visible nodes' ranking.
+        if (episode && !recordVisibleInScopes(episode, opts.scopes)) continue;
+        const links = store.getEpisodeEntities(hit.id);
+        for (const link of links) {
+          semanticMap.set(
+            link.nodeId,
+            Math.max(semanticMap.get(link.nodeId) ?? 0, hit.similarity * EPISODE_SEMANTIC_DISCOUNT),
+          );
+          if (episode) {
+            const existing = episodeHits.get(link.nodeId) ?? [];
+            existing.push(episode);
+            episodeHits.set(link.nodeId, existing);
+          }
         }
       }
     }
   }
 
   let graph: NacreGraph;
+  let snapshotTimestamp: string | undefined;
   // Adjacency for the graph walk AND connection-building below. For the live
   // graph, reuse the store's memoized adjacency map; for an asOf snapshot graph,
   // build it from that snapshot (the store's cache is the live graph's).
@@ -235,8 +242,12 @@ export async function recall(
     const snapshots = store.listSnapshots({ until: opts.asOf, limit: 1 });
     if (snapshots.length > 0) {
       graph = store.getSnapshotGraph(snapshots[0].id);
+      snapshotTimestamp = snapshots[0].createdAt;
       adj = buildAdjacencyMap(graph);
     } else {
+      if (opts.requireSnapshot) {
+        throw new Error(`exact as-of recall requires a snapshot at or before ${opts.asOf}`);
+      }
       console.warn(
         `No snapshot found before ${opts.asOf}. Using live graph instead. Run 'nacre snapshots create' to create one.`,
       );
@@ -246,6 +257,48 @@ export async function recall(
   } else {
     graph = store.getFullGraph();
     adj = store.getAdjacencyMap();
+  }
+
+  if (opts.requireSnapshot && provider && snapshotTimestamp) {
+    const latestEmbedding = store.getLatestEmbeddingCreatedAt();
+    if (latestEmbedding && latestEmbedding > snapshotTimestamp) {
+      throw new Error(
+        `exact as-of recall requires embeddings no newer than snapshot ${snapshotTimestamp}`,
+      );
+    }
+  }
+
+  // Validity is an admission boundary, not merely a final result filter:
+  // stale/future beliefs cannot seed or bridge graph traversal, nor receive
+  // semantic boosts through episode links.
+  const effectiveAt = opts.asOf ?? nowStr;
+  const hiddenBeliefIds = new Set(
+    Object.values(graph.nodes)
+      .filter(
+        (node) =>
+          (node.validFrom !== undefined && effectiveAt < node.validFrom) ||
+          (node.validUntil !== undefined && effectiveAt >= node.validUntil) ||
+          (!opts.asOf && node.beliefLifecycle === 'superseded'),
+      )
+      .map((node) => node.id),
+  );
+  if (hiddenBeliefIds.size > 0) {
+    graph = {
+      ...graph,
+      nodes: Object.fromEntries(
+        Object.entries(graph.nodes).filter(([id]) => !hiddenBeliefIds.has(id)),
+      ),
+      edges: Object.fromEntries(
+        Object.entries(graph.edges).filter(
+          ([, edge]) => !hiddenBeliefIds.has(edge.source) && !hiddenBeliefIds.has(edge.target),
+        ),
+      ),
+    };
+    for (const id of hiddenBeliefIds) {
+      semanticMap.delete(id);
+      episodeHits.delete(id);
+    }
+    adj = buildAdjacencyMap(graph);
   }
 
   const terms = extractQueryTerms(opts.query);
@@ -294,10 +347,17 @@ export async function recall(
     const node = graph.nodes[id];
     if (!node) continue;
 
+    const effectiveAt = opts.asOf ?? nowStr;
+    if (node.validFrom && effectiveAt < node.validFrom) continue;
+    if (node.validUntil && effectiveAt >= node.validUntil) continue;
+    if (!opts.asOf && node.beliefLifecycle === 'superseded') continue;
+
+    if (!nodeVisibleInScopes(node, opts.scopes)) continue;
+
     if (opts.types && !opts.types.includes(node.type)) continue;
 
     if (opts.since && node.lastReinforced < opts.since) continue;
-    if (opts.until && node.lastReinforced > opts.until) continue;
+    if (opts.until && node.lastReinforced >= opts.until) continue;
 
     const semantic = semanticMap.get(id) ?? 0;
     const graphScore = graphMap.get(id) ?? 0;
@@ -316,16 +376,19 @@ export async function recall(
     scored.push({ id, combined, semantic, graphScore, recency, importance });
   }
 
-  scored.sort((a, b) => b.combined - a.combined);
+  scored.sort((a, b) => b.combined - a.combined || a.id.localeCompare(b.id));
   const top = scored.slice(0, limit);
 
   const results: RecallResult[] = [];
   // Batch every candidate's episode lookup into two queries instead of an N+1
   // (one getEntityEpisodes + a per-episode links query) per result.
-  const episodesByNode = store.getEntityEpisodesBatch(top.map((c) => c.id));
+  const episodesByNode = opts.requireSnapshot
+    ? new Map<string, Episode[]>()
+    : store.getEntityEpisodesBatch(top.map((c) => c.id));
 
   for (const candidate of top) {
-    const node = graph.nodes[candidate.id]!;
+    const node = graph.nodes[candidate.id];
+    if (!node) continue;
 
     // Build connections from the in-memory adjacency map — the full edge set is
     // already loaded into graph.edges — instead of two store.listEdges queries
@@ -344,7 +407,7 @@ export async function recall(
     for (const edge of allEdges) {
       const neighborId = edge.source === candidate.id ? edge.target : edge.source;
       const neighbor = graph.nodes[neighborId];
-      if (neighbor) {
+      if (neighbor && nodeVisibleInScopes(neighbor, opts.scopes)) {
         connections.push({
           label: neighbor.label,
           type: neighbor.type,
@@ -360,6 +423,7 @@ export async function recall(
 
     const allEpisodes = new Map<string, Episode>();
     for (const ep of [...nodeEpisodes, ...hitEpisodes]) {
+      if (!recordVisibleInScopes(ep, opts.scopes)) continue;
       allEpisodes.set(ep.id, ep);
     }
     if (allEpisodes.size > 0) {
@@ -387,10 +451,16 @@ export async function recall(
 
   let procedures: RecallProcedureMatch[] = [];
   if (opts.includeProcedures !== false) {
+    const procLimit = opts.procedureLimit ?? 3;
+    // Over-fetch before the scope filter (same pattern as similar/search):
+    // filtering after the limit would let out-of-scope procedures consume
+    // result slots and starve the page.
     const procMatches = findRelevantProcedures(store, opts.query, [], {
-      limit: opts.procedureLimit ?? 3,
+      limit: procLimit * 3,
       minScore: 0.1,
-    });
+    })
+      .filter((m) => recordVisibleInScopes(m.procedure, opts.scopes))
+      .slice(0, procLimit);
     procedures = procMatches.map(
       (m): RecallProcedureMatch => ({
         id: m.procedure.id,
