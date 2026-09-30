@@ -59,11 +59,29 @@ All endpoints are under `/api/v1/`.
 | GET | `/snapshots` | List snapshots (query: `since`, `until`, `limit`) |
 | POST | `/snapshots` | Create manual snapshot |
 | GET | `/snapshots/:id` | Get snapshot details |
-| GET | `/snapshots/:id/graph` | Get full graph from snapshot |
+| GET | `/snapshots/:id/graph` | Get the scope-visible graph from a snapshot |
 | DELETE | `/snapshots/:id` | Delete a snapshot |
 | GET | `/diff/:from/:to` | Diff two snapshots |
 | GET | `/history/node/:id` | Node history across snapshots |
 | GET | `/history/edge/:id` | Edge history across snapshots |
+
+Temporal reads accept an optional comma-separated `scopes` query parameter,
+for example `?scopes=user,project/nacre`. Omitted or empty filters include all
+durable scopes and shared entities; session and unknown scratch scopes must be
+requested explicitly. New snapshots exclude scratch at creation, so explicitly
+requesting it only exposes matching states in older snapshots that retained it.
+
+Visibility is evaluated from each stored historical node, not its current scope.
+An edge is visible only when both endpoints exist and are visible in the same
+snapshot. Diffs compare the filtered snapshots, so moving a node into or out of
+a requested scope appears as an addition or removal without exposing the hidden
+state.
+
+Snapshot API summaries return `id`, `createdAt`, `trigger`, and scope-visible
+`nodeCount`/`edgeCount`. They omit `episodeCount` and arbitrary `metadata`, whose
+historical scope cannot be determined from the snapshot. `POST /snapshots` also
+accepts `scopes` for its response; it still captures the complete durable graph.
+These response filters do not alter stored snapshots.
 
 ## Configuration
 

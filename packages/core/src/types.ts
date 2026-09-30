@@ -54,6 +54,15 @@ export interface MemoryNode {
   status?: 'candidate' | 'promoted';
   /** Path of the canonical memory file (relative to the memory root), once promoted. */
   canonicalPath?: string;
+  /**
+   * V2-2 scope: user / agent / project/<name> / session. Unset on entity
+   * nodes — entities are the shared vocabulary, visible from every scope.
+   */
+  scope?: string;
+  /** File-derived belief lifecycle and event-time validity. */
+  beliefLifecycle?: 'active' | 'superseded';
+  validFrom?: string;
+  validUntil?: string;
 }
 
 export type EdgeType = 'explicit' | 'co-occurrence' | 'temporal' | 'causal';
@@ -305,6 +314,8 @@ export interface Episode {
   lastAccessed: string;
   source: string;
   sourceType: 'markdown' | 'conversation' | 'api';
+  /** V2-2 scope; unset = pre-scope legacy, treated as 'agent' for policy. */
+  scope?: string;
 }
 
 export interface EpisodeEntityLink {
@@ -341,6 +352,8 @@ export interface Procedure {
   createdAt: string;
   updatedAt: string;
   flaggedForReview: boolean;
+  /** V2-2 scope; unset = pre-scope legacy, treated as 'agent' for policy. */
+  scope?: string;
 }
 
 export interface ProcedureFilter {
@@ -383,22 +396,51 @@ export interface EntityHistory {
 
 // === Conversation Ingestion Types (M11) ===
 
+export type ConversationMessageOrigin =
+  | 'direct'
+  | 'quoted_context'
+  | 'system'
+  | 'tool_call'
+  | 'tool_result'
+  | 'internal_route'
+  | 'cron';
+
 export interface ConversationMessage {
+  id?: string;
+  parentId?: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp?: string; // ISO date
   name?: string; // participant name (for multi-party)
   toolName?: string; // for tool messages
   toolCallId?: string;
+  origin?: ConversationMessageOrigin;
+  extractionEligible?: boolean;
+  sourceRef?: string;
+  /** Original adapter position retained even when historical messages are event-time sorted. */
+  sourcePosition?: { line: number; ordinal: number };
+  contentHash?: string;
+  /** Source blocks not understood by the adapter, retained verbatim for audit/replay. */
+  rawContentBlocks?: unknown[];
 }
 
 export interface ConversationInput {
   messages: ConversationMessage[];
+  /** Recoverable parse/validation diagnostics with source and line locations. */
+  warnings?: string[];
+  /** Exact source lines that could not be fully normalized without loss. */
+  rawEvidence?: Array<{ line: number; raw: string; reason: string }>;
   metadata?: {
     sessionId?: string;
     platform?: string; // 'slack', 'discord', 'cli', 'openai', etc.
     topic?: string;
     source?: string; // file path or URL
+    agentId?: string;
+    sourceNamespace?: string;
+    sourceDigest?: string;
+    eventStart?: string;
+    eventEnd?: string;
+    scope?: string;
   };
 }
 
@@ -408,6 +450,25 @@ export interface ConversationChunk {
   endTime?: string;
   topic?: string; // inferred or from metadata
   summary?: string;
+}
+
+export type ImportStatus = 'planned' | 'running' | 'complete' | 'failed';
+
+export interface ImportLedgerEntry {
+  id: string;
+  sourceNamespace: string;
+  logicalSourceId: string;
+  sourceDigest: string;
+  adapterName: string;
+  adapterVersion: string;
+  status: ImportStatus;
+  ingestedAt: string;
+  completedAt?: string;
+  messageCount: number;
+  episodeCount: number;
+  evidencePath: string;
+  report?: Record<string, unknown>;
+  error?: string;
 }
 
 // === Hybrid Recall Types (M5) ===
@@ -438,6 +499,13 @@ export interface RecallOptions {
   includeProcedures?: boolean;
   procedureLimit?: number;
   asOf?: string;
+  /** Fail closed when asOf has no eligible snapshot instead of using live graph state. */
+  requireSnapshot?: boolean;
+  /**
+   * Scope filter (V2-2 D2). Undefined = every durable scope, never session;
+   * session scratch must be requested explicitly. Entities are always visible.
+   */
+  scopes?: string[];
 }
 
 export interface RecallScores {
@@ -516,6 +584,20 @@ export interface HiveConsolidationOptions {
   deduplicationThreshold?: number;
   originFactor?: number;
   decayWindowDays?: number;
+  /**
+   * V2-2: per-scope policy overrides (nacre.config.json → scopes). Nodes
+   * whose scope policy is not hive-eligible (agent and session by default)
+   * never enter the hive.
+   */
+  scopeOverrides?: Record<
+    string,
+    Partial<{
+      spooled: boolean;
+      hiveEligible: boolean;
+      syncEligible: boolean;
+      retentionDays: number | null;
+    }>
+  >;
 }
 
 export interface HiveRecallOptions extends RecallOptions {

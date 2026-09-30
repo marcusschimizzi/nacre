@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"sess-synthetic-direct","agentId":"main","timestamp":"2026-01-15T09:59:00.000Z"}
+{"type":"message","id":"reset-only","timestamp":"2026-01-15T09:59:30.000Z","message":{"role":"user","content":"Synthetic reset alternate."}}

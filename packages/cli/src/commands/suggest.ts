@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { defineCommand } from 'citty';
-import { generateSuggestions, type PendingEdge } from '@nacre/core';
+import { filterGraphByScopes, generateSuggestions, type PendingEdge } from '@nacre/core';
 import { formatJSON } from '../output.js';
 import { loadGraph, closeGraph } from '../graph-loader.js';
 
@@ -57,7 +57,7 @@ export default defineCommand({
       }
 
       const maxSuggestions = parseInt(args.max as string, 10) || 10;
-      const result = generateSuggestions(loaded.graph, pendingEdges, {
+      const result = generateSuggestions(filterGraphByScopes(loaded.graph), pendingEdges, {
         maxSuggestions,
         now: new Date(),
       });

@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 import {
+  SESSION_SCOPE,
   appendCapture,
   forgetMemory,
   mintMemoryId,
   resolveMemoryDir,
+  resolveScopeForWrite,
+  resolveScopePolicy,
   resolveProvider,
   type MemoryNode,
   type MemoryObjectType,
@@ -44,10 +47,18 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
     const { content, type, label } = parsed.data;
     const id = mintMemoryId();
     const now = new Date().toISOString();
+    const scope = resolveScopeForWrite(graphPath, parsed.data.scope);
+    const scopeWarning =
+      parsed.data.scope && parsed.data.scope !== scope
+        ? [`Unknown scope "${parsed.data.scope}" — memory landed in '${scope}'.`]
+        : [];
+    const sessionWrite = scope === SESSION_SCOPE;
 
     // Two-phase write (V2-1): spool first (the durable act), then compile an
     // immediately-recallable candidate row. Canonical file at consolidation.
-    const memoryDir = resolveMemoryDir(graphPath);
+    // Session scratch short-circuits the spool — never durable, never
+    // promoted (D4).
+    const memoryDir = sessionWrite ? null : resolveMemoryDir(graphPath);
     if (memoryDir) {
       appendCapture(memoryDir, {
         id,
@@ -55,7 +66,7 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
         origin: 'api',
         // entityType preserves the node type through promotion — without it,
         // consolidation would reclassify e.g. person/tool memories as concept.
-        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact', entityType: type },
+        payload: { content, type: ENTITY_TO_MEMORY_TYPE[type] ?? 'fact', entityType: type, scope },
       });
     }
 
@@ -70,7 +81,9 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
       reinforcementCount: 0,
       sourceFiles: ['api'],
       excerpts: [{ file: 'api', text: content, date: now.slice(0, 10) }],
-      status: 'candidate',
+      // Session scratch is not a candidate — there is nothing to promote.
+      ...(sessionWrite ? {} : { status: 'candidate' as const }),
+      scope,
     };
 
     store.putNode(node);
@@ -80,7 +93,8 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
     // database-only one, and a searchable memory from a skipped embed —
     // neither state may look silently successful.
     const warnings = [
-      ...(memoryDir
+      ...scopeWarning,
+      ...(memoryDir || sessionWrite
         ? []
         : [
             'No memory directory configured — this memory is database-only and will not survive a rebuild. Configure memory.dir in nacre.config.json.',
@@ -94,6 +108,13 @@ export function memoryRoutes(store: SqliteStore, graphPath: string): Hono {
           embedded: embedResult.embedded,
           ...(embedResult.reason ? { embedSkipped: embedResult.reason } : {}),
           captured: Boolean(memoryDir),
+          scope,
+          ...(sessionWrite
+            ? {
+                ephemeral: true,
+                retentionDays: resolveScopePolicy(graphPath, SESSION_SCOPE).retentionDays,
+              }
+            : {}),
         },
         ...(warnings.length > 0 ? { warning: warnings.join(' ') } : {}),
       },

@@ -9,7 +9,11 @@ import {
   tombstonedIds,
 } from './capture.js';
 import { generateEdgeId, generateNodeId } from './graph.js';
+import { validateCanonicalBeliefSet, type CanonicalBelief } from './belief-validation.js';
 import { MemoryFileError, parseMemoryFile } from './memory-file.js';
+import { recoverMemoryResolutionTransactions } from './memory-resolution-transaction.js';
+import { normalizeMemoryClaim } from './memory-extraction.js';
+import { SESSION_SCOPE, resolveWriteScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 import { ENTITY_TYPES, type EntityType, type MemoryNode } from './types.js';
 
@@ -107,6 +111,46 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
     warnings: [],
     errors: [],
   };
+  if (!existsSync(memoryDir)) return result;
+  // A prepared resolution intent is authoritative. Finish it before reading
+  // canonical files so rebuild can never observe a one-file half-state.
+  recoverMemoryResolutionTransactions(store, memoryDir);
+  // Lineage is a graph-wide invariant. Validate all parseable canonical files
+  // before writing any derived rows so malformed references/cycles fail closed.
+  const beliefPreflight: CanonicalBelief[] = [];
+  const fatalBeliefParseErrors: string[] = [];
+  for (const path of listMemoryFiles(memoryDir)) {
+    const content = readFileSync(join(memoryDir, path), 'utf8');
+    try {
+      beliefPreflight.push({
+        path,
+        parsed: parseMemoryFile(content, path),
+      });
+    } catch (error) {
+      // Per-file parse errors retain the established partial-compile behavior;
+      // malformed belief/candidate lineage is different: compiling peers would
+      // publish a derived view of a truth set whose ownership cannot be known.
+      if (
+        /candidate_records|candidate_ids|supersedes|superseded_by|valid_(?:from|until)|lifecycle:/.test(
+          content,
+        )
+      ) {
+        fatalBeliefParseErrors.push(
+          `${path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  if (fatalBeliefParseErrors.length > 0) {
+    result.errors.push(...fatalBeliefParseErrors.map((error) => `belief preflight: ${error}`));
+    return result;
+  }
+  try {
+    validateCanonicalBeliefSet(beliefPreflight);
+  } catch (error) {
+    result.errors.push(`belief lineage: ${error instanceof Error ? error.message : String(error)}`);
+    return result;
+  }
   // Entity ids each compiled memory currently links — the file-derived truth
   // for that memory's explicit edges.
   const currentLinks = new Map<string, Set<string>>();
@@ -161,6 +205,12 @@ export function compileMemoryDir(store: SqliteStore, memoryDir: string): Compile
         result.warnings.push(`${relPath}: ${warning}`);
       }
       compileMemory(store, parsed, relPath, result, currentLinks);
+      for (const candidate of parsed.memory.candidateRecords ?? []) {
+        const rebuilt = { ...candidate, canonicalPath: relPath };
+        const existing = store.getMemoryCandidate(rebuilt.id);
+        if (existing) store.updateMemoryCandidate(rebuilt);
+        else store.createMemoryCandidate(rebuilt);
+      }
     } catch (err) {
       if (err instanceof MemoryFileError) {
         result.errors.push(`${relPath}: ${err.message}`);
@@ -281,6 +331,13 @@ export function replayCaptureCandidates(
       continue;
     }
 
+    // Session-scoped spool entries are never replayed — same rule as
+    // promotion, so consolidate and rebuild agree on the same input.
+    if (entry.payload.scope === SESSION_SCOPE) {
+      result.skipped++;
+      continue;
+    }
+
     // Promoted entries were compiled from their canonical file (same id);
     // already-replayed ones are equally present. Never double-create.
     if (store.getNode(id)) {
@@ -305,6 +362,7 @@ export function replayCaptureCandidates(
       sourceFiles: [spoolFile],
       excerpts: [{ file: spoolFile, text: entry.payload.content, date }],
       status: 'candidate',
+      scope: resolveWriteScope(entry.payload.scope),
     });
     result.candidates++;
 
@@ -382,9 +440,47 @@ function compileMemory(
     excerpts: [{ file: relPath, text: truncate(claim, EXCERPT_MAX), date: memory.created }],
     status: 'promoted',
     canonicalPath: relPath,
+    scope: memory.scope,
+    ...(memory.lifecycle ? { beliefLifecycle: memory.lifecycle } : {}),
+    ...(memory.validFrom ? { validFrom: memory.validFrom } : {}),
+    ...(memory.validUntil ? { validUntil: memory.validUntil } : {}),
   };
   store.putNode(memoryNode);
   result.memories++;
+
+  // Candidate-promoted canonical files carry enough structured provenance to
+  // rebuild the dedicated belief record without the original SQLite store.
+  if (
+    memory.evidence &&
+    memory.extractor &&
+    memory.sourceAuthority &&
+    memory.eventTime &&
+    memory.proposedAt
+  ) {
+    const rebuiltCandidate = {
+      id: memory.id,
+      type: memory.type,
+      claim,
+      normalizedClaim: normalizeMemoryClaim(claim),
+      scope: memory.scope,
+      sensitivity: memory.sensitivity,
+      confidence: memory.confidence,
+      sourceAuthority: memory.sourceAuthority,
+      trust: memory.trust ?? 0,
+      eventTime: memory.eventTime,
+      proposedAt: memory.proposedAt,
+      evidence: memory.evidence,
+      subjectEntityIds: memory.subjectEntityIds ?? [],
+      extractor: memory.extractor,
+      lifecycle: 'promoted' as const,
+      canonicalPath: relPath,
+      createdAt: memory.candidateCreatedAt ?? memory.eventTime,
+      updatedAt: memory.candidateUpdatedAt ?? memory.proposedAt,
+    };
+    const existing = store.getMemoryCandidate(memory.id);
+    if (!existing) store.createMemoryCandidate(rebuiltCandidate);
+    else if (existing.lifecycle !== 'rejected') store.updateMemoryCandidate(rebuiltCandidate);
+  }
 
   const linked = new Set<string>();
   currentLinks.set(memory.id, linked);

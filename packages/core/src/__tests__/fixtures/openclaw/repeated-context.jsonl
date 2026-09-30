@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"sess-synthetic-repeat","agentId":"main","timestamp":"2026-01-16T09:00:00.000Z"}
+{"type":"message","id":"repeat-direct","timestamp":"2026-01-16T09:01:00.000Z","message":{"role":"user","content":"Synthetic lighthouse preference: use amber."}}
+{"type":"message","id":"repeat-copy-1","parentId":"repeat-direct","timestamp":"2026-01-16T09:02:00.000Z","message":{"role":"system","content":"Recent Conversation History:\nSynthetic lighthouse preference: use amber."}}
+{"type":"message","id":"repeat-copy-2","parentId":"repeat-copy-1","timestamp":"2026-01-16T09:03:00.000Z","message":{"role":"user","content":"Recent Conversation History:\nSynthetic lighthouse preference: use amber."}}

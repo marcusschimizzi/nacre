@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { Nacre } from '../nacre.js';
@@ -23,6 +26,26 @@ describe('Nacre — local mode', () => {
 
     it('throws without path or url', () => {
       assert.throws(() => new Nacre({} as never), /requires either path/);
+    });
+  });
+
+  describe('scope resolution (V2-2 D3)', () => {
+    it('honors memory.defaultScope from nacre.config.json, same as MCP/API', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'nacre-sdk-scope-'));
+      const n = new Nacre({ path: join(root, 'graph.db'), embedder: 'mock' });
+      try {
+        writeFileSync(
+          join(root, 'nacre.config.json'),
+          JSON.stringify({ memory: { defaultScope: 'project/sdk' } }),
+        );
+        const defaulted = await n.remember('Config-scoped memory');
+        assert.strictEqual(defaulted.scope, 'project/sdk');
+        const explicit = await n.remember('User-scoped memory', { scope: 'user' });
+        assert.strictEqual(explicit.scope, 'user', 'explicit scope beats the config default');
+      } finally {
+        await n.close();
+        rmSync(root, { recursive: true, force: true });
+      }
     });
   });
 

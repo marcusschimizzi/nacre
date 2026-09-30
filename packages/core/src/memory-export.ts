@@ -8,6 +8,7 @@ import {
   type MemoryObjectType,
 } from './memory-file.js';
 import { existingPathForId, indexCanonicalIds, resolveTargetPath } from './memory-promote.js';
+import { SESSION_SCOPE, isDurableScope } from './scopes.js';
 import type { SqliteStore } from './store.js';
 import type { EntityType, MemoryNode } from './types.js';
 
@@ -42,6 +43,9 @@ function exportIdFor(legacyId: string): string {
 
 /** SQLite-only memories: candidates, plus legacy MCP/API writes that predate node status. */
 function isDatabaseOnlyMemory(node: MemoryNode): boolean {
+  // Session scratch is deliberately database-only — never export it to a
+  // canonical file (D4: never file-backed, never durable).
+  if (node.scope === SESSION_SCOPE) return false;
   if (node.status === 'promoted') return false;
   if (node.status === 'candidate') return true;
   return (
@@ -98,7 +102,10 @@ export function exportCanonical(store: SqliteStore, memoryDir: string): ExportCa
         ...(node.type !== 'concept' && !ENTITY_TO_MEMORY_TYPE[node.type]
           ? { entityType: node.type }
           : {}),
-        scope: 'agent',
+        // Honor the scope the write declared (V2-2); only scope-less legacy
+        // rows fall back to agent. Hardcoding agent here silently demoted
+        // user/project memories to no-hive/no-sync.
+        scope: node.scope && isDurableScope(node.scope) ? node.scope : 'agent',
         confidence: 1,
         sensitivity: 'low',
         created,
@@ -148,5 +155,8 @@ function finalizeNode(
   if (!current) return;
   current.status = 'promoted';
   if (relPath) current.canonicalPath = relPath;
+  // Keep the row's scope in lockstep with the file it now backs, instead of
+  // leaving it stale until the next compile.
+  if (!current.scope || !isDurableScope(current.scope)) current.scope = 'agent';
   store.putNode(current);
 }

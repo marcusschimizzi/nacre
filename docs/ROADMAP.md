@@ -2,7 +2,7 @@
 
 > From personal memory graph to cross-agent memory substrate.
 
-Last updated: 2026-07-16
+Last updated: 2026-07-23
 
 ---
 
@@ -50,7 +50,8 @@ Nacre was designed before the research corpus existed. Measured against it:
 2. **Entities aren't beliefs.** Nacre's atom is an entity with excerpts; the
    field's atom is a memory object — a claim with source, confidence,
    sensitivity, trust, and supersession/correction lineage. Nacre models
-   *salience* but not *belief lifecycle*.
+   *salience* broadly; Slice 3 now adds a narrow deterministic belief lifecycle,
+   while generalized semantic consolidation remains open.
 3. **No receipts, no admission layer.** `nacre_brief` injects context without
    recording what was included, rejected, or why; recall gates on similarity
    only, not appropriateness (scope, freshness, sensitivity).
@@ -105,6 +106,17 @@ Ordered by dependency: the truth layer and scope model are foundations; the
 memory-object layer is the centerpiece; receipts, evals, and integrations
 make it trustworthy and used; sync makes it multi-device.
 
+| Milestone | Name | Status / exit gate |
+|---|---|---|
+| V2-1 | Truth layer & capture path | Shipped; canonical files rebuild SQLite |
+| V2-2 | Scope model | Shipped; scope isolation and retention pass |
+| **V2-3** | **Evidence-aware historical ingestion** | First vertical slice shipped; re-import is a no-op and chronology/classification survive evidence rebuild |
+| **V2-4** | **Memory objects & belief lifecycle** | Candidate, belief-resolution, and deterministic-salience slices shipped; generalized consolidation remains |
+| **V2-5** | **Working memory, admission & receipts** | Shipped; deterministic admission, bounded briefing, explicit recall admission, and derived receipts pass independent review |
+| **V2-6** | **Memory evaluation & Lobstar backfill** | Deterministic admission and synthetic fixture-only mock-provider explicit-recall mechanics shipped; no production/private-data quality claim; staged private backfill remains |
+| **V2-7** | **Agent integration: Hermes first** | Fresh Hermes sessions consult Nacre |
+| **V2-8** | **Multi-device sync** | Existing sync goals, renumbered |
+
 ### V2-1: Truth layer & capture path
 
 *Commit to "truth in files, indexes derived" everywhere.*
@@ -133,19 +145,50 @@ Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17,
 
 *Make "whose memory is this and where may it go" a first-class property.*
 
-- [ ] `scope` field on nodes, memories, episodes, procedures: `user`,
-      `project`, `agent`, `session`.
-- [ ] Scope-aware defaults on every read/write surface (CLI, API, MCP, SDK) —
-      visible and overridable, per the "explicit scope parameter" pattern.
-- [ ] Per-scope policy: sync eligibility, sensitivity ceiling, retention.
-      Session scratch never syncs; secrets never persist (zero-retention
-      class).
-- [ ] Scope isolation tests: project memories don't leak into global recall;
-      agent-local memory doesn't sync to other devices.
+Design: [V2-2-SCOPE-MODEL.md](./V2-2-SCOPE-MODEL.md) (accepted 2026-07-19,
+**implemented** 2026-07-20)
 
-### V2-3: Memory-object layer (belief lifecycle)
+- [x] `scope` on nodes, episodes, and procedures (schema v9): `user`,
+      `project/<name>`, `agent`, plus `session` scratch (store-only,
+      expiring). Entities stay unscoped — shared vocabulary.
+- [x] Scope-aware defaults on every read/write surface (CLI, API, MCP, SDK):
+      explicit → memory.defaultScope → agent on writes, with the landing
+      scope named in every response; reads default to all durable scopes,
+      never session.
+- [x] Per-scope policy (spooled / hive-eligible / sync-eligible / retention)
+      with config overrides; session never spools, agent+session never enter
+      the hive, session purges after 7 days. Sync-eligibility is recorded for
+      V2-7; sensitivity ceilings deferred to V2-4 per the design.
+- [x] Scope isolation acceptance suite: cross-scope recall isolation on all
+      retrieval paths, session lifecycle (rebuild-proof, expiring,
+      explicit-read-only), hive containment, full round-trip.
+
+### V2-3: Evidence-aware historical ingestion
+
+*Make old conversation evidence deterministic, provenance-safe, and rebuildable.*
+
+Design: [V2-3-HISTORICAL-INGESTION.md](./V2-3-HISTORICAL-INGESTION.md) (accepted
+2026-07-22; first end-to-end slice implemented 2026-07-22)
+
+- [x] Synthetic private-safe OpenClaw v3 fixtures and native nested-message adapter.
+- [x] Canonical session inventory with primary selection and audited reset/trajectory alternates.
+- [x] Nacre-owned normalized JSONL evidence under `.evidence/conversations/`.
+- [x] Schema v10 import ledger, deterministic episode IDs, and strict identical-import no-op.
+- [x] Source chronology for episodes and extraction-derived graph dates; ingestion time remains separate.
+- [x] Copied history, system, tool, and internal-route records are preserved but extraction-ineligible.
+- [x] Evidence replay into a fresh database produces equivalent episodes and entities.
+- [x] Historical CLI dry-run and machine-readable inventory/import reports.
+- [ ] Crash-injection/resume hardening, forensic inventory override, and production secret/PII scanner.
+
+### V2-4: Memory-object layer (belief lifecycle)
 
 *The centerpiece: add beliefs alongside entities.*
+
+Slice design: [V2-4-MEMORY-CANDIDATES.md](./V2-4-MEMORY-CANDIDATES.md) (smallest
+evidence-backed candidate/promotion vertical slice implemented 2026-07-22).
+
+Salience design: [V2-4-MEMORY-SALIENCE.md](./V2-4-MEMORY-SALIENCE.md)
+(deterministic scoring and inspection vertical slice implemented 2026-07-23).
 
 - [ ] New `Memory` object: typed claim/preference/decision/fact with
       `source`, `confidence`, `sensitivity`, `trust_level`, `scope`,
@@ -157,44 +200,69 @@ Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17,
 - [ ] Entities become the associative index *over* memories; decay and
       reinforcement govern memory salience (this subsumes the old
       "nodes never decay" issue).
-- [ ] Candidate → promotion pipeline inside consolidation: raw capture →
-      candidate → durable memory, with contradiction detection and
+- [x] Explicit candidate → belief resolution pipeline: candidate →
+      durable memory, with narrow deterministic contradiction handling and
       supersession chains instead of silent overwrite.
+- [x] Dedicated schema-v11 candidate table, deterministic direct-user explicit-form
+      extraction with per-message receipts, explicit idempotent promotion/rejection,
+      durable pending/rejected sidecar replay, canonical provenance round-trip,
+      authenticated historical evidence extraction, and candidate review CLI. Automatic
+      Slice 3 adds explicit `candidates resolve`, same-claim corroboration by
+      independent source-event identity, deterministic per-support confidence,
+      narrow authority-gated correction/supersession, temporal recall filtering,
+      schema v12 rebuild fields, and crash-recoverable serialized transactions.
+      Automatic resolution, broad contradiction semantics, and LLM extraction remain deferred.
+- [x] Deterministic salience receipts with event-time support filtering,
+      independent-event corroboration, authority/trust provenance, freshness,
+      fixed graph centrality, historical validity gates, stable ranking, and a
+      non-mutating CLI inspection surface. Admission and recall integration remain deferred.
 - [ ] Correction and deletion as product operations (correct, retire, forget)
       with lineage — deleted/superseded facts must be verifiably absent from
       recall.
 
-### V2-4: Receipts & admission
+### V2-5: Working memory, admission & receipts
 
 *Make injection trustworthy and debuggable.*
 
-- [ ] Receipts on `brief` and `recall`: query, filters, included memories,
+Design and operations: [V2-5-WORKING-MEMORY.md](./V2-5-WORKING-MEMORY.md)
+(explicit admission vertical slice accepted 2026-07-23).
+
+- [x] Receipts on opt-in working-memory `brief` and `recall --admit`: query, filters, included memories,
       rejected memories (and why), score breakdowns, token cost. Persisted
       and inspectable (`nacre receipts`).
-- [ ] Admission layer between candidate retrieval and context assembly:
+- [x] Admission layer between candidate retrieval and context assembly:
       gate on scope, freshness, sensitivity, and supersession state — not
       just similarity ("similarity is not appropriateness").
-- [ ] Provenance guard: superseded or low-trust memories cannot authorize
+- [x] Provenance guard: every admitted memory is context-only; superseded or low-trust memories cannot authorize
       destructive/external actions.
-- [ ] Outage contract: recall degrades loudly when embeddings/index are
+- [x] Outage contract: admitted recall degrades loudly when embeddings exist but a provider is
       unavailable — never masks failure as an empty result.
+- [x] Derived receipt operations are explicit: deleting/rebuilding SQLite removes receipt history
+      without touching canonical truth; rebuild does not synthesize past queries, while identical
+      replay recreates the same content-addressed receipt.
+- [ ] Automatic agent injection, receipt retention/export/sync policy, provider retry orchestration,
+      and replay quality metrics remain deferred to V2-6/V2-7.
 
-### V2-5: Memory eval harness
+### V2-6: Memory evaluation & Lobstar backfill
 
 *Our research edge, turned into CI.*
 
-- [ ] Replay corpus: recorded conversations/sessions with probe points.
-- [ ] Retrieval QA: P@k, R@k, NDCG, latency on a fixed query set.
-- [ ] Forgetting-absence scoring: corrected/retired facts must not resurface
-      (Memora/FAMA pattern) — explicit credit for current values, explicit
-      penalty for leaking stale ones.
-- [ ] Module-level failure attribution: label failures as extraction,
-      storage, retrieval, or use (MemTrace pattern).
-- [ ] Context-tokens-per-turn reported alongside recall quality — token
-      economy is the value proposition.
-- [ ] Runs in CI; the score goes up, never down.
+Slice design: [V2-6-MEMORY-EVALUATION.md](./V2-6-MEMORY-EVALUATION.md)
+(first deterministic replay/admission quality-gate slice implemented 2026-08-10).
 
-### V2-6: Agent integration glue
+- [x] Deterministic, machine-readable replay report over explicit event-time working-memory probes.
+- [x] Canonical admission-candidate P@k, R@k, NDCG, admission precision/recall, forbidden leakage, provenance completeness, and exact context-token metrics with hard thresholds.
+- [x] Content-addressed, machine-auditable reports with receipt/oracle/ranked/included IDs and byte-identical output across fresh roots.
+- [x] Built `nacre evaluate replay` command; malformed inputs fail closed, threshold failure exits nonzero, and canonical memory bytes remain unchanged.
+- [x] Synthetic direct-dialogue → candidate → correction/supersession → historical/current admission acceptance history; copied context creates no candidate.
+- [ ] Production extraction failure attribution; both accepted reports mark extraction unmeasured rather than reporting false zeroes.
+- [x] Synthetic fixture-only deterministic mock-provider explicit-recall corpus with raw ranks and score components, explicit canonical mappings, pinned retrieval and graph configuration, snapshot-local embedding reconstruction from snapshot-carried node text, stable tie-breaking, separate retrieval/admission leakage, and source-preserving built CLI execution. This proves mechanics only, not production or private-corpus quality.
+- [ ] Latency measurements as a separate operational artifact outside deterministic content-addressed quality reports.
+- [ ] Five-session and representative 25-session private Lobstar pilots.
+- [ ] Runs in CI with a versioned score-regression baseline.
+- [ ] Broad checkpointed Lobstar backfill after pilot approval.
+
+### V2-7: Agent integration — Hermes first
 
 *A memory an agent doesn't consult is a write-only archive.*
 
@@ -208,7 +276,7 @@ Design: [V2-1-TRUTH-LAYER.md](./V2-1-TRUTH-LAYER.md) (accepted 2026-07-17,
 - [ ] Consultation instructions: shippable CLAUDE.md/AGENTS.md snippets so
       agents proactively query before repeating decisions.
 
-### V2-7: Multi-device sync
+### V2-8: Multi-device sync
 
 *Multi-device without building a cloud product.*
 

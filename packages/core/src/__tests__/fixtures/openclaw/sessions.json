@@ -1,0 +1,12 @@
+{
+  "sess-synthetic-direct": {
+    "sessionId": "sess-synthetic-direct",
+    "file": "direct-session.jsonl",
+    "updatedAt": "2026-01-15T10:02:00.000Z"
+  },
+  "sess-synthetic-routed": {
+    "sessionId": "sess-synthetic-routed",
+    "file": "routed-and-cron.jsonl",
+    "updatedAt": "2026-01-17T07:03:00.000Z"
+  }
+}

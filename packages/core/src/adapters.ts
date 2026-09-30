@@ -1,4 +1,7 @@
 import type { ConversationInput, ConversationMessage } from './types.js';
+import { fromOpenClaw } from './adapters/openclaw.js';
+
+export { fromOpenClaw } from './adapters/openclaw.js';
 
 // ── OpenAI / ChatGPT Format ─────────────────────────────────────
 
@@ -207,7 +210,14 @@ export function fromJSONL(
 
 // ── Auto-detect Format ──────────────────────────────────────────
 
-export type ConversationFormat = 'openai' | 'anthropic' | 'clawdbot' | 'jsonl' | 'auto' | 'nacre';
+export type ConversationFormat =
+  | 'openai'
+  | 'anthropic'
+  | 'clawdbot'
+  | 'openclaw'
+  | 'jsonl'
+  | 'auto'
+  | 'nacre';
 
 export function detectFormat(data: unknown): ConversationFormat {
   if (typeof data !== 'object' || data === null) return 'jsonl';
@@ -246,6 +256,9 @@ export function parseConversationFile(
   format: ConversationFormat = 'auto',
   metadata?: ConversationInput['metadata'],
 ): ConversationInput {
+  if (format === 'openclaw') {
+    return fromOpenClaw(content.split('\n'), metadata);
+  }
   if (format === 'jsonl') {
     return fromJSONL(content.split('\n'), metadata);
   }

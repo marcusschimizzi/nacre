@@ -293,6 +293,42 @@ describe('ingestConversation', () => {
       assert.equal(result2.episodesCreated, 1);
       assert.equal(result2.duplicatesSkipped, 0);
     });
+
+    it('embeds only episodes created by this ingestion and does no provider work for a no-op', async () => {
+      const isolated = SqliteStore.open();
+      const embedded: string[] = [];
+      const provider = {
+        name: 'recording-provider',
+        dimensions: 1,
+        async embed(text: string) {
+          embedded.push(text);
+          return new Float32Array([1]);
+        },
+        async embedBatch(texts: string[]) {
+          return Promise.all(texts.map((text) => this.embed(text)));
+        },
+      };
+      try {
+        await ingestConversation(
+          makeConversationInput({
+            metadata: { sessionId: 'pre-existing', source: '/pre-existing' },
+            messages: [{ role: 'user', content: 'must not be embedded later' }],
+          }),
+          { store: isolated },
+        );
+        const current = makeConversationInput({
+          metadata: { sessionId: 'current-embedding' },
+          messages: [{ role: 'user', content: 'embed only this episode' }],
+        });
+        await ingestConversation(current, { store: isolated, provider });
+        assert.deepEqual(embedded, ['[user]: embed only this episode']);
+
+        await ingestConversation(current, { store: isolated, provider });
+        assert.deepEqual(embedded, ['[user]: embed only this episode']);
+      } finally {
+        isolated.close();
+      }
+    });
   });
 
   describe('edge reinforcement', () => {

@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { generateAlerts } from '@nacre/core';
+import { filterGraphByScopes, generateAlerts } from '@nacre/core';
 import { formatJSON } from '../output.js';
 import { loadGraph, closeGraph } from '../graph-loader.js';
 
@@ -23,7 +23,7 @@ export default defineCommand({
   async run({ args }) {
     const loaded = await loadGraph(args.graph as string);
     try {
-      const result = generateAlerts(loaded.graph, { now: new Date() });
+      const result = generateAlerts(filterGraphByScopes(loaded.graph), { now: new Date() });
       if (args.format === 'json') {
         console.log(formatJSON(result));
       } else {

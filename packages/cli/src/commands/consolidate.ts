@@ -1,5 +1,11 @@
 import { defineCommand } from 'citty';
-import { SqliteStore, consolidateTruthLayer, resolveMemoryDir } from '@nacre/core';
+import {
+  SqliteStore,
+  consolidateTruthLayer,
+  loadConfig,
+  purgeExpiredScratch,
+  resolveMemoryDir,
+} from '@nacre/core';
 import { consolidate } from '@nacre/parser';
 import { formatConsolidationSummary } from '../output.js';
 
@@ -51,10 +57,29 @@ export default defineCommand({
     // only path from capture (Tier 1) into durable memory (Tier 2).
     if (outDir.endsWith('.db')) {
       const memoryDir = truthDir;
+      if (!memoryDir) {
+        // No truth layer, but session scratch still expires: the write
+        // surfaces promise "expires after N days" even on database-only
+        // setups, so the purge cannot be gated on a memory dir.
+        const store = SqliteStore.open(outDir);
+        try {
+          const purged = purgeExpiredScratch(store, loadConfig(outDir).scopes);
+          const total = purged.nodes + purged.episodes + purged.procedures;
+          if (total > 0) {
+            console.log(
+              `\n🗂  Scratch: purged ${total} expired session row${total === 1 ? '' : 's'}`,
+            );
+          }
+        } finally {
+          store.close();
+        }
+      }
       if (memoryDir) {
         const store = SqliteStore.open(outDir);
         try {
-          const truth = consolidateTruthLayer(store, memoryDir);
+          const truth = consolidateTruthLayer(store, memoryDir, {
+            scopeOverrides: loadConfig(outDir).scopes,
+          });
           const { promotion, salience, compiled } = truth;
 
           console.log('');
@@ -70,6 +95,12 @@ export default defineCommand({
               compiled.removed > 0 ? `, ${compiled.removed} removed (files deleted)` : ''
             }${compiled.edgesRemoved > 0 ? `, ${compiled.edgesRemoved} stale edges removed` : ''}`,
           );
+          const purgedTotal = truth.purged.nodes + truth.purged.episodes + truth.purged.procedures;
+          if (purgedTotal > 0) {
+            console.log(
+              `   Scratch:  purged ${purgedTotal} expired session row${purgedTotal === 1 ? '' : 's'}`,
+            );
+          }
           for (const warning of truth.warnings) {
             console.log(`   ⚠ ${warning}`);
           }

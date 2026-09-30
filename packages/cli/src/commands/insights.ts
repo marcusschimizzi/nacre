@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { analyzeSignificance } from '@nacre/core';
+import { filterGraphByScopes, analyzeSignificance } from '@nacre/core';
 import { formatJSON } from '../output.js';
 import { loadGraph, closeGraph } from '../graph-loader.js';
 
@@ -30,7 +30,7 @@ export default defineCommand({
     const loaded = await loadGraph(args.graph as string);
     try {
       const recentDays = parseInt(args['recent-days'] as string, 10) || 7;
-      const result = analyzeSignificance(loaded.graph, {
+      const result = analyzeSignificance(filterGraphByScopes(loaded.graph), {
         recentDays,
         now: new Date(),
       });

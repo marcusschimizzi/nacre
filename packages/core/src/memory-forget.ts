@@ -1,6 +1,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendTombstone } from './capture.js';
+import { SESSION_SCOPE } from './scopes.js';
 import type { SqliteStore } from './store.js';
 
 // ── Truth-layer-aware forgetting (V2-1) ──────────────────────────
@@ -51,6 +52,14 @@ export function forgetMemory(
 
   if (node) store.deleteNode(id);
   store.deleteEmbedding(id);
+
+  // Session scratch has no file, no spool entry, and nothing that could ever
+  // resurrect it — deleting the row is complete. Writing durable tombstones
+  // for ephemeral scratch would leak its existence into the synced spool and
+  // grow the forgotten set forever.
+  if (node?.scope === SESSION_SCOPE) {
+    return result;
+  }
 
   // Always record the forget in the store: a spool tombstone can only be
   // written when a memory dir resolves HERE and NOW, but the spool entry may

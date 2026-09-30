@@ -10,6 +10,8 @@ export interface RememberOptions {
   type?: 'fact' | 'event' | 'observation' | 'decision';
   importance?: number;
   entities?: string[];
+  /** Where the memory belongs: 'user', 'agent', 'project/<name>', or 'session' (scratch). Default: configured memory.defaultScope, else 'agent'. */
+  scope?: string;
 }
 
 export interface RecallOptions {
@@ -17,11 +19,15 @@ export interface RecallOptions {
   types?: string[];
   since?: string;
   until?: string;
+  /** Scope filter. Default: every durable scope; add 'session' explicitly for scratch. */
+  scopes?: string[];
 }
 
 export interface BriefOptions {
   focus?: string;
   top?: number;
+  /** Scope filter. Default: every durable scope; add 'session' explicitly for scratch. */
+  scopes?: string[];
 }
 
 export interface FeedbackOptions {
@@ -44,6 +50,8 @@ export interface Memory {
   excerpts?: string[];
   connections?: Array<{ label: string; type: string; relationship: string; weight: number }>;
   episodes?: Array<{ id: string; title: string; type: string }>;
+  /** V2-2 scope the memory lives in (unset on entities and legacy rows). */
+  scope?: string;
 }
 
 export interface GraphStats {

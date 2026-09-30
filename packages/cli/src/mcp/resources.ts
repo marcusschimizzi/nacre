@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type SqliteStore, generateBrief, generateAlerts } from '@nacre/core';
+import { type SqliteStore, filterGraphByScopes, generateBrief, generateAlerts } from '@nacre/core';
 
 export function registerResources(server: McpServer, store: SqliteStore): void {
   server.resource(
@@ -7,7 +7,7 @@ export function registerResources(server: McpServer, store: SqliteStore): void {
     'nacre://brief',
     { description: 'Auto-updating context briefing', mimeType: 'text/plain' },
     () => {
-      const graph = store.getFullGraph();
+      const graph = filterGraphByScopes(store.getFullGraph());
       const result = generateBrief(graph, { top: 10, recentDays: 7, now: new Date() });
 
       return {
@@ -27,7 +27,7 @@ export function registerResources(server: McpServer, store: SqliteStore): void {
     'nacre://health',
     { description: 'Graph health metrics and status', mimeType: 'application/json' },
     () => {
-      const graph = store.getFullGraph();
+      const graph = filterGraphByScopes(store.getFullGraph());
       const alerts = generateAlerts(graph, { now: new Date() });
 
       const health = {
@@ -61,7 +61,7 @@ export function registerResources(server: McpServer, store: SqliteStore): void {
     'nacre://graph/stats',
     { description: 'Node/edge counts, type breakdown', mimeType: 'application/json' },
     () => {
-      const graph = store.getFullGraph();
+      const graph = filterGraphByScopes(store.getFullGraph());
       const nodes = Object.values(graph.nodes);
       const edges = Object.values(graph.edges);
 
