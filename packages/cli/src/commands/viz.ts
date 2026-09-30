@@ -1,4 +1,4 @@
-import { existsSync, copyFileSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { filterGraphByScopes } from '@nacre/core';
 import { resolve, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -16,6 +16,18 @@ function findVizDir(): string {
   if (existsSync(resolve(fromDist, 'index.html'))) return fromDist;
 
   throw new Error('Could not find @nacre/viz package. Expected sibling directory in packages/');
+}
+
+/** Export the default durable view for every graph format supported by the loader. */
+export async function exportVizGraph(graphPath: string, dest: string): Promise<void> {
+  const loaded = await loadGraph(graphPath);
+  try {
+    // Always serialize the filtered graph, even if the JSON source is already
+    // the destination. Copying/skipping JSON would expose session scratch.
+    writeFileSync(dest, JSON.stringify(filterGraphByScopes(loaded.graph), null, 2), 'utf8');
+  } finally {
+    closeGraph(loaded);
+  }
 }
 
 export default defineCommand({
@@ -45,24 +57,8 @@ export default defineCommand({
     const vizDir = findVizDir();
     const dest = resolve(vizDir, 'public', 'graph.json');
 
-    // Load graph (supports both .db and .json)
-    const loaded = await loadGraph(graphPath);
-    try {
-      if (loaded.format === 'sqlite') {
-        // Export SQLite graph to JSON for the viz
-        writeFileSync(dest, JSON.stringify(filterGraphByScopes(loaded.graph), null, 2), 'utf8');
-        console.log(`Exported SQLite graph → ${dest}`);
-      } else {
-        // Copy JSON directly
-        const srcPath = resolve(graphPath);
-        if (srcPath !== dest) {
-          copyFileSync(srcPath, dest);
-          console.log(`Copied ${srcPath} → ${dest}`);
-        }
-      }
-    } finally {
-      closeGraph(loaded);
-    }
+    await exportVizGraph(graphPath, dest);
+    console.log(`Exported graph → ${dest}`);
 
     const port = args.port as string;
     const openFlag = args.open ? '--open' : '';

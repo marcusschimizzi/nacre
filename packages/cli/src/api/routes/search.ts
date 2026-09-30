@@ -11,6 +11,7 @@ import {
   type SqliteStore,
   type EntityType,
 } from '@nacre/core';
+import { visibleEpisode } from './episodes.js';
 
 export function searchRoutes(store: SqliteStore): Hono {
   const app = new Hono();
@@ -23,7 +24,10 @@ export function searchRoutes(store: SqliteStore): Hono {
 
     const type = c.req.query('type') as EntityType | undefined;
     const limit = parseInt(c.req.query('limit') ?? '20', 10);
-    const graph = store.getFullGraph();
+    const graph = filterGraphByScopes(
+      store.getFullGraph(),
+      parseScopesFilter(c.req.query('scopes')),
+    );
     const terms = q.split(/\s+/).filter((t) => t.length > 0);
     const results = searchNodes(graph, terms, { type: type || undefined, now: new Date() });
 
@@ -119,7 +123,17 @@ export function searchRoutes(store: SqliteStore): Hono {
         hops,
         scopes: recallScopes,
       });
-      return c.json({ data: response.results, procedures: response.procedures });
+      const results = response.results.map((result) => ({
+        ...result,
+        ...(result.episodes
+          ? {
+              episodes: result.episodes.map((episode) =>
+                visibleEpisode(episode, store, recallScopes),
+              ),
+            }
+          : {}),
+      }));
+      return c.json({ data: results, procedures: response.procedures });
     } catch (err) {
       // Same contract as /similar: an encoder/fingerprint mismatch is a
       // configuration error with a known remedy — a 409, not a 500.

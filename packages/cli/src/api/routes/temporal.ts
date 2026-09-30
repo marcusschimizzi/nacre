@@ -1,6 +1,26 @@
 import { Hono } from 'hono';
-import type { SqliteStore } from '@nacre/core';
-import { diffSnapshots } from '@nacre/core';
+import {
+  diffSnapshots,
+  filterGraphByScopes,
+  nodeVisibleInScopes,
+  parseScopesFilter,
+  type MemoryNode,
+  type NacreGraph,
+  type Snapshot,
+  type SqliteStore,
+} from '@nacre/core';
+
+function visibleSnapshot(snapshot: Snapshot, graph: NacreGraph) {
+  // Snapshots retain graph states, but not historical episode scopes or the
+  // provenance of arbitrary metadata. Do not expose those unfilterable fields.
+  return {
+    id: snapshot.id,
+    createdAt: snapshot.createdAt,
+    trigger: snapshot.trigger,
+    nodeCount: Object.keys(graph.nodes).length,
+    edgeCount: Object.keys(graph.edges).length,
+  };
+}
 
 export function temporalRoutes(store: SqliteStore): Hono {
   const app = new Hono();
@@ -9,6 +29,7 @@ export function temporalRoutes(store: SqliteStore): Hono {
     const since = c.req.query('since');
     const until = c.req.query('until');
     const limit = parseInt(c.req.query('limit') ?? '50', 10);
+    const scopes = parseScopesFilter(c.req.query('scopes'));
 
     const snapshots = store.listSnapshots({
       since: since ?? undefined,
@@ -16,12 +37,20 @@ export function temporalRoutes(store: SqliteStore): Hono {
       limit,
     });
 
-    return c.json({ data: snapshots });
+    return c.json({
+      data: snapshots.map((snapshot) =>
+        visibleSnapshot(snapshot, filterGraphByScopes(store.getSnapshotGraph(snapshot.id), scopes)),
+      ),
+    });
   });
 
   app.post('/snapshots', (c) => {
     const snapshot = store.createSnapshot('manual');
-    return c.json({ data: snapshot }, 201);
+    const graph = filterGraphByScopes(
+      store.getSnapshotGraph(snapshot.id),
+      parseScopesFilter(c.req.query('scopes')),
+    );
+    return c.json({ data: visibleSnapshot(snapshot, graph) }, 201);
   });
 
   app.get('/snapshots/:id', (c) => {
@@ -30,7 +59,11 @@ export function temporalRoutes(store: SqliteStore): Hono {
     if (!snapshot) {
       return c.json({ error: { message: 'Snapshot not found', code: 'NOT_FOUND' } }, 404);
     }
-    return c.json({ data: snapshot });
+    const graph = filterGraphByScopes(
+      store.getSnapshotGraph(id),
+      parseScopesFilter(c.req.query('scopes')),
+    );
+    return c.json({ data: visibleSnapshot(snapshot, graph) });
   });
 
   app.get('/snapshots/:id/graph', (c) => {
@@ -40,8 +73,11 @@ export function temporalRoutes(store: SqliteStore): Hono {
       return c.json({ error: { message: 'Snapshot not found', code: 'NOT_FOUND' } }, 404);
     }
 
-    const graph = store.getSnapshotGraph(id);
-    return c.json({ data: { snapshot, graph } });
+    const graph = filterGraphByScopes(
+      store.getSnapshotGraph(id),
+      parseScopesFilter(c.req.query('scopes')),
+    );
+    return c.json({ data: { snapshot: visibleSnapshot(snapshot, graph), graph } });
   });
 
   app.delete('/snapshots/:id', (c) => {
@@ -72,20 +108,38 @@ export function temporalRoutes(store: SqliteStore): Hono {
       return c.json({ error: { message: `Snapshot not found: ${toId}`, code: 'NOT_FOUND' } }, 404);
     }
 
-    const diff = diffSnapshots(store, fromId, toId);
+    const diff = diffSnapshots(store, fromId, toId, parseScopesFilter(c.req.query('scopes')));
     return c.json({ data: diff });
   });
 
   app.get('/history/node/:id', (c) => {
     const id = c.req.param('id');
     const history = store.getNodeHistory(id);
-    return c.json({ data: history });
+    const scopes = parseScopesFilter(c.req.query('scopes'));
+    return c.json({
+      data: {
+        ...history,
+        snapshots: history.snapshots.filter(({ state }) =>
+          nodeVisibleInScopes(state as MemoryNode, scopes),
+        ),
+      },
+    });
   });
 
   app.get('/history/edge/:id', (c) => {
     const id = c.req.param('id');
     const history = store.getEdgeHistory(id);
-    return c.json({ data: history });
+    const scopes = parseScopesFilter(c.req.query('scopes'));
+    return c.json({
+      data: {
+        ...history,
+        // Endpoint visibility must come from this snapshot, even if the live
+        // nodes have since moved scopes or been deleted.
+        snapshots: history.snapshots.filter(({ snapshotId }) =>
+          Boolean(filterGraphByScopes(store.getSnapshotGraph(snapshotId), scopes).edges[id]),
+        ),
+      },
+    });
   });
 
   return app;

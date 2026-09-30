@@ -143,7 +143,10 @@ Defaults, overridable per scope via `nacre.config.json` → `scopes`:
 | MCP `nacre_remember` | `scope` param; response names the landing scope |
 | MCP `nacre_recall` / `nacre_brief` | `scopes` param (default: durable scopes) |
 | API `POST /memories` | `scope` in schema; echoed in response |
-| API `GET /recall`, `/search`, `/brief` | `scopes` query param |
+| API `GET /query`, `/recall`, `/similar`, `/brief`, `/alerts`, `/insights`, `/suggest` | `scopes` query param; filter before search/analysis and limit |
+| API nodes, edges, episodes, procedures, graph statistics and health | `scopes` query param; hidden detail targets return 404 and linked records stay within the visible slice |
+| API snapshots, history and diffs | `scopes` query param evaluated against historical states; see [TEMPORAL.md](./TEMPORAL.md#rest-api) for summary fields |
+| CLI `viz` | JSON and SQLite exports exclude scratch nodes and their incident edges |
 | CLI `recall` / `similar` / `brief` | `--scopes user,project/nacre,...` |
 | SDK | passes scope/scopes through on remember/recall |
 | Capture payload | `scope` already exists (V2-1) — now actually driven by callers |

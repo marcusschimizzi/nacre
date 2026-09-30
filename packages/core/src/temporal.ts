@@ -1,5 +1,6 @@
 import type { MemoryNode, MemoryEdge } from './types.js';
 import type { SqliteStore } from './store.js';
+import { filterGraphByScopes } from './scopes.js';
 
 export interface GraphDiff {
   fromSnapshot: string;
@@ -40,9 +41,16 @@ function diffNodeFields(before: MemoryNode, after: MemoryNode): string[] {
   return changes;
 }
 
-export function diffSnapshots(store: SqliteStore, fromId: string, toId: string): GraphDiff {
-  const fromGraph = store.getSnapshotGraph(fromId);
-  const toGraph = store.getSnapshotGraph(toId);
+export function diffSnapshots(
+  store: SqliteStore,
+  fromId: string,
+  toId: string,
+  scopes?: string[],
+): GraphDiff {
+  // Filter each historical state before comparing. A scope change is an
+  // addition/removal in that view, never a changed record exposing its hidden side.
+  const fromGraph = filterGraphByScopes(store.getSnapshotGraph(fromId), scopes);
+  const toGraph = filterGraphByScopes(store.getSnapshotGraph(toId), scopes);
 
   const addedNodes: MemoryNode[] = [];
   const removedNodes: MemoryNode[] = [];

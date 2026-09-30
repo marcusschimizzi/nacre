@@ -1,5 +1,26 @@
 import { Hono } from 'hono';
-import type { SqliteStore, Procedure, ProcedureType } from '@nacre/core';
+import {
+  nodeVisibleInScopes,
+  parseScopesFilter,
+  recordVisibleInScopes,
+  type SqliteStore,
+  type Procedure,
+  type ProcedureType,
+} from '@nacre/core';
+
+function visibleProcedure(proc: Procedure, store: SqliteStore, scopes?: string[]): Procedure {
+  return {
+    ...proc,
+    sourceNodes: proc.sourceNodes.filter((id) => {
+      const node = store.getNode(id);
+      return !!node && nodeVisibleInScopes(node, scopes);
+    }),
+    sourceEpisodes: proc.sourceEpisodes.filter((id) => {
+      const episode = store.getEpisode(id);
+      return !!episode && recordVisibleInScopes(episode, scopes);
+    }),
+  };
+}
 
 export function procedureRoutes(store: SqliteStore): Hono {
   const app = new Hono();
@@ -7,11 +28,15 @@ export function procedureRoutes(store: SqliteStore): Hono {
   app.get('/procedures', (c) => {
     const type = c.req.query('type');
     const flagged = c.req.query('flagged');
+    const scopes = parseScopesFilter(c.req.query('scopes'));
 
-    const procs = store.listProcedures({
-      type: type as ProcedureType | undefined,
-      flaggedOnly: flagged === 'true' ? true : undefined,
-    });
+    const procs = store
+      .listProcedures({
+        type: type as ProcedureType | undefined,
+        flaggedOnly: flagged === 'true' ? true : undefined,
+      })
+      .filter((proc) => recordVisibleInScopes(proc, scopes))
+      .map((proc) => visibleProcedure(proc, store, scopes));
 
     return c.json({ data: procs });
   });
@@ -68,8 +93,9 @@ export function procedureRoutes(store: SqliteStore): Hono {
 
   app.post('/procedures/:id/apply', async (c) => {
     const id = c.req.param('id');
+    const scopes = parseScopesFilter(c.req.query('scopes'));
     const proc = store.getProcedure(id);
-    if (!proc) {
+    if (!proc || !recordVisibleInScopes(proc, scopes)) {
       return c.json({ error: { message: 'Procedure not found', code: 'NOT_FOUND' } }, 404);
     }
 
@@ -92,7 +118,7 @@ export function procedureRoutes(store: SqliteStore): Hono {
     }
 
     store.putProcedure(updated);
-    return c.json({ data: updated });
+    return c.json({ data: visibleProcedure(updated, store, scopes) });
   });
 
   return app;

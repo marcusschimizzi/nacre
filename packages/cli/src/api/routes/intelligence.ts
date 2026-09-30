@@ -44,24 +44,33 @@ export function intelligenceRoutes(
   });
 
   app.get('/alerts', (c) => {
-    const graph = filterGraphByScopes(store.getFullGraph());
+    const scopes = parseScopesFilter(c.req.query('scopes'));
+    const graph = filterGraphByScopes(store.getFullGraph(), scopes);
     const result = generateAlerts(graph, { now: new Date() });
     return c.json({ data: result });
   });
 
   app.get('/insights', (c) => {
     const recentDays = parseInt(c.req.query('recentDays') ?? '7', 10);
-    const graph = filterGraphByScopes(store.getFullGraph());
+    const scopes = parseScopesFilter(c.req.query('scopes'));
+    const graph = filterGraphByScopes(store.getFullGraph(), scopes);
     const result = analyzeSignificance(graph, { recentDays, now: new Date() });
     return c.json({ data: result });
   });
 
   app.get('/suggest', (c) => {
-    const graph = filterGraphByScopes(store.getFullGraph());
+    const scopes = parseScopesFilter(c.req.query('scopes'));
+    const graph = filterGraphByScopes(store.getFullGraph(), scopes);
     const pendingStr = store.getMeta('pending_edges');
     const pendingEdges: PendingEdge[] = pendingStr ? JSON.parse(pendingStr) : [];
+    const visiblePendingEdges = pendingEdges.filter(
+      (edge) => graph.nodes[edge.source] && graph.nodes[edge.target],
+    );
     const maxSuggestions = parseInt(c.req.query('max') ?? '10', 10);
-    const result = generateSuggestions(graph, pendingEdges, { maxSuggestions, now: new Date() });
+    const result = generateSuggestions(graph, visiblePendingEdges, {
+      maxSuggestions,
+      now: new Date(),
+    });
     return c.json({ data: result });
   });
 
