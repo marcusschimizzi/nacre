@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test", "vitest.config.ts", ".railway/railway.ts"]
+  "include": ["src", "test", "scripts", "vitest.config.ts", ".railway/railway.ts"]
 }

@@ -26,11 +26,11 @@
     "test": "vitest run",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mcp:smoke": "tsx scripts/mcp-smoke.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
-    "@modelcontextprotocol/hono": "^2.0.2",
     "@modelcontextprotocol/server": "^2.3.1",
     "hono": "^4.13.13",
     "pino": "^10.4.0",
