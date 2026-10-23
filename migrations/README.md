@@ -11,7 +11,8 @@ Scripts (all read `MIGRATION_DATABASE_URL`, an **owner** URL, from the environme
 
 Rules for new migrations:
 - Create one with `pnpm exec dbmate --migrations-dir ./migrations new <name>`. Never edit a migration that has been applied anywhere; add a new one.
-- **Migrations run as the database owner.** `nacre_app` owns nothing and gets no `DELETE`, `TRUNCATE` or `CREATE`.
+- **Migrations run as the database owner.** There is no separate migrator role (decided Oct 23, 2026). `nacre_app` owns nothing and gets no `DELETE`, `TRUNCATE` or `CREATE`.
+- **Only `api` migrates** (its Railway pre-deploy step). dbmate takes no lock on Postgres: two concurrent `up` runs leave the schema correct (each migration is one transaction), but the loser exits with an error, which would fail its deploy. So the worker must not run migrations too. **Task 5, when the worker first uses the database:** at startup the worker waits, with backoff, until `max(version)` in `schema_migrations` matches the newest file in the image's `migrations/`.
 - **A new table needs its grants in the same migration.** The grant-matrix check covers every table in `public`, so a table without `SELECT, INSERT` for `nacre_app`, or with an unplanned `UPDATE` or `DELETE`, fails CI. Add new `UPDATE` columns to `COLUMN_UPDATES` in `src/audit/schema-guards.ts` in the same PR; a new guard trigger goes in `GUARD_TRIGGERS`.
 - `down` drops what `up` created. The `nacre_app` role is cluster-wide, so `down` revokes its grants but leaves the role.
 
