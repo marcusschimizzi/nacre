@@ -17,7 +17,8 @@ export function createApp({ token, log }: AppDeps) {
   app.use(async (c, next) => {
     const started = performance.now();
     await next();
-    // Method, path and status only: never headers, query strings or bodies.
+    // Never Authorization, query strings or bodies. The MCP headers show which protocol
+    // revision each client speaks (2026-07-28 requests carry it on every call).
     log.info(
       {
         request_id: c.get('requestId'),
@@ -25,6 +26,9 @@ export function createApp({ token, log }: AppDeps) {
         path: c.req.path,
         status: c.res.status,
         ms: Math.round(performance.now() - started),
+        mcp_protocol: c.req.header('mcp-protocol-version'),
+        mcp_method: c.req.header('mcp-method'),
+        user_agent: c.req.header('user-agent'),
       },
       'request',
     );
