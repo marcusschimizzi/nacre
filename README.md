@@ -52,7 +52,7 @@ Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `p
 
 - [`docs/design.md`](docs/design.md): the overall design
 - [`docs/slice-1-spec.md`](docs/slice-1-spec.md): the slice 1 build spec
-- [`docs/tasks/`](docs/tasks/): task briefs and the workflow
+- [`docs/tasks/`](docs/tasks/): task briefs and the workflow ([README](docs/tasks/README.md))
 - [`docs/spike-mcp.md`](docs/spike-mcp.md): MCP protocol findings and client setup
 
 ## License
