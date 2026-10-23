@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type { TestProject } from 'vitest/node';
 import { dbmate, dropDatabase, scratchDatabaseName, withDatabase } from './helpers/db.js';
 
@@ -12,6 +13,8 @@ declare module 'vitest' {
 
 // Creates one fresh database per run, migrates it with the real dbmate binary, drops it afterwards.
 export default async function setup(project: TestProject) {
+  // Like dbmate and `pnpm db:verify`, read .env when present (already-set variables win).
+  if (existsSync('.env')) process.loadEnvFile('.env');
   const adminUrl = process.env.TEST_DATABASE_URL ?? '';
   project.provide('adminDatabaseUrl', adminUrl);
   if (!adminUrl) {
