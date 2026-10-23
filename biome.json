@@ -1,12 +1,12 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["packages/**/src/**/*.ts", "packages/**/src/**/*.tsx", "test/**/*.ts"]
+    "includes": ["**", "!docs", "!pnpm-lock.yaml"]
   },
   "formatter": {
     "enabled": true,
@@ -21,29 +21,10 @@
       "trailingCommas": "all"
     }
   },
-  "assist": {
-    "actions": {
-      "source": {
-        "organizeImports": "off"
-      }
-    }
-  },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
-      "a11y": {
-        "useButtonType": "warn",
-        "noStaticElementInteractions": "warn",
-        "useKeyWithClickEvents": "warn"
-      },
-      "correctness": {
-        "useExhaustiveDependencies": "warn"
-      },
-      "suspicious": {
-        "noAssignInExpressions": "warn",
-        "noImplicitAnyLet": "warn"
-      }
+      "preset": "recommended"
     }
   }
 }

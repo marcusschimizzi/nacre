@@ -1,231 +1,60 @@
 # Nacre
 
-> Biological memory for long-living AI agents.
+**One memory, shared by all of your AI agents.** Tell Claude Code a fact; get it back in Grok Bot with the exact quote it came from and a link to the original message.
 
-Nacre is an open-source memory layer for AI agents that models how memory actually works — formation, consolidation, decay, reinforcement, and emergent connection discovery.
+Nacre keeps an append-only log of what your agents saw, turns it into claims whose quotes are checked in code, and serves the resulting beliefs to every agent over MCP, with provenance on every answer. Like mother-of-pearl, it is built in thin layers over time.
 
-Built for agents that live for months, not minutes.
+## Status
 
-## Why Nacre?
+**v3, slice 1, task 1: scaffold and MCP spike.** This is a ground-up reboot. What exists today:
+- an `api` service (Hono) with a remote MCP endpoint at `/mcp` (Streamable HTTP, one `ping` tool, bearer-token auth) and `GET /healthz`;
+- a placeholder `worker` service;
+- CI, a Dockerfile and Railway Infrastructure as Code (not deployed).
 
-Every AI agent wakes up with amnesia. Context windows are finite, conversation history gets truncated, and the agent that helped you yesterday has no idea what it learned.
+The real tools (`remember`, `recall`, `get_provenance`), Postgres, extraction and the web app arrive over the rest of slice 1. v2 (the markdown knowledge-graph version) is preserved at the [`v2-final`](https://github.com/marcusschimizzi/nacre/tree/v2-final) tag and the [`v2`](https://github.com/marcusschimizzi/nacre/tree/v2) branch.
 
-Current memory solutions are either **shallow** (vector search over past messages), **naive** (stuff everything into context), or **generic** (designed for chatbots, not persistent agents).
+## Run it locally
 
-Nacre is different:
-
-- **Graph-native** — memories are connected, not just stored. Relationships between entities are first-class, with typed edges and provenance tracking.
-- **Biologically-inspired** — Ebbinghaus decay curves with reinforcement-based stability. Important memories strengthen over time; noise fades naturally.
-- **Sleep/wake consolidation** — like hippocampal replay, nacre processes experience in batch during idle periods. Connections form during "sleep," not in real-time.
-- **Local-first** — your agent's memory is a directory on disk. No cloud service required. Copy it, back it up, version control it.
-- **Observable** — a 3D force-directed visualization lets you see, explore, and debug the memory graph. No black boxes.
-
-## Quick Start
+Needs Node 24 (see `.node-version`) and pnpm, pinned through `packageManager` (`corepack enable` picks the right version).
 
 ```bash
-# Install
-npm install -g @nacre/cli
+pnpm install
+cp .env.example .env          # then set NACRE_DEV_TOKEN, e.g. $(openssl rand -base64 32)
+pnpm dev                      # api on http://localhost:3000
+pnpm dev:worker               # placeholder worker, in another terminal
 
-# Point nacre at your markdown files and consolidate
-nacre consolidate --input ./my-notes --graph ./data/my-graph
-
-# Get a briefing on what's in the graph
-nacre brief --graph ./data/my-graph
-
-# Query the graph
-nacre query "typescript" --graph ./data/my-graph
-
-# Check for fading memories and emerging topics
-nacre alerts --graph ./data/my-graph
-
-# Get connection suggestions and cluster analysis
-nacre insights --graph ./data/my-graph
-
-# Launch the visualization
-nacre serve --graph ./data/my-graph
+curl localhost:3000/healthz
 ```
 
-## How It Works
-
-### 1. Ingestion
-
-Nacre reads markdown files (Obsidian-compatible) and extracts entities and relationships using three extraction layers:
-
-- **Structural** — headings, wikilinks, frontmatter, code blocks, lists
-- **NLP** — noun phrases, capitalized terms, technical vocabulary
-- **Custom** — configurable patterns for known tools, projects, and people
-
-### 2. Graph Construction
-
-Extracted entities become **nodes** (typed: person, project, tool, concept, decision, event, lesson). Relationships become **edges** (typed: explicit, co-occurrence, temporal, causal) with weights, stability scores, and provenance.
-
-Entity resolution uses Levenshtein fuzzy matching and alias tracking to merge duplicates.
-
-### 3. Decay & Reinforcement
-
-Edges decay over time following an Ebbinghaus forgetting curve:
-
-```
-weight(t) = baseWeight × e^(-λt/stability)
-```
-
-Where `λ` is the decay rate and `stability` grows with reinforcement. Re-encountering a memory increases its stability, slowing future decay — just like real memory.
-
-### 4. Intelligence
-
-Beyond storage, nacre actively analyzes the graph:
-
-- **Connection suggestions** — edges that are close to forming (pending near threshold), structural holes (two clusters that should be connected), and type bridges (e.g., a tool used by two unconnected projects)
-- **Cluster detection** — labeled groups of related entities with dominant types
-- **Significance analysis** — emerging topics (new, growing fast), anchor nodes (central, stable), and fading important connections (need attention)
-
-### 5. Visualization
-
-A 3D force-directed graph rendered with Three.js and a custom nacre iridescent GLSL shader (Fresnel thin-film interference). Features temporal scrubbing, search, cluster zoom, and node detail panels.
-
-## Architecture
-
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  Parser   │───▶│   Core   │───▶│   Viz    │    │  CLI /   │
-│ Pipeline  │    │  Engine  │    │  Layer   │    │  API     │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
-     ▲               │               ▲               │
-     │               ▼               │               ▼
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│ Markdown  │    │  Graph   │    │ Browser  │    │  Agent   │
-│  Files    │    │  Store   │    │          │    │  Hooks   │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
-```
-
-### Packages
-
-| Package | Description |
-|---------|-------------|
-| `@nacre/core` | Graph data model, decay math, entity resolution, query engine, intelligence layer |
-| `@nacre/parser` | File discovery, markdown→AST, entity extraction (structural + NLP + custom), merge pipeline |
-| `@nacre/viz` | 3D force-directed graph with Three.js, iridescent shader, time scrub, search |
-| `@nacre/cli` | Command-line interface: consolidate, query, brief, alerts, insights, suggest, serve |
-
-## Configuration
-
-### Entity Map
-
-Create `data/entity-map.json` to customize entity extraction:
-
-```json
-{
-  "aliases": {
-    "TS": "typescript",
-    "JS": "javascript"
-  },
-  "ignore": ["the", "it", "this", "..."]
-}
-```
-
-See `data/entity-map.example.json` for a full example.
-
-### Graph Config
-
-Default configuration (tunable per graph):
-
-```json
-{
-  "decayRate": 0.015,
-  "reinforcementBoost": 1.5,
-  "visibilityThreshold": 0.05,
-  "coOccurrenceThreshold": 2,
-  "baseWeights": {
-    "explicit": 1.0,
-    "coOccurrence": 0.3,
-    "temporal": 0.1,
-    "causal": 0.8
-  }
-}
-```
-
-### Embedding Providers
-
-Nacre supports multiple embedding providers for semantic similarity search:
-
-| Provider | Dimensions | Requirements | Best For |
-|----------|-----------|--------------|----------|
-| `onnx` | 384 | `npm install @huggingface/transformers` | Local, zero-service, privacy-first |
-| `ollama` | 768 | [Ollama](https://ollama.ai) running locally | Local with GPU acceleration |
-| `openai` | 1536/3072 | `OPENAI_API_KEY` env var | Highest quality, cloud-based |
-| `mock` | 64 | None | Testing and development |
-
-Configure via CLI flag, config file, or environment variable:
+Connect Claude Code to the local server (see [`docs/spike-mcp.md`](docs/spike-mcp.md)):
 
 ```bash
-# CLI flag
-nacre embed --graph ./data/my-graph --provider ollama
-
-# Check embedding status
-nacre embed --graph ./data/my-graph --status
-
-# Force re-embed with a new provider (clears existing embeddings)
-nacre embed --graph ./data/my-graph --provider onnx --force
+export NACRE_TOKEN=<the same value as NACRE_DEV_TOKEN>
+claude mcp add --transport http nacre --scope user http://localhost:3000/mcp \
+  --header 'Authorization: Bearer ${NACRE_TOKEN}'
+claude mcp get nacre
 ```
 
-Or create a `nacre.config.json` in your graph directory:
+Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `pnpm start:api` / `pnpm start:worker`.
 
-```json
-{
-  "embeddings": {
-    "provider": "ollama"
-  }
-}
-```
+## Layout
 
-Environment variable fallback: `NACRE_EMBEDDING_PROVIDER=onnx`
+| Path                  | What                                                               |
+| --------------------- | ------------------------------------------------------------------ |
+| `src/api/`            | Hono app: `/mcp`, `/healthz`; later `/v1/*` and the web app        |
+| `src/worker/`         | Job worker (placeholder loop)                                      |
+| `src/shared/`         | Config, logging, build info                                        |
+| `migrations/`         | Hand-written dbmate `.sql` files (from task 2)                     |
+| `test/`               | Vitest, including an MCP client test over real HTTP                |
+| `.railway/railway.ts` | Railway Infrastructure as Code for the `api` and `worker` services |
 
-Resolution order: CLI flag → config file → environment variable → auto-detect.
+## Docs
 
-## Development
-
-```bash
-# Clone
-git clone https://github.com/yourusername/nacre.git
-cd nacre
-
-# Install dependencies
-npm install
-
-# Run tests
-npm test              # core tests
-npm run test:parser   # parser tests
-npm run test:all      # everything
-
-# Build all packages
-npm run build
-
-# Type check
-npm run typecheck
-```
-
-## Roadmap
-
-SQLite storage, embeddings, hybrid recall, episodic + procedural memory,
-temporal queries, a REST API, an MCP server, and a TypeScript SDK have all
-shipped. See [docs/ROADMAP.md](docs/ROADMAP.md) for the full roadmap. Key
-upcoming milestones:
-
-- **Live visualization dashboard** — wire the 3D graph to the API, add health metrics, search highlighting, and a consolidation animation
-- **Agent integrations** — drop-in wrappers for Claude Code, OpenCode, and LangChain
-- **Inference engine** — automated procedure extraction from episodic patterns
-- **Python SDK** — REST wrapper with LangChain / CrewAI / AutoGen examples
-- **Multi-graph** — multiple named graphs and cross-graph federation
-
-## Design Principles
-
-1. **Biological fidelity** — memory science informs architecture, not just marketing
-2. **Local-first, cloud-optional** — a nacre memory is a directory on disk
-3. **Graph-native** — the knowledge graph is primary, not a secondary index
-4. **Observable** — you can see the memory, inspect it, debug it
-5. **Incremental** — never rebuild from scratch; evolve continuously
-6. **Carbon + silicon** — works for AI agents and human knowledge workers alike
+- [`docs/design.md`](docs/design.md): the overall design
+- [`docs/slice-1-spec.md`](docs/slice-1-spec.md): the slice 1 build spec
+- [`docs/tasks/`](docs/tasks/): task briefs and the workflow ([README](docs/tasks/README.md))
+- [`docs/spike-mcp.md`](docs/spike-mcp.md): MCP protocol findings and client setup
 
 ## License
 
-[Apache License 2.0](LICENSE)
+[Apache-2.0](LICENSE)
