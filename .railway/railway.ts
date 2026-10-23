@@ -10,7 +10,7 @@
 // WARNING: in a single-file project, resources missing from this file are planned for deletion.
 // The database is declared here, so a plan keeps it. Against the old project, a plan proposes
 // deleting the old Postgres and the bucket: that is the §12.1 reset, and only Marcus applies it.
-// Renaming `postgres-18` below would plan the database's deletion too, so don't.
+// Renaming `nacredb` below would plan the database's deletion too, so don't.
 import { database, defineRailway, github, preserve, project, service } from 'railway/iac';
 
 export default defineRailway(() => {
@@ -20,7 +20,7 @@ export default defineRailway(() => {
   // Postgres 18 with pgvector 0.8 (Railway's postgres-ssl:18 image installs postgresql-18-pgvector).
   // The SDK's postgres() helper uses this same image today, but only as an SDK default; naming the
   // image here keeps the major version pinned across SDK upgrades.
-  const db = database('postgres-18', 'postgres', {
+  const db = database('nacredb', 'postgres', {
     image: 'ghcr.io/railwayapp-templates/postgres-ssl:18',
     output: 'DATABASE_URL',
     defaultMountPath: '/var/lib/postgresql/data',

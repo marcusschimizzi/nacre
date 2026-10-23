@@ -18,11 +18,11 @@ Rules for new migrations:
 
 ## Railway steps (Marcus)
 
-Agents never run these. `.railway/railway.ts` declares the database (`postgres-18`, Railway's `postgres-ssl:18` image with pgvector 0.8) and gives `api` the owner URL as `MIGRATION_DATABASE_URL` plus a pre-deploy step, `npm run db:migrate`.
-1. **Plan.** `railway link` (the "Nacre" project), then `railway config plan`. Check that it creates `postgres-18`, updates `api` and `worker`, and deletes **only** what the §12.1 reset removes (the old Postgres and the empty bucket). If it would delete anything else, stop.
+Agents never run these. `.railway/railway.ts` declares the database (`nacredb`, Railway's `postgres-ssl:18` image with pgvector 0.8) and gives `api` the owner URL as `MIGRATION_DATABASE_URL` plus a pre-deploy step, `npm run db:migrate`.
+1. **Plan.** `railway link` (the "Nacre" project), then `railway config plan`. Check that it creates `nacredb`, updates `api` and `worker`, and deletes **only** what the §12.1 reset removes (the old Postgres and the empty bucket). If it would delete anything else, stop.
 2. **Apply.** `railway config apply`. When `api` next deploys from `main`, its pre-deploy log shows `Applied: 20261023000000_init.sql` and `Applied: 20261023000100_roles.sql`. A failed migration stops that deploy, and the previous version keeps running; dbmate runs each migration in a transaction, so nothing is left half-applied.
-3. **Backups.** Turn on Railway's backups for `postgres-18` (and point-in-time recovery if the plan has it), per spec §12.1.
-4. **Check the version and extension.** Open psql as the admin user (`railway connect postgres-18`) and run:
+3. **Backups.** Turn on Railway's backups for `nacredb` (and point-in-time recovery if the plan has it), per spec §12.1.
+4. **Check the version and extension.** Open psql as the admin user (`railway connect nacredb`) and run:
 
    ```sql
    SELECT current_setting('server_version_num')::int >= 180000 AS pg18, extversion
@@ -41,7 +41,7 @@ Agents never run these. `.railway/railway.ts` declares the database (`postgres-1
 6. **Verify.** From a checkout of `main`, run the same checks CI runs, against the deployed database. The URL comes from Railway's variables and is never printed:
 
    ```bash
-   railway run --service postgres-18 -- sh -c 'MIGRATION_DATABASE_URL="$DATABASE_PUBLIC_URL" pnpm db:verify'
+   railway run --service nacredb -- sh -c 'MIGRATION_DATABASE_URL="$DATABASE_PUBLIC_URL" pnpm db:verify'
    ```
 
    Expect every line `PASS` and exit code 0. If the connection is refused over SSL, append `?sslmode=require` to the URL inside the quotes.
