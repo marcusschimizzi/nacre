@@ -1,8 +1,10 @@
 # Nacre Slice 1: shared memory between two agents (build spec)
 
-*Status: draft v0.2.4, Oct 21, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.3. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. v0.1 is kept as `slice-1-spec.v0.1.bak.md`, v0.2 as `slice-1-spec.v0.2.bak.md`, v0.2.1 as `slice-1-spec.v0.2.1.bak.md`, v0.2.2 as `slice-1-spec.v0.2.2.bak.md`, and v0.2.3 as `slice-1-spec.v0.2.3.bak.md`.*
+*Status: draft v0.2.6, Oct 23, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.4. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. v0.1 is kept as `slice-1-spec.v0.1.bak.md`, v0.2 as `slice-1-spec.v0.2.bak.md`, v0.2.1 as `slice-1-spec.v0.2.1.bak.md`, v0.2.2 as `slice-1-spec.v0.2.2.bak.md`, v0.2.3 as `slice-1-spec.v0.2.3.bak.md`, v0.2.4 as `slice-1-spec.v0.2.4.bak.md`, and v0.2.5 as `slice-1-spec.v0.2.5.bak.md`.*
 
 **Changelog**
+- **v0.2.6, Oct 23, 2026 (1:55 PM).** Task 1 merged (PR #19, merge `07973a9`). Factual fixes from what it built: §12.2 now names `@modelcontextprotocol/server` v2 as the MCP package (the v1 `@modelcontextprotocol/sdk` is a dev dependency for the backward-compatibility test only) and Node 24 LTS (`.node-version`); §12.1 notes that Railway config as code lives in `.railway/railway.ts`, not `railway.json`, and that Postgres must be declared there (or kept outside it with config partials) before task 2 deploys. No design changes. Sections touched: §12.1, §12.2.
+- **v0.2.5, Oct 23, 2026 (12:30 PM).** Marcus decided that slice 1 gets a **minimal, single-user OAuth 2.1 server**, because Grok Bot's custom MCP connector never sends a static `Authorization` header and supports only OAuth. It covers discovery (RFC 9728 protected-resource metadata and RFC 8414 server metadata), PKCE with S256 only, dynamic client registration, a tiny server-rendered consent page, and access and refresh tokens stored as rows in the token table. Static bearer tokens stay for Claude Code. Tokens in URLs stay off the table. Slice 5 keeps the broader work (more agents, scopes and per-agent grants in tokens, ChatGPT and Claude.ai capture). New §9.3 and new task **3b**; Origin validation now lands in tasks 3 and 3b, before the consent form and task 13's cookie login. New acceptance test A17. Sections touched: Bottom line, the answers table, §1.3, §2, §3, §4 (`oauth_clients`, `oauth_auth_codes`, new `agent_tokens` columns, roles), §7, §7.4, §9.1, §9.3 (new), §11, §12.1, §13.2, §14 (A11, new A17), §15 (tasks 1, 3, 3b, 12, 13, 15), §16 (R2, new R11), §17 (new Q10), §19; design.md §17.
 - **v0.2.4, Oct 21, 2026 (8:16 PM).** Marcus decided the domain is **`nacre.so`**. The `nacre.example.com` placeholder is replaced everywhere: MCP and API URLs now use `api.nacre.so`, and web links use `app.nacre.so` (both subdomains are suggested). Railway's own domain still works until DNS is set. The empty bucket is **removed** at reset time and re-added only if a later slice needs it. All slice 1 questions are now decided. Sections touched: Labels, the answers table, §5.2, §7.2, §8.1, §8.4, §9.1, §12.1, §15 task 1, §17 Q6 and "Still open".
 - **v0.2.3, Oct 21, 2026 (8:10 PM).** Marcus confirmed the old Nacre Railway project exists. It holds only an old Postgres database and an empty S3-style bucket, and he is fine resetting and reusing it. Task 1 is now "reset and reuse the existing Nacre Railway project". The old Postgres is replaced with Postgres 18 + pgvector rather than reused as is. Keeping or removing the bucket is optional. The reset itself is done by Marcus, or with his go-ahead, at build time. The domain is still TBD (Marcus is searching). Sections touched: Bottom line, Labels, the answers table, §12.1, §15 task 1, §17 Q6. design.md does not mention Railway, so it is unchanged.
 - **v0.2.2, Oct 21, 2026 (8 PM).** Marcus answered the two follow-ups. (1) Normal content may go to Anthropic's official endpoint (`api.anthropic.com`), on the same terms as OpenAI and TypeSafe (design.md §9.8). (2) Slice 1 uses **one provider only: OpenAI**. The Anthropic adapter is **not** in slice 1; it arrives in slice 2, or whenever the Haiku 5.5 lab trial needs it. `Extractor` stays a swappable interface. Sections touched: §3, §4 (`model_calls.provider`), §12.1, §12.2, §12.3, §17.
@@ -14,9 +16,9 @@
 > 1. **Outcome.** Tell Claude Code a fact. A few seconds later, ask Grok Bot and get it back with the exact quote it came from and a link. The link opens the original message in a small web app.
 > 2. **The pipeline.** An append-only Postgres event log, then one extraction call per message that turns it into claims, then a code check that each claim's quote really is in the message, then plain beliefs, then hybrid recall (full-text plus embeddings, fused with RRF). It is exposed as **3 MCP tools**: `remember`, `recall` and `get_provenance`.
 > 3. **Forward-compatible.** The schema already has the columns later slices need: both bitemporal clocks, entity ids, scopes, sensitivity, key ids, replica ids and run provenance. They are nullable or unused for now, so slices 3–8 add behavior, not migrations of core tables.
-> 4. **Stack (recommendation).** TypeScript on Node with the official MCP TypeScript SDK, Hono for the API and a server-rendered web app, plain SQL migrations, and a Postgres jobs table instead of Redis. It runs in a **separate Railway project named "Nacre"**, the existing one reset and reused (Decided): one Postgres service with pgvector, plus an `api` and a `worker` service from one image.
+> 4. **Stack (recommendation).** TypeScript on Node with the official MCP TypeScript SDK, Hono for the API and a server-rendered web app, plain SQL migrations, and a Postgres jobs table instead of Redis. It runs in a **separate Railway project named "Nacre"**, the existing one reset and reused (Decided): one Postgres service with pgvector, plus an `api` and a `worker` service from one image. **Auth (Decided, Oct 23, 2026):** a static bearer token for Claude Code, and a minimal single-user OAuth 2.1 server for Grok Bot, whose connector supports only OAuth (§9.3).
 > 5. **Models (Decided, "at least for now").** OpenAI `gpt-6-luna` for extraction and `text-embedding-3-small` (1,536 dims) for embeddings, behind swappable interfaces. Claude Haiku 5.5 (same list price) is the named challenger for the slice 2 lab. Estimated **$0.12–0.33/day** at 300–800 messages a day, inside the **$0.50/day** online budget (§12.3). Heavy work (consolidation, backfills, re-extraction) is never billed to that budget; it runs later on Marcus's local Claude Code or Codex subscriptions under the job contract.
-> 6. **Size.** About 15 tasks, roughly **3–4 weeks** of focused work for one engineer. The riskiest parts are the model-mediated Grok Bot path and holding plaintext content until purge arrives in slice 8 (§16). Pasted secrets are stripped before storage, which narrows the second risk.
+> 6. **Size.** About 16 tasks, roughly **3½–4½ weeks** of focused work for one engineer. The riskiest parts are the model-mediated Grok Bot path, the small home-made OAuth server (§16 R11), and holding plaintext content until purge arrives in slice 8 (§16). Pasted secrets are stripped before storage, which narrows the second risk.
 
 **Labels.**
 - **Decided:** set by the agreed slice plan, by the Slice 1 brief, or by Marcus's answers of Oct 21, 2026 (§17).
@@ -38,14 +40,14 @@ All examples use generic placeholder content ("pnpm", "Dana", "Acme"). Nothing h
 | How are claims extracted and quotes checked? | One structured-output call per message, then a code-only verifier | §6 |
 | What MCP tools are there? | `remember`, `recall`, `get_provenance`, with full schemas | §7 |
 | How do I connect Claude Code? | Hook config plus one bash script | §8 |
-| How do I connect Grok Bot? | Connector URL, token header and the instruction text | §9 |
+| How do I connect Grok Bot? | Connector URL only; Grok Bot signs in through Nacre's minimal OAuth 2.1 server (consent page, owner password); plus the instruction text | §9 |
 | How does recall work? | Postgres full-text + pgvector, fused with RRF, scoped and logged | §10 |
 | What does the web app show? | Belief list, then belief, claim, event with the quote highlighted, plus activity | §11 |
 | Where does it run? | The existing Railway project "Nacre", reset and reused: Postgres 18 (pgvector) plus 2 services | §12 |
 | Which models, and what do they cost? | `gpt-6-luna` + `text-embedding-3-small` (Decided), about $0.12–0.33/day; Claude Haiku 5.5 is the slice 2 challenger | §12.3 |
-| How do I know it works? | 16 acceptance tests | §14 |
-| How big is the job? | 15 tasks, 3–4 weeks | §15 |
-| What could go wrong? What's open? | Risks; all 9 questions decided, domain `nacre.so` included | §16, §17 |
+| How do I know it works? | 17 acceptance tests | §14 |
+| How big is the job? | 16 tasks, 3½–4½ weeks | §15 |
+| What could go wrong? What's open? | Risks; all 10 questions decided (domain `nacre.so`, OAuth for Grok Bot); a few OAuth details are recommendations | §16, §17 |
 
 ## Contents
 1. Goal and user-visible outcome
@@ -100,7 +102,7 @@ One agent saves a memory and another recalls it, with provenance. This is the fi
 | Scopes per agent and per project (§9) | **Decided: one scope.** Every event, claim and belief lands in `personal`; Claude Code does not default to `work`. | Every row already carries `scope_id`. Slice 5 adds scopes and can re-scope through a changeset. |
 | Bitemporal versions with conflict handling (§4.4) | All four timestamps are stored. Conflicting values coexist as separate active versions. | Slice 3 adds the same-subject lookup and judge on top of the same rows. |
 | Entity value → relationship (§4.4, §8.1) | Every fact is a belief with `subject_text`. Entity-valued ones are flagged `value_kind='entity'`. | Slice 4 rescans these into the 17 relationship types through a changeset (design.md §5.6). |
-| OAuth 2.1, capability tokens, scopes, default deny (§9) | One opaque bearer token per agent with full scope. Every use is logged. | The token table already has scope, ceiling and rights columns. Slice 5 narrows them. |
+| OAuth 2.1, capability tokens, scopes, default deny (§9) | **Decided (Oct 23, 2026): a minimal single-user OAuth 2.1 server for MCP clients** (§9.3), used by Grok Bot. Claude Code keeps a static opaque bearer token. Every token, static or OAuth, has full scope, and every use is logged. No scopes in OAuth yet. | Static and OAuth tokens share one token table, which already has scope, ceiling and rights columns. Slice 5 narrows them and adds scopes and per-agent grants on top of the same OAuth server. |
 | Local SQLite replica first (§12) | Clients write straight to the hub. The Claude Code hook keeps a tiny retry spool. | `replica_id` and `device_seq` columns exist. The idempotency key already dedupes retries. |
 | Salience, strength (§6) | Everything promotable is promoted. `strength` stays NULL. | Slice 6 fills the column and adds the bias in recall. |
 | Assistant turns are captured as events (§5.3) | **Decided: stored but not mined.** They are context for user-turn extraction only. | The events are kept, so the lab can replay them. Mining them is a planned lab experiment (§2, §17 Q4). |
@@ -115,7 +117,7 @@ One agent saves a memory and another recalls it, with provenance. This is the fi
 | Same-subject contradiction lookup, judge proposals, supersession, review queue, undo (beyond simple retract), `correct`, `suppress` | **3** |
 | Entities, aliases, the 17 relationship types, merges and splits, graph retrieval | **4** |
 | **Mining assistant turns** for claims, with safeguards so the model's own guesses never become facts (§17 Q4) | **Lab experiment**, once the slice 2 lab can replay stored assistant turns. It is turned on only if it passes the release gate. |
-| More agents (Codex and others), more scopes (`work`, `project:*`) and per-scope grants, narrow or attenuable tokens, OAuth, access requests, ChatGPT and Claude.ai capture, native-memory intake, chat-export import, passkeys | **5** |
+| More agents (Codex and others), more scopes (`work`, `project:*`) and per-scope grants, narrow or attenuable tokens, OAuth scopes and per-agent grants (beyond slice 1's minimal single-user OAuth server, §9.3), OAuth for more clients, access requests, ChatGPT and Claude.ai capture, native-memory intake, chat-export import, passkeys | **5** |
 | Salience scoring, strength, reinforcement via `used`, exploration slots, `brief` | **6** |
 | Nightly consolidation, changesets, local-agent job contract (subscription-backed heavy work: consolidation, backfills, re-extraction) | **7** |
 | Offline SQLite replicas, late-arrival replay, per-event keys, purge | **8** |
@@ -133,9 +135,9 @@ flowchart LR
   end
   CC -- "REST /v1/hooks/* (capture, recall)" --> API
   CC -- "MCP: remember / recall / get_provenance" --> API
-  GB -- "MCP: remember / recall / get_provenance" --> API
+  GB -- "OAuth 2.1 sign-in, then MCP: remember / recall / get_provenance" --> API
   subgraph Railway["Railway project: Nacre"]
-    API["api service<br/>per-agent token auth · MCP endpoint · REST · web app"]
+    API["api service<br/>token auth (static + minimal OAuth 2.1) · MCP endpoint · REST · web app"]
     WK["worker service<br/>jobs: extract, verify quotes, commit beliefs, embed"]
     PG[("Postgres 18 + pgvector<br/>events · event_content · claims · evidence_spans<br/>beliefs · belief_versions · embeddings<br/>activity_log · jobs")]
   end
@@ -221,10 +223,27 @@ CREATE TABLE agents (
   disabled_at  timestamptz
 );
 
+-- Minimal OAuth 2.1 (§9.3). One owner, one resource, no scopes.
+CREATE TABLE oauth_clients (
+  client_id     text PRIMARY KEY,                   -- 'cli_<ulid>', issued by dynamic client registration
+  client_name   text,                               -- self-asserted; shown on the consent page
+  redirect_uris text[] NOT NULL,                    -- https or loopback only; matched exactly
+  metadata      jsonb NOT NULL,                     -- the registration request as received
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  approved_at   timestamptz,                        -- first approved consent; unapproved clients expire after 24 h
+  disabled_at   timestamptz
+);
+
 CREATE TABLE agent_tokens (
   token_id      text PRIMARY KEY,                   -- 'tok_<ulid>', also the public prefix of the token string
   agent_id      text NOT NULL REFERENCES agents,
   secret_hash   bytea NOT NULL,                     -- HMAC-SHA256(server pepper, secret); secret never stored
+  kind          text NOT NULL DEFAULT 'static'
+                  CHECK (kind IN ('static','oauth_access','oauth_refresh')),
+  oauth_client_id text REFERENCES oauth_clients,    -- OAuth tokens only
+  grant_id      text,                               -- 'grt_<ulid>': one approved consent; revoking it revokes every token in it
+  resource      text,                               -- audience; OAuth tokens: 'https://api.nacre.so/mcp'; static: NULL (/mcp and /v1/*)
+  rotated_at    timestamptz,                        -- refresh tokens: set when used; a second use revokes the grant
   read_scopes   text[] NOT NULL DEFAULT '{*}',      -- slice 1: full scope; slice 5 narrows
   write_scopes  text[] NOT NULL DEFAULT '{*}',
   label_ceiling text NOT NULL DEFAULT 'restricted'
@@ -234,7 +253,23 @@ CREATE TABLE agent_tokens (
   created_at    timestamptz NOT NULL DEFAULT now(),
   expires_at    timestamptz,
   revoked_at    timestamptz,
-  last_used_at  timestamptz
+  last_used_at  timestamptz,
+  CHECK (kind = 'static' OR (oauth_client_id IS NOT NULL AND grant_id IS NOT NULL
+                             AND resource IS NOT NULL AND expires_at IS NOT NULL))
+);
+CREATE INDEX agent_tokens_grant_idx ON agent_tokens (grant_id) WHERE grant_id IS NOT NULL;
+
+CREATE TABLE oauth_auth_codes (
+  code_hash      bytea PRIMARY KEY,                 -- HMAC-SHA256(server pepper, code); code never stored
+  client_id      text NOT NULL REFERENCES oauth_clients,
+  agent_id       text NOT NULL REFERENCES agents,   -- chosen on the consent page (default 'grok-bot')
+  grant_id       text NOT NULL,
+  redirect_uri   text NOT NULL,
+  code_challenge text NOT NULL,                     -- PKCE, S256 only
+  resource       text NOT NULL,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  expires_at     timestamptz NOT NULL,              -- created_at + 5 minutes
+  used_at        timestamptz                        -- single use; a second use revokes the grant
 );
 
 -- ---------- Layer 0: events ----------
@@ -512,7 +547,7 @@ CREATE INDEX jobs_ready_idx ON jobs (run_after) WHERE status = 'queued';
 
 -- ---------- Roles ----------
 -- nacre_app (api + worker): SELECT/INSERT on all tables; UPDATE only on agent_tokens(last_used_at,
---   revoked_at), extraction_runs, claims (status), belief_versions (expired_at), jobs. No DELETE anywhere.
+--   revoked_at, rotated_at), oauth_clients(approved_at, disabled_at), oauth_auth_codes(used_at), extraction_runs, claims (status), belief_versions (expired_at), jobs. No DELETE anywhere.
 -- nacre_migrator: DDL only, used by CI deploys. Slice 8 adds nacre_purge.
 ```
 
@@ -524,6 +559,7 @@ CREATE INDEX jobs_ready_idx ON jobs (run_after) WHERE status = 'queued';
 | No "one current version" unique index | It would make bitemporal history impossible. Code enforces "one value" behavior in slice 1 only where it matters. | Slice 3 |
 | `subject_entity_id`, `object_entity_id`, `entities` table, `value_kind` | Slice 4 backfills ids and turns `value_kind='entity'` beliefs into relationships through a rescan, without a table redesign | Slice 4 |
 | `scope_id`, `sensitivity` on everything; token scope/ceiling/rights columns | Default deny in slice 5 becomes a data change plus checks, not a migration. Recall already filters on them. | Slice 5 |
+| OAuth tokens as `agent_tokens` rows (`kind`, `oauth_client_id`, `grant_id`, `resource`) | One verifier, one revoke path and one activity trail for static and OAuth tokens. Slice 5's scopes and per-agent grants fill the existing scope columns of the same rows. | Slices 1, 5 |
 | `event_content` split from `events`; `key_id`, `hash_alg` | Purge = destroy a key and null one table's content, leaving the `events` row as the tombstone | Slice 8 |
 | `replica_id`, `device_seq`, `client_event_id` unique per agent | The idempotency key already makes hook retries safe, and replicas reuse the same dedupe | Slice 8 |
 | `extraction_runs.raw_output`, `prompt_hash`, `config_hash` | The slice 2 lab replays real slice 1 traffic, so the outputs have to be stored from day one | Slice 2 |
@@ -768,7 +804,7 @@ This is design.md §5.4 in its simplest form. Re-opening what the claims had clo
 
 *Recommendation.* There are three tools on one Streamable HTTP endpoint, `https://<host>/mcp`.
 - Each returns `structuredContent` matching its `outputSchema`, plus the same JSON as a text block. The spec recommends the text block for backward compatibility (verified, MCP spec 2026-07-28, Tools).
-- Auth is `Authorization: Bearer nacre_<token_id>_<secret>`.
+- Auth is `Authorization: Bearer nacre_<token_id>_<secret>`: either a static token (Claude Code, §8.1) or an OAuth access token (Grok Bot, §9.3). Both have the same format and go through the same verifier. A token in a URL or query string is never accepted.
 - Every call writes an activity entry with the agent, token, tool, argument digest, result ids and latency.
 
 ### 7.1 `remember`
@@ -941,6 +977,8 @@ Description: *"Show where a memory came from: the exact quote, the original mess
 | `POST /v1/hooks/session-start` | Return the session-start context text |
 | `POST /v1/recall`, `GET /v1/provenance/:id` | Same as the MCP tools |
 | `GET /healthz` | Database reachable, queue depth, oldest job age |
+| `GET /.well-known/oauth-protected-resource/mcp` (also at the root path), `GET /.well-known/oauth-authorization-server` | OAuth discovery metadata (§9.3). Public, no auth. |
+| `POST /oauth/register`, `GET` and `POST /oauth/authorize`, `POST /oauth/token` | The minimal OAuth 2.1 server (§9.3) |
 
 The hook endpoints return ready-to-print text, so the client script stays dumb and formatting changes ship server-side.
 
@@ -1063,11 +1101,12 @@ The text is written as **factual statements, not commands**. The docs warn that 
 
 Grok Bot has no hooks, so this path is **model-mediated** (design.md §11.2). It works only as well as the instructions and the model's tool choice.
 
-### 9.1 Connector
-- Add a **remote MCP server** to Grok Bot:
-  - URL: `https://api.nacre.so/mcp`
-  - Header: `Authorization: Bearer nacre_tok_…`, a token minted with `nacre token create --agent grok-bot`.
-- The token goes in a header, never in the URL.
+### 9.1 Connector (**Decided, Oct 23, 2026**: OAuth sign-in)
+Grok Bot's custom MCP connector never sends a static `Authorization` header; it supports only OAuth. So Grok Bot signs in through Nacre's minimal OAuth 2.1 server (§9.3). Claude Code keeps its static token (§8.1).
+- Add a **remote MCP server** to Grok Bot with the URL `https://api.nacre.so/mcp` and nothing else. No header, no token to paste.
+- On first use Grok Bot gets a 401 that points at Nacre's OAuth metadata. It registers itself and opens Nacre's consent page. Marcus checks the client name and redirect host, leaves the agent as `grok-bot`, enters the owner password and approves. Grok Bot then holds a 1-hour access token and a refresh token, and refreshes on its own.
+- Tokens travel in the `Authorization` header only, never in the URL.
+- To disconnect: revoke the grant in `/admin` or with `nacre token revoke`.
 - Save the text in §9.2 as **that connector's usage instructions**.
 - Grok Bot's built-in memory stays on. Nacre **coexists** with it and wins conflicts (design.md §11.6). One-way intake of built-in memory is slice 5.
 
@@ -1099,6 +1138,30 @@ Provenance
 - When the user asks where a memory came from or why you believe something, call nacre get_provenance
   with the id from recall and show the quote, the source agent, the date and the link.
 ```
+
+### 9.3 Minimal OAuth 2.1 server (**Decided, Oct 23, 2026**; details are *recommendations*)
+One owner, one protected resource (`https://api.nacre.so/mcp`), no scopes. It is just enough of the MCP authorization spec (revision 2026-07-28; also fine for clients on 2025-11-25) for Grok Bot to connect. Everything broader is slice 5.
+
+| Piece | Slice 1 behavior |
+|---|---|
+| Roles | The `api` service is both the resource server and the authorization server. Issuer: `https://api.nacre.so` (`PUBLIC_API_URL`). Resource: `https://api.nacre.so/mcp`. |
+| 401 challenge | `/mcp` without a valid token returns 401 with `WWW-Authenticate: Bearer resource_metadata="https://api.nacre.so/.well-known/oauth-protected-resource/mcp"`, and no `scope` parameter. `/v1/*` keeps a plain challenge, since hooks use static tokens. Claude Code sends its static header and never starts OAuth (task 1 spike). |
+| Protected resource metadata (RFC 9728) | `GET /.well-known/oauth-protected-resource/mcp`, with the same document at the root path: `resource`, `authorization_servers: ["https://api.nacre.so"]`, `bearer_methods_supported: ["header"]`. No `scopes_supported`. |
+| Server metadata (RFC 8414) | `GET /.well-known/oauth-authorization-server`: `issuer`, `authorization_endpoint` (`/oauth/authorize`), `token_endpoint` (`/oauth/token`), `registration_endpoint` (`/oauth/register`), `response_types_supported: ["code"]`, `grant_types_supported: ["authorization_code","refresh_token"]`, `code_challenge_methods_supported: ["S256"]`, `token_endpoint_auth_methods_supported: ["none"]`, `authorization_response_iss_parameter_supported: true`. No OpenID Connect discovery document. |
+| Client registration | Dynamic client registration (RFC 7591) at `POST /oauth/register`. Open, but rate-limited (10 an hour). Public clients only: `token_endpoint_auth_method: "none"`, no client secret. Redirect URIs must be `https` or loopback and are matched exactly later. A registered client can do nothing until Marcus approves it, and an unapproved client expires after 24 hours. The 2026-07-28 spec marks this method deprecated in favor of Client ID Metadata Documents (CIMD), which slice 1 leaves out unless Grok Bot needs it (§17 Q10). |
+| Authorization request | `GET /oauth/authorize` with `response_type=code`, `client_id`, an exactly matching `redirect_uri`, `state`, `code_challenge` with `code_challenge_method=S256` (required; `plain` or a missing challenge is rejected), and `resource`. If `resource` is present it must equal `https://api.nacre.so/mcp`; if absent it defaults to that. An unknown client or a mismatched redirect URI shows an error page and never redirects. |
+| Consent page | Server-rendered and tiny (Hono JSX, no client-side script). It shows the client name, the redirect URI's host (with a warning when it is loopback only), the agent the tokens act as (a select of existing agents, default `grok-bot`), a password field, and Approve and Deny buttons. Approve checks the owner password against `OWNER_PASSWORD_HASH` (argon2id), with the same rate limit as the web login. **No cookie is set or read**: the web app's session cookie is host-only on `app.nacre.so` (§12.1), and asking for the password on each consent is simpler. The validated request travels in a signed hidden field with a 10-minute expiry. The POST must carry `Origin: https://api.nacre.so` (§11). The page sends `Content-Security-Policy: frame-ancestors 'none'`. |
+| Authorization code | Random, stored hashed, single use, valid for 5 minutes, bound to the client, redirect URI, PKCE challenge, resource and agent. The redirect carries `code`, `state` and `iss`. A second use of a code revokes the grant. |
+| Token endpoint | `POST /oauth/token`, form-encoded. The `authorization_code` grant checks the PKCE verifier, client, redirect URI and resource. The `refresh_token` grant **rotates**: each use issues a new refresh token and marks the old one rotated. Reuse of a rotated refresh token revokes the whole grant and logs `oauth_refresh_reuse`. Lifetimes: access token 1 hour, refresh token 30 days from issue (*recommendation*). Responses carry `Cache-Control: no-store`. |
+| Tokens | Opaque, same format and verifier as static tokens (`nacre_tok_<ulid>_<secret>`, HMAC-hashed in `agent_tokens`), with `kind` set to `oauth_access` or `oauth_refresh` (§4). OAuth access tokens are accepted only on `/mcp` (their `resource`); they get 401 on `/v1/*`. Refresh tokens are accepted only at `/oauth/token`, never as bearer tokens. Full scope, like every slice 1 token. |
+| Revocation | `nacre token revoke` and `/admin` revoke a grant and every token in it. No RFC 7009 revocation endpoint in slice 1. |
+| Not in slice 1 | Scopes, per-agent grants inside tokens, more than one user, CIMD (unless Grok Bot needs it), OpenID Connect, JWT access tokens, introspection, a revocation endpoint, step-up authorization. Slice 5 or later. |
+
+**Implementation notes.**
+- The MCP SDK (`@modelcontextprotocol/server` v2, per the task 1 spike) supplies resource-server helpers: the metadata responses, the `resource_metadata` challenge, and Origin and Host checks. It has no authorization server, so `/oauth/*` is a small amount of Nacre's own Hono code.
+- The SDK's `requireBearerAuth` rejects tokens without an expiry. Static tokens may have none, so keep Nacre's own auth middleware (from task 1) and extend it, or give static tokens an explicit expiry.
+- In CI, drive the whole flow with the SDK's client-side OAuth provider against a test server (A17).
+- Every OAuth step writes an activity entry (§13.2). Codes, tokens, verifiers and the password are never logged.
 
 ---
 
@@ -1174,7 +1237,7 @@ LIMIT $6;
 | `/claims/:id` | Claim fields, `checks`, status and reason. A held claim shows why, e.g. "quote not found". |
 | `/events/:id` | Full event content with every evidence span highlighted (a `#spn_…` anchor scrolls to it), metadata, extraction runs, and any skip status such as "not extracted: private". |
 | `/activity` | Activity log, newest first. Filter by kind, agent and target. Includes reads and token use. |
-| `/admin` | Agents and tokens (create shows the token once; revoke), queue depth, today's model spend, error and held-reason counts. |
+| `/admin` | Agents and tokens (create shows the token once; revoke), OAuth clients and grants (revoke), queue depth, today's model spend, error and held-reason counts. |
 
 - **Highlighting:** the server slices `event_content.body` at code-point offsets and HTML-escapes each piece. Model output is never rendered as HTML.
 - **Owner login** (**Decided**, §17 Q7: simple password login until slice 5):
@@ -1182,6 +1245,7 @@ LIMIT $6;
   - An HttpOnly, Secure, SameSite=Strict session cookie that lasts 30 days.
   - Rate limiting, and an `owner_login` entry in the activity log.
   - Passkeys come with the slice 5 auth work (§17 Q7).
+- **Origin checks before any browser form or cookie (Decided order, Oct 23, 2026).** `/mcp` rejects a request whose `Origin` header is present and not on the allow-list (a transport MUST that task 1 left open). Every browser form POST (the OAuth consent form in task 3b, then the login form and every cookie-authenticated POST in task 13) requires an `Origin` equal to its own host. The check lands in task 3 for `/mcp` and in task 3b for the consent form, so it exists before the first form and before task 13's cookie login. The consent page itself uses no cookie (§9.3).
 
 ---
 
@@ -1208,7 +1272,8 @@ It contains:
   - Turn on Railway's native **backups**, and point-in-time recovery if the plan has it. Both are documented features (verified). Test one restore before calling the slice done (A14).
 - **`api` service** (Node). Serves `/mcp`, `/v1/*` and the web app on its custom domains with TLS: `api.nacre.so` and `app.nacre.so` (suggested, above). It reaches Postgres over Railway's private network.
 - **`worker` service.** The same image with a different start command. It runs jobs and has no public port.
-- **Variables:** `DATABASE_URL`, `TOKEN_PEPPER`, `OWNER_PASSWORD_HASH`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `PUBLIC_API_URL` (`https://api.nacre.so`), `PUBLIC_APP_URL` (`https://app.nacre.so`, the base for links), `DAILY_LLM_BUDGET_USD`. Both API keys are OpenAI keys (§12.3, Decided). They stay separate variables so the providers can diverge. Slice 1 has no Anthropic key; one is added with the Anthropic adapter (slice 2 or later).
+- **Config as code:** task 1 put Railway's config in `.railway/railway.ts` (it replaced `railway.json`). Once the Postgres service exists (task 2), declare it there, or keep it outside the IaC with `railway config partials`; otherwise a plan will propose deleting the database.
+- **Variables:** `DATABASE_URL`, `TOKEN_PEPPER`, `OWNER_PASSWORD_HASH`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `PUBLIC_API_URL` (`https://api.nacre.so`), `PUBLIC_APP_URL` (`https://app.nacre.so`, the base for links), `DAILY_LLM_BUDGET_USD`. Both API keys are OpenAI keys (§12.3, Decided). They stay separate variables so the providers can diverge. Slice 1 has no Anthropic key; one is added with the Anthropic adapter (slice 2 or later). OAuth (§9.3) adds no new secret: the issuer is `PUBLIC_API_URL`, codes and tokens are hashed with `TOKEN_PEPPER` (the consent form's signing key is derived from it), and consent checks `OWNER_PASSWORD_HASH`. An optional `ALLOWED_ORIGINS` defaults to `PUBLIC_API_URL` and `PUBLIC_APP_URL`.
 
 Why Railway, and why this layout:
 - You already run Wake there, so it's the same deploy flow, logs and billing.
@@ -1219,8 +1284,8 @@ Why Railway, and why this layout:
 
 | Layer | Pick | Reason |
 |---|---|---|
-| Language | **TypeScript on Node (current LTS)** | The official MCP TypeScript SDK; one language for server, worker and web; mature JSON Schema tooling |
-| MCP | `@modelcontextprotocol/sdk`, Streamable HTTP | Tracks the spec. The 2026-07-28 revision made the transport stateless (verified); the SDK handles version negotiation with clients on older revisions. |
+| Language | **TypeScript on Node 24 LTS** (pinned in `.node-version` by task 1; move to 26 once it is promoted to LTS only with Marcus's OK) | The official MCP TypeScript SDK; one language for server, worker and web; mature JSON Schema tooling |
+| MCP | `@modelcontextprotocol/server` v2, Streamable HTTP (adopted in task 1; the v1 `@modelcontextprotocol/sdk` stays only as a dev dependency for the backward-compatibility test) | Tracks the spec. The 2026-07-28 revision made the transport stateless (verified); the SDK handles version negotiation with clients on older revisions. |
 | HTTP and web | Hono, with Hono JSX for server-rendered pages | Small. One process serves MCP, REST and HTML. |
 | Database | `postgres` (postgres.js) with hand-written SQL | The schema *is* the design. An ORM would hide triggers and partial indexes. |
 | Migrations | dbmate, plain `.sql` files | The §4 DDL is the migration |
@@ -1327,7 +1392,8 @@ OpenAI still lists only these three embedding models. In April 2026 it corrected
 | `belief_add` / `belief_reinforce` | Commit step |
 | `retraction` | Owner retracted something; lists the claims and versions affected |
 | `read` | Every recall (MCP, hook or web search) and every `get_provenance` call |
-| `token_create` / `token_revoke` / `token_use_denied` | Auth events |
+| `token_create` / `token_revoke` / `token_use_denied` | Auth events, for static and OAuth tokens alike |
+| `oauth_client_register` / `oauth_consent` / `oauth_refresh_reuse` | OAuth events (§9.3): a client registered; consent approved or denied; a rotated refresh token or used code came back, so the grant was revoked |
 | `owner_login` | Web login |
 | `system` | Self-audit, budget stop, migrations |
 
@@ -1384,6 +1450,15 @@ Every box is checked on the deployed Railway environment unless the test says CI
   - A call with no token gets 401.
   - A revoked token gets 401 and a `token_use_denied` entry.
   - Every MCP and hook call in A1–A10 appears in `/activity` with the correct `agent_id` and `token_id`.
+  - A token passed in the query string instead of the header gets 401.
+  - A request to `/mcp` with an `Origin` that is not on the allow-list gets 403.
+- [ ] **A17. OAuth for Grok Bot (CI and prod).**
+  1. In CI, the SDK's OAuth client runs discovery from the 401, registration, consent (with the owner password), code exchange and a `recall` call. It works.
+  2. PKCE `plain`, a wrong verifier, a reused code, a redirect URI that doesn't match exactly, and a `resource` other than `https://api.nacre.so/mcp` all fail. A mismatched redirect URI never redirects.
+  3. A consent POST with a foreign or missing `Origin`, or a wrong password, is rejected and approves nothing.
+  4. An expired access token gets 401; a refresh works and rotates; reusing the old refresh token revokes the grant and logs `oauth_refresh_reuse`.
+  5. An OAuth access token gets 401 on `/v1/events`; a refresh token gets 401 on `/mcp`.
+  6. In prod, Grok Bot connects with only the URL, and A2 passes. Revoking the grant in `/admin` makes its next call fail with 401.
 
 **Resilience and performance**
 - [ ] **A12. Hub down.**
@@ -1415,9 +1490,10 @@ Sizes: **S** is up to half a day, **M** is 1–2 days, **L** is 3–5 days.
 
 | # | Task | Size | Depends on |
 |---|---|---|---|
-| 1 | Repo, CI, and **reset and reuse the existing Nacre Railway project** (done by Marcus or with his go-ahead): replace the old Postgres with Postgres 18 + pgvector and run the `CREATE EXTENSION vector` check; remove the empty bucket; add DNS for `nacre.so` with the suggested `api.` and `app.` subdomains (Railway's domain until DNS is live, §12.1). **MCP spike:** a hello tool connected from both Claude Code and Grok Bot. | M | — |
+| 1 | Repo, CI, and **reset and reuse the existing Nacre Railway project** (done by Marcus or with his go-ahead): replace the old Postgres with Postgres 18 + pgvector and run the `CREATE EXTENSION vector` check; remove the empty bucket; add DNS for `nacre.so` with the suggested `api.` and `app.` subdomains (Railway's domain until DNS is live, §12.1). **MCP spike:** a hello tool connected from both Claude Code and Grok Bot. The spike found that Grok Bot connects only through OAuth, so its connection moves to task 3b. | M | — |
 | 2 | Migrations (§4), roles, triggers, A5 tests | M | 1 |
-| 3 | Token create and revoke CLI, auth middleware, activity-log helper | S | 2 |
+| 3 | Token create and revoke CLI, auth middleware (static tokens and OAuth access tokens, with the `/mcp` audience check), activity-log helper, **Origin check on `/mcp`** (§11) | S | 2 |
+| 3b | **Minimal OAuth 2.1 for MCP (§9.3):** discovery metadata and the `resource_metadata` challenge, dynamic client registration, `/oauth/authorize` with PKCE S256 and the tiny consent page (Origin check on its form), `/oauth/token` with refresh rotation, grant revoke in the CLI, A17 in CI. After Marcus deploys, Grok Bot connects with only the URL and calls the spike's hello tool. | M | 3 |
 | 4 | Event ingest (`/v1/events`): idempotency, clock flags, NFC, secret redaction of the stored body (A16), job enqueued in the same transaction | M | 3 |
 | 5 | Worker loop, `Extractor` interface with the OpenAI adapter (§12.3), prompt v1, structured output, context window, `model_calls` and the cost guard | L | 4 |
 | 6 | Quote verifier with unit and property tests (A4) | M | — |
@@ -1426,12 +1502,14 @@ Sizes: **S** is up to half a day, **M** is 1–2 days, **L** is 3–5 days.
 | 9 | `Embedder` interface, embedding job, FTS, RRF recall with keyword-only fallback on budget stop, second check, read logging (A13, A15) | M | 8 |
 | 10 | MCP server with the 3 tools and their schemas (A3) | M | 9 |
 | 11 | Hook endpoints, hook script, spool, install doc (A1, A2, A12) | M | 9 |
-| 12 | Grok Bot connector and instructions, checked on 10 scripted prompts; also a 30-message extraction spot check of the chosen model (switch to the §12.3 fallback if it misses too much) | S | 10 |
-| 13 | Web app: login, belief list and detail, claim, event highlight, activity, admin | L | 8, 9 |
+| 12 | Grok Bot connector (OAuth sign-in, §9.1) and instructions, checked on 10 scripted prompts; also a 30-message extraction spot check of the chosen model (switch to the §12.3 fallback if it misses too much) | S | 3b, 10 |
+| 13 | Web app: login (reusing the Origin check from tasks 3 and 3b), belief list and detail, claim, event highlight, activity, admin (including OAuth grants) | L | 3b, 8, 9 |
 | 14 | Observability: `/admin` counters, alerts, nightly self-audit | S | 9 |
-| 15 | Acceptance script (A1–A16), restore drill, runbook (token rotation, restore) | M | all |
+| 15 | Acceptance script (A1–A17), restore drill, runbook (token rotation, OAuth grant revoke, restore) | M | all |
 
-That is about 25–35 working days in total. Task 6 and parts of task 13 can run in parallel, which makes about 3–4 calendar weeks for one engineer. **Do task 1's spike first**: it tests client compatibility, the biggest unknown, before anything else is built.
+That is about 27–37 working days in total. Tasks 3b and 6 and parts of task 13 can run in parallel with the pipeline (task 3b needs only task 3), which makes about 3½–4½ calendar weeks for one engineer. **Do task 1's spike first**: it tests client compatibility, the biggest unknown, before anything else is built.
+
+**Why task 3b and not a bigger task 3 (Decided, Oct 23, 2026).** The OAuth server is about as big as the rest of task 3 put together, and only Grok Bot needs it, so it gets its own reviewable PR. Task 3 still defines the one token table and verifier both use. Calling it 3b avoids renumbering tasks 4–15, which other sections and the task briefs already cite. **Origin order:** the `/mcp` Origin check lands in task 3 and the consent form's in task 3b, both before task 13's cookie login (§11).
 
 ---
 
@@ -1440,7 +1518,7 @@ That is about 25–35 working days in total. Task 6 and parts of task 13 can run
 | # | Risk | Likelihood / impact | Mitigation |
 |---|---|---|---|
 | R1 | **Grok Bot doesn't call `recall` or `remember` when it should** (model-mediated) | High / High | Tested instructions (§9.2, task 12); tool descriptions also say when to call; A1 and A2 rerun weekly. Slice 5 adds a backstop (native intake). |
-| R2 | **MCP client/spec mismatch**: the 2026-07-28 revision is stateless, and clients may lag | Medium / High | Official SDK with version negotiation; the task 1 spike with both real clients comes before other work |
+| R2 | **MCP client/spec mismatch**: the 2026-07-28 revision is stateless, and clients may lag | Medium / High | Official SDK with version negotiation; the task 1 spike with both real clients comes before other work. The spike found Grok Bot supports only OAuth, which led to §9.3. |
 | R3 | **Duplicate beliefs** from free-text attribute names | High / Medium | Visible in the list; the prompt asks for plain names; the slice 2 lab measures it; slices 3 and 4 fix it |
 | R4 | **Plaintext content and backups before slice 8**, which a purge can't reach | Certain / Medium | Accepted (§17 Q1: keys deferred to slice 8). Separate `event_content` table; secrets stripped before storage (§17 Q2, A16); short backup retention |
 | R5 | **Memory poisoning** via pasted text or tool output | Medium / High | Assistant turns not extracted; tainted sessions held; recall framed as data; every memory shows its source; retract exists |
@@ -1451,12 +1529,13 @@ That is about 25–35 working days in total. Task 6 and parts of task 13 can run
 | R8a | **The chosen model under-extracts** (one public report says `gpt-6-luna` misses items) or its alias changes behavior | Medium / Medium | Task 12 spot check; the returned model string is stored on every run; one-line switch to `gpt-5.6-luna`; the slice 2 lab compares `gpt-6-luna`, `gpt-5.6-luna` and Claude Haiku 5.5 on the gold set |
 | R9 | **Single-node Postgres outage** | Low / Medium | Hooks spool; backups and a restore drill (A14) |
 | R10 | **Schema guesses wrong for later slices** | Medium / Low | Only nullable or unused columns; `relationships` deliberately not created; CHECK constraints instead of ENUMs |
+| R11 | **The home-made OAuth server has a hole, or Grok Bot's client wants something it lacks** (CIMD instead of registration, a confidential client, different redirect rules) | Medium / High | The smallest feature set (§9.3); PKCE S256 only, exact redirect matching, hashed single-use codes, refresh rotation with reuse detection, an audience check, the owner password on every consent, one-step revoke; A17 in CI with the SDK's client and in prod with Grok Bot. If Grok Bot needs CIMD or a client secret, add just that piece (§17 Q10). |
 
 ---
 
-## 17. Open questions (answered by Marcus, Oct 21, 2026)
+## 17. Open questions (answered by Marcus, Oct 21 and 23, 2026)
 
-All nine are **Decided** (Q5 on Oct 21, 2026 in the evening, "at least for now"). The sections each answer changed are listed after "Applied in".
+All ten are **Decided** (Q5 on Oct 21, 2026 in the evening, "at least for now"; Q10 on Oct 23, 2026). The sections each answer changed are listed after "Applied in".
 
 | # | Question | Status | Answer |
 |---|---|---|---|
@@ -1469,6 +1548,7 @@ All nine are **Decided** (Q5 on Oct 21, 2026 in the evening, "at least for now")
 | 7 | Web login | **Decided** | Simple password login until slice 5, as planned. |
 | 8 | design.md §17 roadmap | **Decided** | Updated to the 8 vertical slices. |
 | 9 | Hook reach | **Decided** | User-level hooks in `~/.claude/settings.json`, applying to all projects. |
+| 10 | How Grok Bot authenticates | **Decided** (Oct 23, 2026) | A minimal single-user OAuth 2.1 server in slice 1 (§9.3). Static bearer tokens stay for Claude Code. Tokens never go in URLs. |
 
 1. **Per-event keys now or in slice 8? Decided: slice 8.** design.md §17 v0.2 had said keys must exist from the first event. Marcus deferred them to slice 8 together with purge. Content stays in its own `event_content` table so slice 8 can encrypt one table and backfill keys. Pre-slice-8 backups hold plaintext; that gap is accepted, kept small with short backup retention, and narrowed by Q2.
    - Applied in: §1.3, §16 R4, design.md §17.
@@ -1494,8 +1574,14 @@ All nine are **Decided** (Q5 on Oct 21, 2026 in the evening, "at least for now")
    - Applied in: design.md §17.
 9. **Hook reach. Decided: user level.** Hooks live in `~/.claude/settings.json` and apply to all projects.
    - Applied in: §8.2.
+10. **Grok Bot auth. Decided (Oct 23, 2026): minimal OAuth 2.1 in slice 1.** Grok Bot's custom MCP connector never sends a static `Authorization` header; it supports only OAuth. v0.2.4 assumed a static header (§9.1) and left OAuth for slice 5. Marcus decided slice 1 adds a minimal single-user OAuth 2.1 server: discovery metadata (RFC 9728 and RFC 8414), PKCE with S256 only, dynamic client registration, a simple consent page, and access and refresh tokens stored as rows in the token table. Static bearer tokens stay for Claude Code. Tokens in URLs stay off the table. No multi-user support and no scopes. Slice 5 keeps the broader work: more agents, scopes and per-agent grants in tokens, and ChatGPT and Claude.ai capture.
+   - Applied in: Bottom line, §1.3, §2, §3, §4, §7, §7.4, §9.1, §9.3, §11, §12.1, §13.2, §14 A11 and A17, §15 tasks 3, 3b, 12, 13 and 15, §16 R11, design.md §17.
 
-**Still open:** nothing for slice 1. All nine slice 1 questions are decided. The `api.` and `app.` subdomains are suggestions Marcus can change at DNS setup.
+**Still open:** no blocking question. The `api.` and `app.` subdomains are suggestions Marcus can change at DNS setup. Four OAuth details in §9.3 are *recommendations* Marcus can change:
+- **Registration method.** Dynamic client registration, as decided. The 2026-07-28 MCP spec marks it deprecated in favor of Client ID Metadata Documents (CIMD), and clients that support both try CIMD first only when the server advertises it. Recommendation: ship registration only, and add CIMD (fetch the client's metadata URL, with SSRF guards) only if Grok Bot's connector turns out to need it. Task 3b should log which method Grok Bot uses.
+- **Consent sign-in.** The owner password on every consent, with no cookie, because the session cookie is host-only on `app.nacre.so` and consent lives on `api.nacre.so`. Consent is rare (once per client, plus after a revoke or a 30-day refresh expiry).
+- **Lifetimes.** Access tokens 1 hour; refresh tokens 30 days from issue, rotated on every use. After 30 days Grok Bot asks Marcus to approve again.
+- **Agent mapping.** The consent page chooses the agent, default `grok-bot`, so OAuth tokens carry a real `agent_id` like static ones.
 
 ---
 
@@ -1532,6 +1618,9 @@ All were checked this session (Oct 21, 2026) unless noted.
 **MCP specification, revision 2026-07-28** (`modelcontextprotocol.io`)
 - Streamable HTTP: a single POST endpoint; protocol-level sessions removed.
 - Tools: `outputSchema` and `structuredContent`, plus a text block for backward compatibility.
+- Authorization, checked Oct 23, 2026 (`/specification/2026-07-28/basic/authorization` and its subpages on server discovery, client registration and security considerations): servers implement RFC 9728 protected-resource metadata and point to it from the 401's `resource_metadata`; clients try RFC 8414 metadata first, then OpenID discovery; PKCE is required and clients refuse a server without `code_challenge_methods_supported`; clients send the RFC 8707 `resource` parameter and servers must check the token's audience; exact redirect URI matching; https or loopback redirects; short-lived access tokens and refresh rotation for public clients; tokens never in the query string; Client ID Metadata Documents SHOULD, dynamic client registration MAY and deprecated; `iss` in the authorization response (RFC 9207).
+- Revision 2025-11-25, authorization (checked Oct 23, 2026): CIMD SHOULD, dynamic client registration MAY (not yet marked deprecated), the same PKCE, resource and rotation rules.
+- Task 1 spike (`docs/spike-mcp.md`, PR #19): Claude Code negotiates 2026-07-28 and does not start OAuth when a static header is set; Origin validation is a transport MUST still to be added. `@modelcontextprotocol/server` v2 has resource-server auth helpers only, and its `requireBearerAuth` rejects tokens without an expiry.
 
 **Railway**
 - `docs.railway.com/databases/postgresql`: default templates add no extensions; marketplace pgvector templates exist; native backups and point-in-time recovery are documented.
@@ -1539,7 +1628,7 @@ All were checked this session (Oct 21, 2026) unless noted.
 - Marketplace templates `railway.com/deploy/pgvector` and `railway.com/deploy/pgvector-pg18` (image `pgvector/pgvector:pg18`).
 
 **Grok Bot**
-- Connector setup: a remote MCP URL with auth headers, plus per-connector usage instructions, from Grok Bot's own connector workflow. Not yet exercised end to end; task 1's spike confirms it.
+- Connector setup: a remote MCP URL plus per-connector usage instructions, from Grok Bot's own connector workflow. Auth is OAuth only; the connector never sends a static `Authorization` header (established Oct 2026, basis of the Oct 23, 2026 decision). Not yet exercised end to end; task 3b and A17 confirm it.
 
 **Model choice (§12.3), all checked Oct 21, 2026**
 - OpenAI API pricing, Standard, Batch and Flex tiers: https://developers.openai.com/api/docs/pricing (`gpt-6-luna` $0.10/$0.01/$0.50; `gpt-5.6-luna` $0.20/$0.02/$1.20; `gpt-5-nano` $0.05/$0.005/$0.40; `gpt-5-mini` $0.25/$0.025/$2.00; embeddings `text-embedding-3-small` $0.02, `-3-large` $0.13, `ada-002` $0.10).

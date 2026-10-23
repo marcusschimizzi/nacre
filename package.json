@@ -27,13 +27,19 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "tsc --noEmit",
-    "mcp:smoke": "tsx scripts/mcp-smoke.ts"
+    "mcp:smoke": "tsx scripts/mcp-smoke.ts",
+    "db:migrate": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait up",
+    "db:rollback": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait rollback",
+    "db:status": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait status",
+    "db:verify": "tsx --env-file-if-exists=.env scripts/db-verify.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/server": "^2.3.1",
+    "dbmate": "2.36.0",
     "hono": "^4.13.13",
     "pino": "^10.4.0",
+    "postgres": "^3.4.9",
     "zod": "^4.6.7"
   },
   "devDependencies": {
