@@ -117,6 +117,14 @@ describe('/mcp auth', () => {
     expect(logLines.length).toBeGreaterThan(0);
     expect(logLines.join('')).not.toContain(token);
   });
+
+  it('logs the shape of the Authorization header, so a client that drops it is visible', () => {
+    const shapes = logLines
+      .map((line) => JSON.parse(line) as { msg?: string; path?: string; auth?: string })
+      .filter((entry) => entry.msg === 'request' && entry.path === '/mcp')
+      .map((entry) => entry.auth);
+    expect(shapes).toEqual(expect.arrayContaining(['none', 'bearer', 'bearer-malformed', 'other']));
+  });
 });
 
 describe('MCP over Streamable HTTP', () => {

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { type RequestIdVariables, requestId } from 'hono/request-id';
 import { buildInfo } from '../shared/build-info.js';
 import type { Logger } from '../shared/logger.js';
-import { bearerAuth } from './auth.js';
+import { authShape, bearerAuth } from './auth.js';
 import { createMcpEndpoint } from './mcp.js';
 
 export interface AppDeps {
@@ -29,6 +29,7 @@ export function createApp({ token, log }: AppDeps) {
         mcp_protocol: c.req.header('mcp-protocol-version'),
         mcp_method: c.req.header('mcp-method'),
         user_agent: c.req.header('user-agent'),
+        auth: authShape(c.req.header('authorization')),
       },
       'request',
     );
