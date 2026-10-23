@@ -1,0 +1,49 @@
+{
+  "name": "nacre",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One memory shared by all of your AI agents, with provenance for every fact.",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/marcusschimizzi/nacre#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcusschimizzi/nacre.git"
+  },
+  "bugs": {
+    "url": "https://github.com/marcusschimizzi/nacre/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@12.9.0",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/api/main.ts",
+    "dev:worker": "tsx watch --env-file-if-exists=.env src/worker/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start:api": "node dist/api/main.js",
+    "start:worker": "node dist/worker/main.js",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@modelcontextprotocol/hono": "^2.0.2",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "hono": "^4.13.13",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.2",
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@types/node": "^24.19.2",
+    "railway": "3.16.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
