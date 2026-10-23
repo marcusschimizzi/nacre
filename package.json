@@ -30,7 +30,8 @@
     "mcp:smoke": "tsx scripts/mcp-smoke.ts",
     "db:migrate": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait up",
     "db:rollback": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait rollback",
-    "db:status": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait status"
+    "db:status": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait status",
+    "db:verify": "tsx --env-file-if-exists=.env scripts/db-verify.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
