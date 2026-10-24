@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "FIXTURE-HTTP-ERROR-TEXT Something went wrong with your request.",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "invalid_value"
+  }
+}
