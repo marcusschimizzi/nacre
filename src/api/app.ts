@@ -47,7 +47,7 @@ export function createApp({ sql, config, log, oauthLimits }: AppDeps) {
         oauth: c.get('oauth'),
         client_id_is_url: c.get('oauthClientIdIsUrl'),
         mcp_protocol: c.req.header('mcp-protocol-version'),
-        mcp_method: c.req.header('mcp-method'),
+        mcp_method: c.req.header('mcp-method') ?? c.get('mcpMethod'),
         user_agent: c.req.header('user-agent'),
         auth: authShape(c.req.header('authorization')),
       },
@@ -83,11 +83,43 @@ export function createApp({ sql, config, log, oauthLimits }: AppDeps) {
     }),
   );
   const mcp = createMcpEndpoint(log);
-  app.all('/mcp', (c) => mcp(c.req.raw, c.get('auth')));
+  app.all('/mcp', async (c) => {
+    // 2025-11-25 clients (Grok, Cursor) send no Mcp-Method header; read the method from a copy of
+    // the body so the log can tell tools/call from tools/list. Only after auth, never params. Only
+    // with a Content-Length within the cap, so a large or chunked body is never buffered twice.
+    const length = Number(c.req.header('content-length') ?? Number.NaN);
+    if (
+      c.req.method === 'POST' &&
+      !c.req.header('mcp-method') &&
+      length > 0 &&
+      length <= MCP_METHOD_BODY_MAX
+    ) {
+      const method = jsonRpcMethod(await c.req.raw.clone().text());
+      if (method) c.set('mcpMethod', method);
+    }
+    return mcp(c.req.raw, c.get('auth'));
+  });
 
   app.route('/', oauthRoutes({ sql, config, log, limits: oauthLimits }));
 
   return app;
+}
+
+const MCP_METHOD = /^[a-z][a-zA-Z0-9_/]{0,63}$/;
+const MCP_METHOD_BODY_MAX = 64 * 1024;
+
+/** A single JSON-RPC object's `method`, if it looks like one; never a batch or anything else. */
+export function jsonRpcMethod(body: string): string | undefined {
+  if (body.length > MCP_METHOD_BODY_MAX) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+  const { method } = parsed as { method?: unknown };
+  return typeof method === 'string' && MCP_METHOD.test(method) ? method : undefined;
 }
 
 async function pingDatabase(sql: Sql, log: Logger): Promise<'ok' | 'error'> {

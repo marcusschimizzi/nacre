@@ -71,7 +71,17 @@ If port 54329 is taken, map another one and use it in every URL. `pnpm test` cre
 
 Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `pnpm start:api` / `pnpm start:worker`.
 
-## Railway steps for task 3b (Marcus)
+## Steps for task 3c (Marcus)
+
+No Railway change: no new variable, no migration, nothing in `.railway/railway.ts`. **Merge the PR**, wait for the `api` deploy (pre-deploy logs `migrate: nothing to apply` and `75 passed, 0 failed`), then:
+1. **Cursor:** reconnect it. On the consent page choose `grok-bot`, enter the owner password, Approve, and ask it to call `ping` (`agent_id: "grok-bot"`).
+2. **Reconnect:** `railway ssh --service api`, `node dist/cli/main.js token list`, and `node dist/cli/main.js token revoke <Cursor's oauth_access token_id>`. Then reconnect Cursor: the page preselects `grok-bot` and says "Last used by this client."
+3. **grok.com:** reconnect it. The consent page opens, so `grok.com` is on the redirect allow-list.
+4. **After an hour of use:** the `api` logs show `"oauth":"token:refresh"` for each client, and their `tools/call` request lines carry `mcp_method`.
+
+A new OAuth client whose `https` redirect host isn't on `OAUTH_REDIRECT_HOSTS` (`src/shared/oauth.ts`) gets `400 invalid_redirect_uri` at registration. Adding a host is a reviewed code change. Loopback redirects (any port) are always allowed.
+
+## Railway steps for task 3b (done, Oct 24, 2026)
 
 Agents don't run these. **Set the variable before merging**, so the consent form works on the first deploy (without it the form answers 503; `/mcp` and Claude Code's static token are unaffected either way).
 1. **`OWNER_PASSWORD_HASH` on `api`.** On your machine, run `pnpm nacre owner-password hash`: it asks for the owner password twice without echoing it (12 characters or more) and prints one `$argon2id$v=19$m=65536,t=3,p=4$…` line. In the dashboard (`api` → Variables), set `OWNER_PASSWORD_HASH` to that line exactly, as a raw value, not a reference. The password never leaves your machine; only the hash is stored.

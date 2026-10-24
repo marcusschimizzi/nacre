@@ -103,7 +103,7 @@ export async function oauthToken(
   const clientId = `cli_test_${randomBytes(6).toString('hex')}`;
   await app.sql`
     INSERT INTO oauth_clients (client_id, client_name, redirect_uris, metadata)
-    VALUES (${clientId}, 'test client', ${['https://client.example/cb']}, ${app.sql.json({})})`;
+    VALUES (${clientId}, 'test client', ${['https://claude.ai/cb']}, ${app.sql.json({})})`;
   const minted = mintToken(app.pepper);
   await app.sql`
     INSERT INTO agent_tokens (token_id, agent_id, secret_hash, kind, oauth_client_id, grant_id,

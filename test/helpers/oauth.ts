@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { s256 } from '../../src/shared/oauth.js';
 import { MCP_RESOURCE, OWNER_PASSWORD, PUBLIC_API_URL, type TestApp } from './app.js';
 
-export const REDIRECT_URI = 'https://client.example/oauth/callback';
+export const REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback';
 export const NEW_AGENT = '__new__';
 
 /** A `fetch` for clients that think the api is at `PUBLIC_API_URL`: sends those requests to the test server. */
