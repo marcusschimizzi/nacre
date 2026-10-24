@@ -115,7 +115,10 @@ describe.skipIf(!adminUrl)('nacre db commands: migrate, app-login and the pre-de
         {
           actor: 'system',
           target_kind: 'schema',
-          details: { step: 'migrate', applied: ['20261023000000', '20261023000100', '20261024120000'] },
+          details: {
+            step: 'migrate',
+            applied: ['20261023000000', '20261023000100', '20261024120000'],
+          },
         },
       ]);
     } finally {
