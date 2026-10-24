@@ -8,8 +8,9 @@
 //   railway config apply
 //
 // WARNING: in a single-file project, resources missing from this file are planned for deletion.
-// The database is declared here, so a plan keeps it. Renaming `nacredb` below would plan the
-// database's deletion, so don't. The database stays private: nothing here or in the docs needs a
+// This file is deliberately exhaustive (decided Oct 24, 2026): declare every resource, including
+// ones Railway creates itself (like the PITR bucket below), and read each plan before applying.
+// Renaming `nacredb` below would plan the database's deletion, so don't. The database stays private: nothing here or in the docs needs a
 // public TCP proxy (pre-deploy and `railway ssh` both use the private network).
 import { bucket, database, defineRailway, github, preserve, project, service } from 'railway/iac';
 
