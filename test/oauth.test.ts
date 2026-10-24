@@ -1156,11 +1156,12 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
       expect(await res.json()).toEqual({ error: 'invalid_redirect_uri' });
     });
 
-    it('the callbacks seen in the task 3b live test register (201)', async () => {
+    it('the callbacks seen in prod register (201)', async () => {
       for (const redirectUris of [
         ['https://grok.com/connectors-oauth-exchange-code/'],
         ['https://www.cursor.com/agents/mcp/oauth/callback', 'http://localhost:8787/callback'],
         ['https://claude.ai/api/mcp/auth_callback'],
+        ['https://chatgpt.com/connector_platform_oauth_redirect'],
         ['https://claude.com/api/mcp/auth_callback'],
       ]) {
         const res = await register(app, { client_name: 'Seen', redirect_uris: redirectUris });

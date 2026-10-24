@@ -122,6 +122,7 @@ describe('redirect URIs (RFC 7591, RFC 8252, the task 3c host allow-list)', () =
     // Seen in the task 3b live test.
     'https://grok.com/connectors-oauth-exchange-code/',
     'https://www.cursor.com/agents/mcp/oauth/callback',
+    'https://chatgpt.com/connector_platform_oauth_redirect',
     'http://localhost:8787/callback',
     'https://GROK.com/x', // hosts are case-insensitive; URL lowercases them
     'https://grok.com:443/x', // the default port, which URL drops
@@ -139,6 +140,8 @@ describe('redirect URIs (RFC 7591, RFC 8252, the task 3c host allow-list)', () =
     'https://sub.grok.com/cb',
     'https://grok.com:8443/cb',
     'https://cursor.com/cb',
+    'https://chat.openai.com/cb',
+    'https://www.chatgpt.com/cb',
     'https://claude.ai./cb',
     'http://grok.com/cb',
     'http://127.0.0.1.evil.example/cb',

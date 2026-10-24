@@ -19,7 +19,7 @@ Marcus's decisions (PR #26): keep Deny requiring the password; keep the absolute
 ## What to do
 
 ### 1. Redirect-host allow-list
-- `https` redirect URIs are accepted only when the URL's host is **exactly** one of a list in code, `OAUTH_REDIRECT_HOSTS` in `src/shared/oauth.ts`. It has no wildcards and no subdomain matching, and the port must be the default. Start with `grok.com`, `www.cursor.com`, `claude.ai` and `claude.com`, one comment line each saying which client uses it. Adding a host is a reviewed code change, not a variable.
+- `https` redirect URIs are accepted only when the URL's host is **exactly** one of a list in code, `OAUTH_REDIRECT_HOSTS` in `src/shared/oauth.ts`. It has no wildcards and no subdomain matching, and the port must be the default. Start with `grok.com`, `www.cursor.com`, `claude.ai`, `chatgpt.com` (the four seen registering against prod) and `claude.com`, each with a comment saying which client uses it. Adding a host is a reviewed code change, not a variable.
 - **Loopback stays allowed on any port** (`http://127.0.0.1`, `http://[::1]`, `http://localhost`; RFC 8252). Claude Code and Cursor's local callback rely on it. All of 3b's other rules stay: no fragment, no userinfo, the length cap, 1–5 URIs.
 - Check at **registration** (`400 invalid_redirect_uri` if any URI fails) and again at **`GET /oauth/authorize`** before anything else uses the URI. There, a registered client whose redirect host is no longer allowed gets the error page, **never a redirect**, and a request-log `oauth` value like `authorize:redirect_not_allowed`. The production clients from the live test all pass.
 

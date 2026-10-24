@@ -90,10 +90,13 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
  * test): exact, no subdomains, default port only. Adding one is a reviewed code change.
  */
 export const OAUTH_REDIRECT_HOSTS: ReadonlySet<string> = new Set([
-  'grok.com', // Grok's connectors: /connectors-oauth-exchange-code/
-  'www.cursor.com', // Cursor: /agents/mcp/oauth/callback
-  'claude.ai', // Claude's connectors: /api/mcp/auth_callback
-  'claude.com', // Claude's connectors, newer domain
+  // Seen registering against prod (Oct 24, 2026), with the path each used:
+  'grok.com', // Grok: /connectors-oauth-exchange-code/
+  'www.cursor.com', // Cursor: /agents/mcp/oauth/callback (plus a localhost one)
+  'claude.ai', // Claude: /api/mcp/auth_callback
+  'chatgpt.com', // ChatGPT: /connector_platform_oauth_redirect
+  // Not seen yet: Claude's callback on its other domain, kept so a move doesn't break reconnects.
+  'claude.com',
 ]);
 
 /**
