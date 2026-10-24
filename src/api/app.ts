@@ -85,8 +85,15 @@ export function createApp({ sql, config, log, oauthLimits }: AppDeps) {
   const mcp = createMcpEndpoint(log);
   app.all('/mcp', async (c) => {
     // 2025-11-25 clients (Grok, Cursor) send no Mcp-Method header; read the method from a copy of
-    // the body so the log can tell tools/call from tools/list. Only after auth, never params.
-    if (c.req.method === 'POST' && !c.req.header('mcp-method')) {
+    // the body so the log can tell tools/call from tools/list. Only after auth, never params. Only
+    // with a Content-Length within the cap, so a large or chunked body is never buffered twice.
+    const length = Number(c.req.header('content-length') ?? Number.NaN);
+    if (
+      c.req.method === 'POST' &&
+      !c.req.header('mcp-method') &&
+      length > 0 &&
+      length <= MCP_METHOD_BODY_MAX
+    ) {
       const method = jsonRpcMethod(await c.req.raw.clone().text());
       if (method) c.set('mcpMethod', method);
     }

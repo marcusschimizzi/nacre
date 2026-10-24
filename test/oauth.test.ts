@@ -1066,8 +1066,32 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
       ['a body that is not JSON', 'not json'],
       ['a method with odd characters', call('tools/list; DROP')],
       ['a method that is not a string', JSON.stringify({ jsonrpc: '2.0', id: 1, method: 7 })],
+      ['a body over 64 KiB', call('tools/list', { pad: 'x'.repeat(70_000) })],
     ])('%s logs no mcp_method', async (_case, body) => {
       const res = await post(body);
+      expect(await loggedMethod(res)).toBeUndefined();
+    });
+
+    it('a chunked body (no Content-Length) is not read twice, and logs no mcp_method', async () => {
+      const bytes = new TextEncoder().encode(call('tools/call', { name: 'ping', arguments: {} }));
+      const res = await fetch(app.mcpUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-11-25',
+          authorization: `Bearer ${accessToken}`,
+        },
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+          },
+        }),
+        duplex: 'half',
+      });
+      expect(res.status).toBe(200);
+      expect(await res.clone().text()).toContain('pong');
       expect(await loggedMethod(res)).toBeUndefined();
     });
   });
