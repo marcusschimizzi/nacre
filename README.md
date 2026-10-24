@@ -53,7 +53,7 @@ pnpm db:rollback    # undo the latest migration
 pnpm db:verify      # append-only and grant checks (A5); prints PASS/FAIL, leaves no rows
 ```
 
-If port 54329 is taken, map another one and use it in both URLs. `pnpm test` creates, migrates and drops its own scratch database through `TEST_DATABASE_URL`; without it the database tests are skipped locally (CI requires them). Nothing connects as `nacre_app` yet: task 3 adds the runtime `DATABASE_URL`. Railway steps: [`migrations/README.md`](migrations/README.md).
+If port 54329 is taken, map another one and use it in both URLs. `pnpm test` creates, migrates and drops its own scratch database through `TEST_DATABASE_URL`; without it the database tests are skipped locally (CI requires them). Nothing connects as `nacre_app` yet: task 3 adds the runtime `DATABASE_URL`. On Railway, every `api` deploy runs the migrations and then these checks first (`pnpm db:predeploy`; see [`migrations/README.md`](migrations/README.md)).
 
 Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `pnpm start:api` / `pnpm start:worker`.
 
