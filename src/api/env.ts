@@ -24,5 +24,7 @@ export interface AppEnv {
     oauth?: string;
     /** An unknown `client_id` that is an https URL: how a CIMD-first client would show up. */
     oauthClientIdIsUrl?: boolean;
+    /** The JSON-RPC method from a `/mcp` body, for clients that send no `Mcp-Method` header. */
+    mcpMethod?: string;
   };
 }

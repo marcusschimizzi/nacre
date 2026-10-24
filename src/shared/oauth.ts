@@ -10,6 +10,8 @@ import { hashSecret, lockGrant, mintToken, parseToken, revokeGrantTokens } from 
  */
 
 export const ACCESS_TOKEN_SECONDS = 3600;
+/** A refresh token rotated this recently is a lost race, not a replay (task 3c; Copal's value). */
+export const REUSE_GRACE_SECONDS = 10;
 export const CONSENT_TTL_MS = 10 * 60_000;
 export const REDIRECT_URIS_MAX = 5;
 const REDIRECT_URI_MAX_LENGTH = 2000;
@@ -83,7 +85,21 @@ export function suggestAgentId(
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
-/** `https`, or `http` on a loopback host; no fragment, no userinfo. Matched exactly later. */
+/**
+ * The only hosts an `https` redirect URI may name (task 3c, Marcus's decision after the live
+ * test): exact, no subdomains, default port only. Adding one is a reviewed code change.
+ */
+export const OAUTH_REDIRECT_HOSTS: ReadonlySet<string> = new Set([
+  'grok.com', // Grok's connectors: /connectors-oauth-exchange-code/
+  'www.cursor.com', // Cursor: /agents/mcp/oauth/callback
+  'claude.ai', // Claude's connectors: /api/mcp/auth_callback
+  'claude.com', // Claude's connectors, newer domain
+]);
+
+/**
+ * `https` on an allow-listed host, or `http` on a loopback host (any port, RFC 8252); no fragment,
+ * no userinfo. Matched exactly later.
+ */
 export function isAllowedRedirectUri(uri: string): boolean {
   if (uri.length > REDIRECT_URI_MAX_LENGTH || uri.includes('#')) return false;
   let url: URL;
@@ -94,7 +110,7 @@ export function isAllowedRedirectUri(uri: string): boolean {
   }
   // `@` in the authority is userinfo, even when empty (`https://@host/`).
   if (url.username || url.password || /^[a-z][a-z0-9+.-]*:\/\/[^/?]*@/i.test(uri)) return false;
-  if (url.protocol === 'https:') return url.hostname !== '';
+  if (url.protocol === 'https:') return url.port === '' && OAUTH_REDIRECT_HOSTS.has(url.hostname);
   return url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
 }
 
@@ -252,6 +268,28 @@ export interface ConsentAgent {
 export const listAgents = (sql: Sql): Promise<ConsentAgent[]> =>
   sql<ConsentAgent[]>`
     SELECT agent_id, display_name, disabled_at IS NULL AS enabled FROM agents ORDER BY agent_id`;
+
+/**
+ * The enabled agent this client was last approved for (task 3c), so a reconnect lands on it even
+ * when the owner named it something other than the slug. First this `client_id`'s consents, then
+ * those of an approved client with the same name and the same redirect URIs (one that registered
+ * again). Codes are written only on approval, so each row is one approved consent.
+ */
+export async function lastApprovedAgent(sql: Sql, client: ClientRow): Promise<string | null> {
+  const [row] = await sql<{ agent_id: string }[]>`
+    SELECT c.agent_id
+    FROM oauth_auth_codes c
+    JOIN oauth_clients k USING (client_id)
+    JOIN agents a ON a.agent_id = c.agent_id AND a.disabled_at IS NULL
+    WHERE c.client_id = ${client.client_id}
+       OR (k.approved_at IS NOT NULL AND k.disabled_at IS NULL
+           AND k.client_name IS NOT DISTINCT FROM ${client.client_name}
+           AND k.redirect_uris @> ${client.redirect_uris}::text[]
+           AND k.redirect_uris <@ ${client.redirect_uris}::text[])
+    ORDER BY c.client_id = ${client.client_id} DESC, c.created_at DESC
+    LIMIT 1`;
+  return row?.agent_id ?? null;
+}
 
 // ---------- Consent ----------
 
@@ -553,6 +591,8 @@ interface RefreshRow {
   expires_at: Date | null;
   revoked: boolean;
   rotated: boolean;
+  /** Rotated within `REUSE_GRACE_SECONDS`. */
+  rotated_recently: boolean;
   expired: boolean;
   agent_enabled: boolean;
 }
@@ -562,7 +602,8 @@ const NO_HASH = Buffer.alloc(32);
 
 /**
  * The `refresh_token` grant: rotate under the grant lock, so of two concurrent refreshes one
- * wins and the other is reuse. A rotated token coming back revokes every token in the grant.
+ * wins. A rotated token coming back within `REUSE_GRACE_SECONDS` is refused; later, it revokes
+ * every token in the grant.
  */
 export async function refreshTokens(
   sql: Sql,
@@ -574,6 +615,7 @@ export async function refreshTokens(
   const lookup = (q: Sql | TransactionSql) => q<RefreshRow[]>`
     SELECT t.agent_id, t.secret_hash, t.kind, t.oauth_client_id, t.grant_id, t.resource,
            t.expires_at, t.revoked_at IS NOT NULL AS revoked, t.rotated_at IS NOT NULL AS rotated,
+           t.rotated_at > now() - make_interval(secs => ${REUSE_GRACE_SECONDS}) AS rotated_recently,
            t.expires_at IS NOT NULL AND t.expires_at <= now() AS expired,
            a.disabled_at IS NULL AS agent_enabled
     FROM agent_tokens t JOIN agents a USING (agent_id)
@@ -593,7 +635,10 @@ export async function refreshTokens(
     // Read again under the lock: a concurrent refresh or revoke has committed by now.
     const [row] = await lookup(tx);
     if (!row) return fail('invalid_grant', 'refresh_unknown');
+    // Revoked first: a revoke also leaves rotated rows behind, and that must not read as a replay.
     if (row.revoked) return fail('invalid_grant', 'refresh_revoked');
+    // A parallel refresh that lost the lock: refuse it, but leave the winner's pair working.
+    if (row.rotated && row.rotated_recently) return fail('invalid_grant', 'refresh_reuse_grace');
     if (row.rotated) {
       await revokeForReuse(tx, 'refresh', {
         grantId,

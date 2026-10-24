@@ -19,6 +19,7 @@ import {
   isValidAgentId,
   isValidCodeChallenge,
   isValidCodeVerifier,
+  lastApprovedAgent,
   listAgents,
   REDIRECT_URIS_MAX,
   recordDenial,
@@ -32,7 +33,7 @@ import { verifyOwnerPassword } from '../../shared/password.js';
 import type { AppEnv } from '../env.js';
 import { originCheck } from '../origin.js';
 import { SlidingWindowLimiter } from '../rate-limit.js';
-import { ConsentPage, ErrorPage, NEW_AGENT } from './pages.js';
+import { ConsentPage, ErrorPage, NEW_AGENT, type PreselectReason } from './pages.js';
 
 export interface OAuthLimits {
   /** Dynamic registrations per hour, process-wide (spec §9.3: 10). */
@@ -254,9 +255,16 @@ export function oauthRoutes({ sql, config, log, limits }: OAuthDeps): Hono<AppEn
     );
     const selectable = (v: string | undefined) =>
       v === NEW_AGENT || enabled.some((a) => a.agent_id === v);
+    // The default: the agent this client was last approved for, else the name's slug match.
+    const lastUsed = await lastApprovedAgent(sql, client);
+    const preselect: { agentId: string; reason: PreselectReason } | null = lastUsed
+      ? { agentId: lastUsed, reason: 'last_used' }
+      : suggestion.matchedAgentId
+        ? { agentId: suggestion.matchedAgentId, reason: 'name_match' }
+        : null;
     const selected = selectable(state.selected)
       ? (state.selected as string)
-      : (suggestion.matchedAgentId ?? NEW_AGENT);
+      : (preselect?.agentId ?? NEW_AGENT);
     return page(
       c,
       <ConsentPage
@@ -266,6 +274,7 @@ export function oauthRoutes({ sql, config, log, limits }: OAuthDeps): Hono<AppEn
         loopback={isLoopbackRedirect(request.redirectUri)}
         agents={enabled.map((a) => ({ agentId: a.agent_id, displayName: a.display_name }))}
         selected={selected}
+        preselectReason={selected === preselect?.agentId ? preselect.reason : undefined}
         newAgentId={state.newAgentId ?? suggestion.newAgentId}
         signedRequest={signed}
         error={state.error}
@@ -294,6 +303,14 @@ export function oauthRoutes({ sql, config, log, limits }: OAuthDeps): Hono<AppEn
         c,
         'authorize:bad_redirect_uri',
         'The return address does not match what the app registered.',
+      );
+    }
+    // Registered before the allow-list, or since dropped from it: still never redirect there.
+    if (!isAllowedRedirectUri(redirectUri)) {
+      return errorPage(
+        c,
+        'authorize:redirect_not_allowed',
+        "Nacre doesn't accept this app's return address.",
       );
     }
 

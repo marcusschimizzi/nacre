@@ -114,10 +114,17 @@ describe('isValidAgentId (spec §4)', () => {
   });
 });
 
-describe('redirect URIs (RFC 7591, RFC 8252)', () => {
+describe('redirect URIs (RFC 7591, RFC 8252, the task 3c host allow-list)', () => {
   it.each([
     'https://claude.ai/api/mcp/auth_callback',
-    'https://client.example/cb?x=1',
+    'https://claude.ai/cb?x=1',
+    'https://claude.com/api/mcp/auth_callback',
+    // Seen in the task 3b live test.
+    'https://grok.com/connectors-oauth-exchange-code/',
+    'https://www.cursor.com/agents/mcp/oauth/callback',
+    'http://localhost:8787/callback',
+    'https://GROK.com/x', // hosts are case-insensitive; URL lowercases them
+    'https://grok.com:443/x', // the default port, which URL drops
     'http://127.0.0.1:33418/callback',
     'http://[::1]:8080/cb',
     'http://localhost/cb',
@@ -126,15 +133,23 @@ describe('redirect URIs (RFC 7591, RFC 8252)', () => {
   });
   it.each([
     'http://evil.example/cb',
+    // The https host allow-list (task 3c): exact hosts, default port only.
+    'https://evil.example/cb',
+    'https://grok.com.evil.example/cb',
+    'https://sub.grok.com/cb',
+    'https://grok.com:8443/cb',
+    'https://cursor.com/cb',
+    'https://claude.ai./cb',
+    'http://grok.com/cb',
     'http://127.0.0.1.evil.example/cb',
-    'https://client.example/cb#x',
-    'https://client.example/cb#',
-    'https://user:pw@client.example/cb',
-    'https://@client.example/cb',
+    'https://claude.ai/cb#x',
+    'https://claude.ai/cb#',
+    'https://user:pw@claude.ai/cb',
+    'https://@claude.ai/cb',
     'javascript:alert(1)',
     'cursor://callback',
     'not a url',
-    `https://client.example/${'x'.repeat(2000)}`,
+    `https://claude.ai/${'x'.repeat(2000)}`,
   ])('%s is refused', (uri) => {
     expect(isAllowedRedirectUri(uri)).toBe(false);
   });
@@ -154,7 +169,7 @@ describe('the consent form signature', () => {
   const pepper = 'p'.repeat(32);
   const request: ConsentRequest = {
     clientId: 'cli_x',
-    redirectUri: 'https://client.example/cb',
+    redirectUri: 'https://claude.ai/cb',
     codeChallenge: 'c'.repeat(43),
     resource: 'https://api.nacre.test/mcp',
     state: null,

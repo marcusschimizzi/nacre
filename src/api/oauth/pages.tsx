@@ -44,6 +44,14 @@ function Layout(props: { title: string; children: Child }) {
   );
 }
 
+/** `last_used`: this client (or one like it) was last approved for it. `name_match`: its slug. */
+export type PreselectReason = 'last_used' | 'name_match';
+
+const PRESELECT_HINT: Record<PreselectReason, string> = {
+  last_used: 'Last used by this client.',
+  name_match: "Matches the client's name.",
+};
+
 export interface ConsentPageProps {
   clientId: string;
   /** Untrusted (dynamic registration). */
@@ -54,6 +62,8 @@ export interface ConsentPageProps {
   agents: { agentId: string; displayName: string }[];
   /** An agent id from `agents`, or `NEW_AGENT`. */
   selected: string;
+  /** Why `selected` is the default, when it is the page's own suggestion. */
+  preselectReason?: PreselectReason | undefined;
   newAgentId: string;
   signedRequest: string;
   /** A page-level message (wrong password, unknown agent, …). */
@@ -96,6 +106,7 @@ export function ConsentPage(p: ConsentPageProps) {
             Create new agent
           </option>
         </select>
+        {p.preselectReason ? <p class="hint">{PRESELECT_HINT[p.preselectReason]}</p> : null}
         <label for="new_agent_id">New agent id</label>
         <input
           id="new_agent_id"

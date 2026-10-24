@@ -207,7 +207,7 @@ describe.skipIf(!appDatabaseUrl)('nacre token revoke with an OAuth token (spec Â
     const grantId = `grt_test_${randomBytes(6).toString('hex')}`;
     await sql`
       INSERT INTO oauth_clients (client_id, client_name, redirect_uris, metadata)
-      VALUES (${clientId}, 'cli test', ${['https://client.example/cb']}, ${sql.json({})})`;
+      VALUES (${clientId}, 'cli test', ${['https://claude.ai/cb']}, ${sql.json({})})`;
     const [access, refresh] = [mintToken(pepper), mintToken(pepper)];
     for (const [t, kind] of [
       [access, 'oauth_access'],

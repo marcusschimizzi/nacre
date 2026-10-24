@@ -400,6 +400,66 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
     });
   });
 
+  describe('task 3c: a reconnect preselects the agent the client last used', () => {
+    const LAST_USED = 'Last used by this client.';
+    const OTHER_REDIRECT = 'https://claude.com/api/mcp/auth_callback';
+    let cursor: { clientId: string; tokens: TokenResponse };
+
+    beforeAll(async () => {
+      // Like the live test: Cursor approved as an agent named after something else.
+      cursor = await connect(app, 'Cursor Probe', { agent: NEW_AGENT, newAgentId: 'probe-bot' });
+      secrets.push(cursor.tokens.access_token, cursor.tokens.refresh_token);
+    });
+
+    it('(a) the same client_id, revoked, preselects that agent, not a new slug', async () => {
+      const access = parseToken(cursor.tokens.access_token)?.tokenId ?? '';
+      expect(await revokeToken(app.sql, access)).toMatchObject({ status: 'revoked' });
+      const form = await consentForm(app, cursor.clientId, pkce().challenge);
+      expect(form.selected).toEqual(['probe-bot']);
+      expect(form.html).toContain(LAST_USED);
+      expect(form.newAgentId).toBe('cursor-probe');
+    });
+
+    it('(b) a fresh registration with the same name and redirect URIs preselects it too', async () => {
+      const again = await connect(app, 'Cursor Probe');
+      secrets.push(again.tokens.access_token, again.tokens.refresh_token);
+      expect(again.form.selected).toEqual(['probe-bot']);
+      expect(again.form.html).toContain(LAST_USED);
+      expect(await ping(app, again.tokens.access_token)).toMatchObject({ agent_id: 'probe-bot' });
+    });
+
+    it('(c) the same name with other redirect URIs falls back to the slug rule', async () => {
+      const otherForm = async (name: string) => {
+        const res = await register(app, {
+          client_name: name,
+          redirect_uris: [OTHER_REDIRECT],
+          token_endpoint_auth_method: 'none',
+        });
+        const { client_id } = (await res.json()) as { client_id: string };
+        const page = await authorize(
+          app,
+          authorizeQuery(client_id, pkce().challenge, { redirect_uri: OTHER_REDIRECT }),
+        );
+        return parseConsent(await page.text());
+      };
+      const probe = await otherForm('Cursor Probe');
+      expect(probe.selected).toEqual([NEW_AGENT]);
+      expect(probe.html).not.toContain(LAST_USED);
+      // A slug match says so.
+      const alpha = await otherForm('Test Client Alpha');
+      expect(alpha.selected).toEqual(['test-client-alpha']);
+      expect(alpha.html).toContain('Matches the client&#39;s name.');
+    });
+
+    it('(d) a disabled last-used agent is skipped', async () => {
+      await owner`UPDATE agents SET disabled_at = now() WHERE agent_id = 'probe-bot'`;
+      const form = await consentForm(app, cursor.clientId, pkce().challenge);
+      expect(form.selected).toEqual([NEW_AGENT]);
+      expect(form.options).not.toContain('probe-bot');
+      expect(form.html).not.toContain(LAST_USED);
+    });
+  });
+
   describe('consent page safety', () => {
     it('escapes a hostile client name everywhere, and shows the redirect host', async () => {
       const hostile = `<script>alert(1)</script>"'&`;
@@ -408,7 +468,7 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
       expect(form.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
       expect(form.html).not.toContain(hostile);
       expect(form.html).not.toContain('<script');
-      expect(form.html).toContain('client.example');
+      expect(form.html).toContain('claude.ai');
       // Approving stores the name as the new agent's display name; it stays escaped in the select.
       expect((await approve(app, form)).status).toBe(303);
       const other = await consentForm(
@@ -556,7 +616,7 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
     });
 
     it.each([
-      ['an unregistered redirect URI', { redirect_uri: 'https://client.example/other' }],
+      ['an unregistered redirect URI', { redirect_uri: 'https://claude.ai/other' }],
       ['a redirect URI differing only by a slash', { redirect_uri: `${REDIRECT_URI}/` }],
       ['no redirect URI', { redirect_uri: null }],
     ])('%s → an error page and no Location', async (_case, overrides) => {
@@ -567,10 +627,25 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
       expect(res.headers.get('content-type')).toMatch(/^text\/html/);
     });
 
+    it('a client registered with a host now off the list → an error page and no Location', async () => {
+      const clientId = `cli_${'0'.repeat(10)}OLDHOST${'0'.repeat(9)}`;
+      await owner`
+        INSERT INTO oauth_clients (client_id, client_name, redirect_uris, metadata)
+        VALUES (${clientId}, 'Old Host', ${['https://old.example/cb']}, ${owner.json({})})`;
+      const res = await authorize(
+        app,
+        authorizeQuery(clientId, pkce().challenge, { redirect_uri: 'https://old.example/cb' }),
+      );
+      expect(res.status).toBe(400);
+      expect(res.headers.get('location')).toBeNull();
+      const line = requestLogs(app).find((l) => l.request_id === res.headers.get('x-request-id'));
+      expect(line).toMatchObject({ oauth: 'authorize:redirect_not_allowed' });
+    });
+
     it('an unknown client → an error page; a URL-shaped client_id is flagged in the request log', async () => {
       const res = await authorize(
         app,
-        authorizeQuery('https://client.example/metadata.json', pkce().challenge),
+        authorizeQuery('https://claude.ai/metadata.json', pkce().challenge),
       );
       expect(res.status).toBe(400);
       expect(res.headers.get('location')).toBeNull();
@@ -724,7 +799,7 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
       expect(await mcpStatus(app, tokens.access_token)).toBe(401);
     });
 
-    it('refresh rotates; the old refresh token coming back revokes the grant and is logged', async () => {
+    it('refresh rotates; the old refresh token within 10 s is refused but leaves the grant alone', async () => {
       const { clientId, tokens } = await connect(app, 'Rotation');
       secrets.push(tokens.access_token, tokens.refresh_token);
       const refresh = (refreshToken: string) =>
@@ -749,18 +824,53 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
         WHERE token_id IN (${parseToken(tokens.refresh_token)?.tokenId ?? ''}, ${parseToken(next.refresh_token)?.tokenId ?? ''})`;
       expect(new Set(expiries.map((e) => e.expires_at.getTime())).size).toBe(1);
 
+      // Rotated 9 s ago: still inside the window.
+      await owner`
+        UPDATE agent_tokens SET rotated_at = now() - interval '9 seconds'
+        WHERE token_id = ${parseToken(tokens.refresh_token)?.tokenId ?? ''}`;
+      const late = await refresh(tokens.refresh_token);
+      expect(late.status).toBe(400);
+      expect(await late.json()).toEqual({ error: 'invalid_grant' });
+      expect(await mcpStatus(app, next.access_token)).toBe(200);
+      const oldId = parseToken(tokens.refresh_token)?.tokenId ?? '';
+      const reuseRows = () =>
+        app.sql<{ details: Record<string, unknown> }[]>`
+          SELECT details FROM activity_log WHERE kind = 'oauth_refresh_reuse' AND token_id = ${oldId}`;
+      expect(await reuseRows()).toHaveLength(0);
+      // The winner's refresh token still rotates.
+      const again = await refresh(next.refresh_token);
+      expect(again.status).toBe(200);
+      const third = (await again.json()) as TokenResponse;
+      secrets.push(third.access_token, third.refresh_token);
+      expect(await mcpStatus(app, third.access_token)).toBe(200);
+    });
+
+    it('the old refresh token after 10 s revokes the grant and is logged', async () => {
+      const { clientId, tokens } = await connect(app, 'Replay');
+      secrets.push(tokens.access_token, tokens.refresh_token);
+      const refresh = (refreshToken: string) =>
+        token(app, {
+          grant_type: 'refresh_token',
+          client_id: clientId,
+          refresh_token: refreshToken,
+        });
+      const next = (await (await refresh(tokens.refresh_token)).json()) as TokenResponse;
+      secrets.push(next.access_token, next.refresh_token);
+      const oldId = parseToken(tokens.refresh_token)?.tokenId ?? '';
+      await owner`
+        UPDATE agent_tokens SET rotated_at = now() - interval '11 seconds' WHERE token_id = ${oldId}`;
+
       const reused = await refresh(tokens.refresh_token);
       expect(reused.status).toBe(400);
       expect(await reused.json()).toEqual({ error: 'invalid_grant' });
       expect(await mcpStatus(app, next.access_token)).toBe(401);
       expect((await refresh(next.refresh_token)).status).toBe(400);
-      const oldId = parseToken(tokens.refresh_token)?.tokenId;
       const [entry] = await app.sql<{ details: Record<string, unknown>; token_id: string }[]>`
-        SELECT details, token_id FROM activity_log WHERE kind = 'oauth_refresh_reuse' AND token_id = ${oldId ?? ''}`;
+        SELECT details, token_id FROM activity_log WHERE kind = 'oauth_refresh_reuse' AND token_id = ${oldId}`;
       expect(entry?.details).toMatchObject({ what: 'refresh', token_id: oldId, revoked_count: 4 });
     });
 
-    it('two concurrent refreshes with one token: exactly one wins, and the grant is revoked', async () => {
+    it('two concurrent refreshes with one token: exactly one wins, and the grant survives', async () => {
       const { clientId, tokens } = await connect(app, 'Refresh Race');
       secrets.push(tokens.access_token, tokens.refresh_token);
       const both = await Promise.all(
@@ -775,7 +885,15 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
       expect(both.map((r) => r.status).sort()).toEqual([200, 400]);
       const winner = (await both.find((r) => r.status === 200)?.json()) as TokenResponse;
       secrets.push(winner.access_token, winner.refresh_token);
-      expect(await mcpStatus(app, winner.access_token)).toBe(401);
+      expect(await mcpStatus(app, winner.access_token)).toBe(200);
+      const again = await token(app, {
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        refresh_token: winner.refresh_token,
+      });
+      expect(again.status).toBe(200);
+      const third = (await again.json()) as TokenResponse;
+      secrets.push(third.access_token, third.refresh_token);
     });
 
     it('a refresh token from another client, or an access token as a refresh token, fails', async () => {
@@ -899,6 +1017,61 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
     });
   });
 
+  describe('task 3c: mcp_method for clients that send no Mcp-Method header', () => {
+    let accessToken: string;
+
+    beforeAll(async () => {
+      const { tokens } = await connect(app, 'Method Logger');
+      secrets.push(tokens.access_token, tokens.refresh_token);
+      accessToken = tokens.access_token;
+    });
+
+    const post = (body: string, headers: Record<string, string> = {}) =>
+      fetch(app.mcpUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-11-25',
+          authorization: `Bearer ${accessToken}`,
+          ...headers,
+        },
+        body,
+      });
+    // MCP responses come from the SDK and carry no x-request-id; tests here run one at a time.
+    const loggedMethod = async (res: Response) => {
+      await res.text();
+      return requestLogs(app)
+        .filter((l) => l.path === '/mcp')
+        .at(-1)?.mcp_method;
+    };
+    const call = (method: string, params: unknown = {}) =>
+      JSON.stringify({ jsonrpc: '2.0', id: 7, method, params });
+
+    it('a 2025-11-25 tools/call logs its method from the body, and still works', async () => {
+      const res = await post(call('tools/call', { name: 'ping', arguments: {} }));
+      expect(res.status).toBe(200);
+      expect(await res.clone().text()).toContain('pong');
+      expect(await loggedMethod(res)).toBe('tools/call');
+    });
+
+    it('the header wins when present', async () => {
+      const res = await post(call('tools/list'), { 'mcp-method': 'tools/list' });
+      expect(res.status).toBe(200);
+      expect(await loggedMethod(res)).toBe('tools/list');
+    });
+
+    it.each([
+      ['a batch', `[${call('tools/list')}]`],
+      ['a body that is not JSON', 'not json'],
+      ['a method with odd characters', call('tools/list; DROP')],
+      ['a method that is not a string', JSON.stringify({ jsonrpc: '2.0', id: 1, method: 7 })],
+    ])('%s logs no mcp_method', async (_case, body) => {
+      const res = await post(body);
+      expect(await loggedMethod(res)).toBeUndefined();
+    });
+  });
+
   describe('registration', () => {
     it('a public client gets 201, a cli_ id and no secret; the request is kept as received', async () => {
       const body = {
@@ -910,7 +1083,7 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
           'https://claude.ai/api/mcp/auth_callback',
         ],
         token_endpoint_auth_method: 'none',
-        logo_uri: 'https://client.example/logo.png',
+        logo_uri: 'https://claude.ai/logo.png',
         something_unknown: { nested: true },
       };
       const res = await register(app, body);
@@ -937,19 +1110,38 @@ describe.skipIf(!appDatabaseUrl)('A17: OAuth for MCP clients (spec §9.3)', () =
 
     it.each([
       ['http on a public host', ['http://evil.example/cb']],
-      ['a fragment', ['https://client.example/cb#frag']],
-      ['an empty fragment', ['https://client.example/cb#']],
-      ['userinfo', ['https://user@client.example/cb']],
-      ['empty userinfo', ['https://@client.example/cb']],
+      ['a fragment', ['https://claude.ai/cb#frag']],
+      ['an empty fragment', ['https://claude.ai/cb#']],
+      ['userinfo', ['https://user@claude.ai/cb']],
+      ['empty userinfo', ['https://@claude.ai/cb']],
+      // The host allow-list (task 3c).
+      ['a host off the list', ['https://evil.example/cb']],
+      ['a lookalike suffix', ['https://grok.com.evil.example/cb']],
+      ['a subdomain', ['https://sub.grok.com/cb']],
+      ['a non-default port', ['https://grok.com:8443/cb']],
+      ['the bare cursor.com', ['https://cursor.com/cb']],
+      ['one bad URI among good ones', [REDIRECT_URI, 'https://evil.example/cb']],
       ['a custom scheme', ['cursor://anysphere.cursor-retrieval/oauth/callback']],
       ['not a URL', ['not a url']],
       ['none', []],
-      ['six', Array.from({ length: 6 }, (_, i) => `https://client.example/${i}`)],
-      ['not a list', 'https://client.example/cb'],
+      ['six', Array.from({ length: 6 }, (_, i) => `https://claude.ai/${i}`)],
+      ['not a list', 'https://claude.ai/cb'],
     ])('%s → 400 invalid_redirect_uri', async (_case, redirectUris) => {
       const res = await register(app, { redirect_uris: redirectUris });
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: 'invalid_redirect_uri' });
+    });
+
+    it('the callbacks seen in the task 3b live test register (201)', async () => {
+      for (const redirectUris of [
+        ['https://grok.com/connectors-oauth-exchange-code/'],
+        ['https://www.cursor.com/agents/mcp/oauth/callback', 'http://localhost:8787/callback'],
+        ['https://claude.ai/api/mcp/auth_callback'],
+        ['https://claude.com/api/mcp/auth_callback'],
+      ]) {
+        const res = await register(app, { client_name: 'Seen', redirect_uris: redirectUris });
+        expect(res.status, redirectUris.join(' ')).toBe(201);
+      }
     });
 
     it.each([
