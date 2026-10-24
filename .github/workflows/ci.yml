@@ -27,7 +27,7 @@ jobs:
     env:
       # The suite creates, migrates and drops its own scratch database (test/global-setup.ts).
       TEST_DATABASE_URL: postgres://postgres@localhost:5432/postgres?sslmode=disable
-      # For the script steps below, which run exactly what Marcus runs against Railway.
+      # For the db:predeploy and db:verify steps below.
       MIGRATION_DATABASE_URL: postgres://postgres@localhost:5432/nacre_ci?sslmode=disable
     steps:
       - uses: actions/checkout@v7
@@ -40,6 +40,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm db:migrate
-      - run: pnpm db:verify
       - run: pnpm build
+      # What Railway runs before each api deploy: migrations, then the compiled verifier.
+      - run: pnpm db:predeploy
+      # The same checks through tsx, as `pnpm db:verify` runs them locally.
+      - run: pnpm db:verify

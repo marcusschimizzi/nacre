@@ -1,5 +1,5 @@
-// Railway Infrastructure as Code for the "Nacre" project (spec §12.1). Not applied by tasks 01–02:
-// Marcus applies it himself (migrations/README.md, "Railway steps").
+// Railway Infrastructure as Code for the "Nacre" project (spec §12.1). Only Marcus applies it
+// (migrations/README.md, "Railway"); it was first applied on Oct 23, 2026.
 //
 // `railway.json` (Config as Code) is deprecated: new services can't use it, and Railway stops
 // reading it on 2026-12-01. This file replaces it. Apply with:
@@ -8,9 +8,9 @@
 //   railway config apply
 //
 // WARNING: in a single-file project, resources missing from this file are planned for deletion.
-// The database is declared here, so a plan keeps it. Against the old project, a plan proposes
-// deleting the old Postgres and the bucket: that is the §12.1 reset, and only Marcus applies it.
-// Renaming `nacredb` below would plan the database's deletion too, so don't.
+// The database is declared here, so a plan keeps it. Renaming `nacredb` below would plan the
+// database's deletion, so don't. The database stays private: nothing here or in the docs needs a
+// public TCP proxy (pre-deploy and `railway ssh` both use the private network).
 import { database, defineRailway, github, preserve, project, service } from 'railway/iac';
 
 export default defineRailway(() => {
@@ -31,9 +31,10 @@ export default defineRailway(() => {
     build,
     deploy: {
       startCommand: 'node dist/api/main.js',
-      // Runs the image's migrations as the database owner before each deploy; a failure stops the
-      // deploy. Once this is applied and api deploys from main, merging a migration runs it.
-      preDeployCommand: ['npm run db:migrate'],
+      // Before each deploy, over the private network and as the database owner: apply pending
+      // migrations, then run the A5 / grant checks (src/audit). Either failing stops the deploy, so
+      // merging a migration runs it, and a broken append-only guard never ships.
+      preDeployCommand: ['npm run db:predeploy'],
       healthcheckPath: '/healthz',
       healthcheckTimeout: 60,
       restartPolicyType: 'ON_FAILURE',
