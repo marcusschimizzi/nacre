@@ -206,6 +206,20 @@ async function checkGrants(tx: TransactionSql, add: Add): Promise<void> {
     SELECT has_sequence_privilege(${APP_ROLE}, 'jobs_job_id_seq', 'USAGE') AS ok`;
   add('grants: USAGE on jobs_job_id_seq', seq?.ok ? undefined : 'missing');
 
+  // The worker's startup wait reads max(version) (migration 20261024120000); nothing may write it.
+  const privileges = await tx<{ priv: string; ok: boolean }[]>`
+    SELECT p AS priv, has_table_privilege(${APP_ROLE}, 'schema_migrations', p) AS ok
+    FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES',
+                      'TRIGGER']) AS p`;
+  const migrationProblems = privileges.flatMap(({ priv, ok }) => {
+    if (priv === 'SELECT') return ok ? [] : ['no SELECT'];
+    return ok ? [`has ${priv}`] : [];
+  });
+  add(
+    'grants: schema_migrations read-only',
+    migrationProblems.length ? migrationProblems.join('; ') : undefined,
+  );
+
   const [r] = await tx<
     {
       owned: number;

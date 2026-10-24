@@ -91,6 +91,22 @@ describe.skipIf(!databaseUrl)('database: migrations, roles and append-only guard
       expect(failed(results)).toEqual(['grants: claims']);
     });
 
+    it('a write grant on schema_migrations fails by name', async () => {
+      const results = await checksAfter(
+        sql,
+        (tx) => tx`GRANT INSERT ON schema_migrations TO nacre_app`,
+      );
+      expect(failed(results)).toEqual(['grants: schema_migrations read-only']);
+    });
+
+    it("nacre_app without SELECT on schema_migrations fails by name (the worker's wait needs it)", async () => {
+      const results = await checksAfter(
+        sql,
+        (tx) => tx`REVOKE SELECT ON schema_migrations FROM nacre_app`,
+      );
+      expect(failed(results)).toEqual(['grants: schema_migrations read-only']);
+    });
+
     it('a new table without grants fails by name', async () => {
       const results = await checksAfter(sql, (tx) => tx`CREATE TABLE a5_new_table (id int)`);
       expect(failed(results)).toEqual(['grants: a5_new_table']);
@@ -118,6 +134,7 @@ describe.skipIf(!adminUrl)('database: down migrations', () => {
 
   it('roll back to empty (keeping the cluster-wide role), then migrate up again', async () => {
     await dbmate(url, 'up');
+    await dbmate(url, 'rollback');
     await dbmate(url, 'rollback');
     await dbmate(url, 'rollback');
 
