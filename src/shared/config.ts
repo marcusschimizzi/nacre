@@ -33,8 +33,18 @@ const apiEnv = z
     PUBLIC_APP_URL: origin.transform(normalizeOrigin).optional(),
     // Comma-separated origins allowed to call /mcp from a browser (spec §11).
     ALLOWED_ORIGINS: z.string().optional(),
+    // The image sets production (Dockerfile); there the public URLs must be https.
+    NODE_ENV: z.string().optional(),
   })
   .transform((env, ctx) => {
+    if (env.NODE_ENV === 'production') {
+      for (const key of ['PUBLIC_API_URL', 'PUBLIC_APP_URL'] as const) {
+        const value = env[key];
+        if (value !== undefined && !value.startsWith('https://')) {
+          ctx.addIssue({ code: 'custom', path: [key], message: 'must be https in production' });
+        }
+      }
+    }
     const raw = env.ALLOWED_ORIGINS?.split(',')
       .map((s) => s.trim())
       .filter(Boolean) ?? [env.PUBLIC_API_URL, ...(env.PUBLIC_APP_URL ? [env.PUBLIC_APP_URL] : [])];
