@@ -70,8 +70,8 @@ Agents don't run these. **Set the variables before merging:** merging deploys `a
    - `NACRE_APP_DB_PASSWORD`: `openssl rand -hex 32`. Hex, not base64, because it goes inside a URL.
    - `DATABASE_URL`: `postgresql://nacre_app:${{NACRE_APP_DB_PASSWORD}}@${{nacredb.RAILWAY_PRIVATE_DOMAIN}}:5432/${{nacredb.PGDATABASE}}`. Railway fills in the references, so the password is typed only once, and the host is `nacredb`'s private one.
    - `TOKEN_PEPPER`: `openssl rand -base64 32`. Changing it later invalidates every token.
-   - `PUBLIC_API_URL`: `https://api.nacre.so`, with no path or trailing slash.
-2. **Merge the PR.** The `api` deploy's pre-deploy log should show `migrate: nothing to apply`, then `app-login: nacre_app has LOGIN with the password from NACRE_APP_DB_PASSWORD`, then `75 passed, 0 failed`. A wrong password or URL fails the health check instead (`/healthz` returns 503 with `"db":"error"`). The health check runs inside Railway, so it doesn't wait for DNS.
+   - `PUBLIC_API_URL`: `https://api.nacre.so`, with no path or trailing slash. The image runs with `NODE_ENV=production`, where an `http://` value stops the api at startup.
+2. **Merge the PR.** The `api` deploy's pre-deploy log should show `migrate: nothing to apply; recorded 20261023000000, 20261023000100 (applied earlier); system activity entry written` (task 2's migrations predate the entry; later deploys say just `migrate: nothing to apply`), then `app-login: nacre_app has LOGIN with the password from NACRE_APP_DB_PASSWORD`, then `75 passed, 0 failed`. A wrong password or URL fails the health check instead (`/healthz` returns 503 with `"db":"error"`). The health check runs inside Railway, so it doesn't wait for DNS.
 3. **`railway config plan`, then `railway config apply`.** Expect two changes on `api`: the custom domain `api.nacre.so` is created (port 8080), and the old shared dev-token variable from task 1, which nothing reads any more, is deleted (the one destructive line). The new variables are `preserve()`, so they show no change. `Postgres-PITR` must not appear.
 4. **DNS for `api.nacre.so`.** `api` → Settings → Networking now lists the domain with the records to add at `nacre.so`'s DNS host: a `CNAME` for `api` and a `TXT` for Railway's ownership check. Add both, then wait until Railway shows the domain as verified with a certificate. If the DNS host is Cloudflare, leave the records "DNS only" until the certificate has been issued.
 5. **Check:** `curl https://api.nacre.so/healthz` → `"db":"ok"`.
@@ -82,7 +82,7 @@ Agents don't run these. **Set the variables before merging:** merging deploys `a
    ```bash
    curl -si -X POST https://api.nacre.so/mcp | grep -iE '^HTTP|www-auth'               # 401, Bearer realm="nacre"
    curl -si -X POST "https://api.nacre.so/mcp?access_token=$NACRE_TOKEN" \
-     -H "Authorization: Bearer $NACRE_TOKEN" | head -1                                  # 401
+     -H "Authorization: Bearer $NACRE_TOKEN" | head -1                                  # 401, and a token_in_url entry (a real token)
    curl -si -X POST https://api.nacre.so/mcp -H "Authorization: Bearer $NACRE_TOKEN" \
      -H 'Origin: https://evil.example' | head -1                                        # 403
    NACRE_TOKEN="$NACRE_TOKEN" pnpm mcp:smoke https://api.nacre.so/mcp                  # all ok
