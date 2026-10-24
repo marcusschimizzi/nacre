@@ -141,13 +141,12 @@ export function oauthRoutes({ sql, config, log, limits }: OAuthDeps): Hono<AppEn
     '/oauth/register',
     async (c, next) => {
       // Every attempt counts, good or bad: the limit protects a public, append-only log.
-      const wait = registrations.retryAfterMs();
+      const wait = registrations.tryHit();
       if (wait > 0) {
         c.set('oauth', 'register:rate_limited');
         c.header('Retry-After', String(Math.ceil(wait / 1000)));
         return c.json({ error: 'too_many_requests' }, 429);
       }
-      registrations.hit();
       await next();
     },
     bodyLimit({
@@ -378,7 +377,9 @@ export function oauthRoutes({ sql, config, log, limits }: OAuthDeps): Hono<AppEn
         return consentPage(c, client, request, signed, { ...kept, ...state }, status);
       };
 
-      const wait = wrongPasswords.retryAfterMs();
+      // Every attempt claims a slot before the (slow) password check and only a right password gives
+      // it back, so parallel guesses can't all pass the limit before any failure is counted.
+      const wait = wrongPasswords.tryHit();
       if (wait > 0) {
         c.header('Retry-After', String(Math.ceil(wait / 1000)));
         return rerender(
@@ -389,9 +390,9 @@ export function oauthRoutes({ sql, config, log, limits }: OAuthDeps): Hono<AppEn
       }
       // Request log only, never the activity log: anyone can post a wrong password (spec §13.1).
       if (!(await verifyOwnerPassword(config.OWNER_PASSWORD_HASH, field('password') ?? ''))) {
-        wrongPasswords.hit();
         return rerender('bad_password', { error: 'Wrong owner password.' }, 403);
       }
+      wrongPasswords.refund();
 
       const requestId = c.get('requestId');
       if (decision === 'deny') {

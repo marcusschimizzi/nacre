@@ -11,21 +11,21 @@ export class SlidingWindowLimiter {
     private readonly now: () => number = Date.now,
   ) {}
 
-  private prune(t: number): void {
+  /**
+   * Claims a slot now, in one synchronous step: 0 when the hit was recorded, else the milliseconds
+   * until one is allowed (nothing recorded). Claim before any `await`, so concurrent requests can't
+   * all see the same free slot.
+   */
+  tryHit(): number {
+    const t = this.now();
     while (this.hits.length > 0 && (this.hits[0] ?? 0) <= t - this.windowMs) this.hits.shift();
-  }
-
-  /** Milliseconds until another hit is allowed; 0 when it is allowed now. */
-  retryAfterMs(): number {
-    const t = this.now();
-    this.prune(t);
-    if (this.hits.length < this.limit) return 0;
-    return (this.hits[0] ?? t) + this.windowMs - t;
-  }
-
-  hit(): void {
-    const t = this.now();
-    this.prune(t);
+    if (this.hits.length >= this.limit) return (this.hits[0] ?? t) + this.windowMs - t;
     this.hits.push(t);
+    return 0;
+  }
+
+  /** Gives back one claimed slot (the attempt turned out fine, e.g. the right password). */
+  refund(): void {
+    this.hits.pop();
   }
 }

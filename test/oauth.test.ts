@@ -1009,6 +1009,47 @@ describe.skipIf(!appDatabaseUrl)('A17.3 and registration: the spec limits, on fr
     }
   });
 
+  it('parallel wrong passwords cannot outrun the limit: of 12 at once, 5 are checked and 7 get 429', async () => {
+    const app = await startTestApp(appDatabaseUrl, { oauthLimits: { registrationsPerHour: 1000 } });
+    try {
+      const clientId = await registerClient(app, 'Parallel Passwords');
+      const form = await consentForm(app, clientId, pkce().challenge);
+      const results = await Promise.all(
+        Array.from({ length: 12 }, (_, i) =>
+          approve(app, form, { password: `wrong password ${i}` }),
+        ),
+      );
+      const statuses = results.map((r) => r.status).sort();
+      expect(statuses).toEqual([...Array(5).fill(403), ...Array(7).fill(429)]);
+      expect(requestLogs(app).filter((l) => l.oauth === 'consent:bad_password')).toHaveLength(5);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('a right password gives its slot back: 4 wrong, then 3 right, then the 5th wrong is still 403', async () => {
+    const app = await startTestApp(appDatabaseUrl, { oauthLimits: { registrationsPerHour: 1000 } });
+    try {
+      const clientId = await registerClient(app, 'Refund');
+      const form = await consentForm(app, clientId, pkce().challenge);
+      for (let i = 0; i < 4; i++)
+        expect((await approve(app, form, { password: `nope ${i}` })).status).toBe(403);
+      const deny = () =>
+        postConsent(app, {
+          request: form.request,
+          agent: NEW_AGENT,
+          new_agent_id: form.newAgentId,
+          password: OWNER_PASSWORD,
+          decision: 'deny',
+        });
+      for (let i = 0; i < 3; i++) expect((await deny()).status).toBe(303);
+      expect((await approve(app, form, { password: 'nope 4' })).status).toBe(403);
+      expect((await approve(app, form)).status).toBe(429);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('registration: 10 an hour, then 429 with Retry-After', async () => {
     const app = await startTestApp(appDatabaseUrl);
     try {

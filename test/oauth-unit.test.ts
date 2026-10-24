@@ -223,19 +223,25 @@ describe('the owner password (argon2id)', () => {
 });
 
 describe('SlidingWindowLimiter', () => {
-  it('allows `limit` hits per window, then reports the wait', () => {
+  it('claims up to `limit` slots per window, then reports the wait without recording', () => {
     let t = 0;
     const limiter = new SlidingWindowLimiter(2, 1000, () => t);
-    expect(limiter.retryAfterMs()).toBe(0);
-    limiter.hit();
+    expect(limiter.tryHit()).toBe(0);
     t = 100;
-    limiter.hit();
-    expect(limiter.retryAfterMs()).toBe(900);
+    expect(limiter.tryHit()).toBe(0);
+    expect(limiter.tryHit()).toBe(900);
     t = 999;
-    expect(limiter.retryAfterMs()).toBe(1);
+    expect(limiter.tryHit()).toBe(1);
     t = 1000; // the first hit has left the window
-    expect(limiter.retryAfterMs()).toBe(0);
-    limiter.hit();
-    expect(limiter.retryAfterMs()).toBe(100);
+    expect(limiter.tryHit()).toBe(0);
+    expect(limiter.tryHit()).toBe(100);
+  });
+
+  it('refund gives a claimed slot back', () => {
+    const limiter = new SlidingWindowLimiter(1, 1000, () => 0);
+    expect(limiter.tryHit()).toBe(0);
+    limiter.refund();
+    expect(limiter.tryHit()).toBe(0);
+    expect(limiter.tryHit()).toBe(1000);
   });
 });
