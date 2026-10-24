@@ -66,26 +66,26 @@ Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `p
 ## Railway steps for task 3 (Marcus)
 
 Agents don't run these. **Set the variables before merging:** merging deploys `api` from `main`, and the new code needs them.
-1. **A public domain for `api`.** Settings → Networking → Generate Domain (or add `api.nacre.so` once DNS is set). Claude Code needs it, and it is `PUBLIC_API_URL`. Generated domains aren't part of `.railway/railway.ts`.
-2. **Variables on `api`** (dashboard → `api` → Variables). Type each secret once; nothing goes in a file.
+1. **Variables on `api`** (dashboard → `api` → Variables). Type each secret once; nothing goes in a file.
    - `NACRE_APP_DB_PASSWORD`: `openssl rand -hex 32`. Hex, not base64, because it goes inside a URL.
    - `DATABASE_URL`: `postgresql://nacre_app:${{NACRE_APP_DB_PASSWORD}}@${{nacredb.RAILWAY_PRIVATE_DOMAIN}}:5432/${{nacredb.PGDATABASE}}`. Railway fills in the references, so the password is typed only once, and the host is `nacredb`'s private one.
    - `TOKEN_PEPPER`: `openssl rand -base64 32`. Changing it later invalidates every token.
-   - `PUBLIC_API_URL`: `https://<the api domain>`, with no path or trailing slash.
-3. **Merge the PR.** The `api` deploy's pre-deploy log should show `migrate: nothing to apply`, then `app-login: nacre_app has LOGIN with the password from NACRE_APP_DB_PASSWORD`, then `75 passed, 0 failed`. A wrong password or URL fails the health check instead (`/healthz` returns 503 with `"db":"error"`).
-4. **`railway config plan`, then `railway config apply`.** Expect one destructive line: deleting `api`'s old shared dev-token variable from task 1, which nothing reads any more. The new variables are `preserve()`, so they show no change. `Postgres-PITR` must not appear.
-5. **Check:** `curl https://<domain>/healthz` → `"db":"ok"`.
+   - `PUBLIC_API_URL`: `https://api.nacre.so`, with no path or trailing slash.
+2. **Merge the PR.** The `api` deploy's pre-deploy log should show `migrate: nothing to apply`, then `app-login: nacre_app has LOGIN with the password from NACRE_APP_DB_PASSWORD`, then `75 passed, 0 failed`. A wrong password or URL fails the health check instead (`/healthz` returns 503 with `"db":"error"`). The health check runs inside Railway, so it doesn't wait for DNS.
+3. **`railway config plan`, then `railway config apply`.** Expect two changes on `api`: the custom domain `api.nacre.so` is created (port 8080), and the old shared dev-token variable from task 1, which nothing reads any more, is deleted (the one destructive line). The new variables are `preserve()`, so they show no change. `Postgres-PITR` must not appear.
+4. **DNS for `api.nacre.so`.** `api` → Settings → Networking now lists the domain with the records to add at `nacre.so`'s DNS host: a `CNAME` for `api` and a `TXT` for Railway's ownership check. Add both, then wait until Railway shows the domain as verified with a certificate. If the DNS host is Cloudflare, leave the records "DNS only" until the certificate has been issued.
+5. **Check:** `curl https://api.nacre.so/healthz` → `"db":"ok"`.
 6. **Mint Claude Code's token** inside the running container, over the private network: `railway ssh --service api`, then `node dist/cli/main.js token create --agent claude-code`. Put the printed line in `~/.nacre/token`, replacing the old dev token (it no longer works).
-7. **Claude Code:** `claude mcp add --transport http nacre --scope user https://<domain>/mcp --header 'Authorization: Bearer ${NACRE_TOKEN}'` (remove the old entry first), then `claude mcp get nacre` and ask a session to call `ping`. It answers with `"agent_id":"claude-code"`.
+7. **Claude Code:** `claude mcp add --transport http nacre --scope user https://api.nacre.so/mcp --header 'Authorization: Bearer ${NACRE_TOKEN}'` (remove the old entry first), then `claude mcp get nacre` and ask a session to call `ping`. It answers with `"agent_id":"claude-code"`.
 8. **The A11 checks against prod:**
 
    ```bash
-   curl -si -X POST https://<domain>/mcp | grep -iE '^HTTP|www-auth'                    # 401, Bearer realm="nacre"
-   curl -si -X POST "https://<domain>/mcp?access_token=$NACRE_TOKEN" \
+   curl -si -X POST https://api.nacre.so/mcp | grep -iE '^HTTP|www-auth'               # 401, Bearer realm="nacre"
+   curl -si -X POST "https://api.nacre.so/mcp?access_token=$NACRE_TOKEN" \
      -H "Authorization: Bearer $NACRE_TOKEN" | head -1                                  # 401
-   curl -si -X POST https://<domain>/mcp -H "Authorization: Bearer $NACRE_TOKEN" \
+   curl -si -X POST https://api.nacre.so/mcp -H "Authorization: Bearer $NACRE_TOKEN" \
      -H 'Origin: https://evil.example' | head -1                                        # 403
-   NACRE_TOKEN="$NACRE_TOKEN" pnpm mcp:smoke https://<domain>/mcp                       # all ok
+   NACRE_TOKEN="$NACRE_TOKEN" pnpm mcp:smoke https://api.nacre.so/mcp                  # all ok
    ```
 
 ## Layout
