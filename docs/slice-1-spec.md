@@ -1,8 +1,9 @@
 # Nacre Slice 1: shared memory between two agents (build spec)
 
-*Status: draft v0.2.17, Oct 24, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.4. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. Earlier versions are in git history (`git log -p docs/slice-1-spec.md`), from v0.2.4 on; drafts before that weren't kept.*
+*Status: draft v0.2.18, Oct 24, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.4. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. Earlier versions are in git history (`git log -p docs/slice-1-spec.md`), from v0.2.4 on; drafts before that weren't kept.*
 
 **Changelog**
+- **v0.2.18, Oct 24, 2026 (3:35 PM).** Closes the gaps the task 5 and task 6 briefs found, with Marcus's decisions of Oct 24, 2026 (the `schema_migrations` grant, the retry numbers, `Intl.Segmenter` word counts, and holding a claim as `ellipsis` when the source itself contains `...` or `…`). §12.1: the extraction key is `OPENAI_API_KEY`, not `LLM_API_KEY`; a later Anthropic adapter reads its own `ANTHROPIC_API_KEY`. §12.2: a budget-deferred job keeps its attempt count and waits until the next Chicago midnight, with a `skipped: budget` run row and one `budget_stop` entry a day; `nacre_app` can read `schema_migrations` (migration `20261024120000`) for the worker's startup wait; `extract` jobs get 5 attempts with a 30 s × 4^(n−1) backoff capped at 1 hour, a 10-minute stale lock and concurrency 1. §4 and §6: the prompt hash is on `extraction_runs.prompt_hash` and `model_calls.ref_id` is the run id; assistant messages are skipped unless `kind = remember`, and other kinds are skipped as `kind:<kind>`; the `remember` target header; context events are `message` kind and normal sensitivity only; long bodies are split on paragraph boundaries and each chunk is verified against its own text; a failed quote writes `checks = {"quote":"failed"}` with the verifier's reason in `status_reason`. §6.5: how words are counted, that the normalized match maps back to code-point offsets, the closed normalization table, how `occurrences` is counted, the exact `value_in_quote` rule, lone surrogates, and quoting across an ellipsis in the source. No design change. Sections touched: §4, §6.1–6.3, §6.5, §6.6, §12.1, §12.2.
 - **v0.2.17, Oct 24, 2026 (2:35 PM).** Folds in the "Spec updates to apply" from task 4's PR (#28): the rules the build set where v0.2.16 was silent. `400 {"error":"invalid_json"}` for a body that isn't `application/json` or isn't a JSON object. `metadata` is capped at 8 KiB (`413`). The `413` and `422` bodies are specified, and a `422` never echoes a submitted value or names an unknown key. Field rules: `client_event_id` and `session_id` are printable ASCII with no spaces (1–200 characters); `kind` is `message` only in slice 1; `observed_at` needs a `Z` or a numeric offset; an `observed_tz` that isn't a time zone is stored as `NULL`, not rejected; NUL characters and lone surrogates are rejected. In `metadata`, a value under a password-style key is redacted whole. The `jwt` kind is matched in one pass, because the plain regex is quadratic. The status line no longer lists `.bak` copies, which were never kept; git history holds earlier versions. No design change. Sections touched: §5.1, §6.2, §7.4, status line.
 - **v0.2.16, Oct 24, 2026 (11:55 AM).** Folds in the "Spec updates to apply" from the task 4 brief, with Marcus's two decisions on its open questions. **Decided (Marcus, Oct 24, 2026):** an event over 100,000 characters of content, or a request body over 512 KiB, gets `413` and is rejected, never truncated; a repeat of the same `agent_id` + `client_event_id` returns `200` with the original `event_id` and `duplicate: true` even when the content differs, the new content is not stored, and the mismatch is logged as `duplicate_mismatch`. Also: `source_client` is always the `agent_id`; invalid shape gets `422`; more than 120 requests a minute per agent gets `429` with `Retry-After`; `/v1` applies the exact `Origin` check and requires the `write` right; `future` is set only when observed time is more than 60 seconds after received time (task 4 brief bumped to v1.1 to match); the redaction kinds are listed exactly (`private_key`, `jwt`, `url_credentials`, `bearer_token`, `api_key`, `password`, `high_entropy`); the §7 token format typo is fixed (`nacre_tok_<ulid>_<secret>`); and the §8.3 hook script deletes a spooled file on any HTTP 4xx other than 408 and 429 instead of retrying it forever (task 11). Sections touched: §5.1, §6.2, §7, §7.4, §8.3.
 - **v0.2.15, Oct 24, 2026 (11:05 AM).** Task 3c merged (PR #27, merge `935d12c`, 11:01 AM); the repo's v0.2.14 is taken as the base. Two v0.2.14s existed: the repo's (task 3c decisions, below) and a local one from 2:30 AM that only added the A17.1 `ping` note after task 3b. This version folds that note back in (now naming tasks 3b and 3c). No design change. Sections touched: §14 A17.
@@ -364,7 +365,7 @@ CREATE TABLE extraction_runs (
   input_event_ids text[] NOT NULL,                  -- target + context events, in order
   raw_output      jsonb,                            -- kept so replays reuse outputs (design §12.4)
   status          text NOT NULL CHECK (status IN ('running','ok','error','skipped')),
-  skip_reason     text,                             -- 'sensitivity:private', 'role:assistant', 'empty', 'budget'
+  skip_reason     text,                             -- 'sensitivity:private', 'role:assistant', 'kind:<kind>', 'empty', 'budget'
   error           text,
   input_tokens    int,
   output_tokens   int,
@@ -402,12 +403,12 @@ CREATE TABLE claims (
   confidence        real NOT NULL CHECK (confidence BETWEEN 0 AND 1),
   confidence_reason text,
   salience          jsonb,                          -- slice 6
-  checks            jsonb NOT NULL DEFAULT '{}',    -- {"quote":"exact","value_in_quote":true}
+  checks            jsonb NOT NULL DEFAULT '{}',    -- {"quote":"exact","value_in_quote":true}; on a failed quote {"quote":"failed"}
   scope_id          text NOT NULL REFERENCES scopes,
   sensitivity       text NOT NULL,
   status            text NOT NULL CHECK (status IN
                       ('candidate','promoted','held','queued','rejected','retracted')),
-  status_reason     text,
+  status_reason     text,                           -- for a failed quote, the verifier's reason
   created_at        timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX claims_event_idx ON claims (event_id);
@@ -529,7 +530,7 @@ CREATE TABLE model_calls (
   purpose      text NOT NULL CHECK (purpose IN ('extract','embed_belief','embed_query')),
   provider     text NOT NULL,                        -- 'openai' only in slice 1; 'anthropic' from the later Haiku 5.5 adapter
   model        text NOT NULL,                        -- model string returned by the provider
-  ref_id       text,                                 -- run_id, version_id or read activity id
+  ref_id       text,                                 -- the run_id for 'extract'; version_id or read activity id for embeddings
   input_tokens int NOT NULL DEFAULT 0,
   cached_tokens int NOT NULL DEFAULT 0,
   output_tokens int NOT NULL DEFAULT 0,              -- includes reasoning tokens
@@ -558,7 +559,7 @@ CREATE TABLE jobs (
 CREATE INDEX jobs_ready_idx ON jobs (run_after) WHERE status = 'queued';
 
 -- ---------- Roles ----------
--- nacre_app (api + worker): SELECT/INSERT on all tables; UPDATE only on agent_tokens(last_used_at,
+-- nacre_app (api + worker): SELECT/INSERT on all tables, plus SELECT on schema_migrations (migration 20261024120000, for the worker's startup wait); UPDATE only on agent_tokens(last_used_at,
 --   revoked_at, rotated_at), oauth_clients(approved_at, disabled_at), oauth_auth_codes(used_at), extraction_runs, claims (status, status_reason), belief_versions (expired_at), jobs. No DELETE anywhere.
 -- Migrations run as the database owner from the api service; there is no separate migrator role. Slice 8 adds nacre_purge.
 ```
@@ -699,9 +700,12 @@ The server adds the rest from the token and its own clock:
 |---|---|---|
 | `role=user` message from a hook | Yes | Highest trust tier |
 | `remember` call | Yes, with `explicit_remember=true` | The agent was asked to save it |
-| `role=assistant` message | **No (Decided).** Stored, and used as context for the next user turn only. Run logged as `skipped: role:assistant`. | Keeps the model's own guesses from becoming facts, a poisoning surface (design.md §4.8). Assistant turns can still hold memory-worthy content, so mining them is a planned lab experiment (§17 Q4), not a closed question. |
+| `role=assistant` message, unless `kind = remember` | **No (Decided).** Stored, and used as context for the next user turn only. Run logged as `skipped: role:assistant`. | Keeps the model's own guesses from becoming facts, a poisoning surface (design.md §4.8). Assistant turns can still hold memory-worthy content, so mining them is a planned lab experiment (§17 Q4), not a closed question. |
+| `kind` other than `message` and `remember` | **No.** Stored, run logged `skipped: kind:<kind>`. | Slice 1 mines messages and explicit remembers only. |
 | `sensitivity` = `private` or `restricted` | **No.** Stored, run logged as `skipped`. | Private content never goes to hosted models (design.md §9.8). A local extractor comes later. |
 | `tainted=true` | Extract, but claims are `held` | design.md §5.3 |
+
+**Context events** (§6.2) are `message` kind and `normal` sensitivity only: up to 4 from the same session, the first 1,000 code points of each.
 
 ### 6.2 Pre-processing (code)
 1. **Normalize** the body to Unicode NFC at ingest, before hashing and storing, so offsets are stable.
@@ -713,11 +717,11 @@ The server adds the rest from the token and its own clock:
    - False positives (a long random-looking string that wasn't a secret) are an accepted cost; the `[REDACTED:<kind>]` marker shows where text was removed.
    - **Event `metadata`:** every string value is redacted the same way; keys are kept. A string of 4 or more characters under a password-style key (`password`, `DB_PASSWORD`, `client_secret` and the other keys of the `password` rule) is replaced whole as `password`. The exception is a value that other rules already reduced to nothing but markers. In text the rule sees `key=value` in one string; in JSON the key and the value are separate, so the value alone is the secret.
    - **Linear time:** every rule runs in linear time on 100,000 characters. `jwt` is matched in one pass over each run of `[A-Za-z0-9_.-]`, and finds what `\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*` would. That regex itself is quadratic: on `eyJ-` repeated, every `eyJ` is a start that scans to the end of the run.
-3. **Context window:** up to the 4 previous events in the same session (both roles), each capped at 1,000 characters, marked *context only*.
-4. **Size cap:** target text over about 8,000 characters is split into paragraph-aligned chunks. There is one run per chunk, and offsets are kept relative to the full body.
+3. **Context window:** up to the 4 previous events in the same session (both roles; `message` kind and `normal` sensitivity only, §6.1), each cut to its first 1,000 code points, marked *context only*.
+4. **Size cap:** a body over 8,000 code points is split on paragraph boundaries into chunks. There is one run per chunk, each chunk is verified against its own text, and offsets are stored relative to the full body.
 
 ### 6.3 Prompt outline (`extract-claims` v1)
-Every run records the prompt version and hash. The call uses provider structured output with the §5.3 JSON schema (`additionalProperties: false`), on the model chosen in §12.3. Temperature 0 is set where the model accepts it; reasoning models may not, which is one more reason raw outputs are stored for replay.
+Every run records the prompt version and hash (`extraction_runs.prompt_id` and `extraction_runs.prompt_hash`; `model_calls.ref_id` is the run id). The call uses provider structured output with the §5.3 JSON schema (`additionalProperties: false`), on the model chosen in §12.3. Temperature 0 is set where the model accepts it; reasoning models may not, which is one more reason raw outputs are stored for replay.
 
 ```
 SYSTEM
@@ -759,6 +763,8 @@ For the record, my preferred package manager is pnpm. Can you update the README?
 >>>
 ```
 
+For a `remember` event the TARGET header is `TARGET (explicit remember request; the user asked for this to be saved):`.
+
 Design notes, carried over from engine-study.md §8 and decision-models.md:
 - The model copies time phrases but never computes dates. Code does.
 - Inputs are rendered in a fixed order (Graphiti #1931), so replays are comparable.
@@ -774,19 +780,20 @@ Design notes, carried over from engine-study.md §8 and decision-models.md:
 
 ### 6.5 Quote verification algorithm (code only; the model never decides this)
 ```
-verify(quote, body):                      # body = stored NFC content of the TARGET event only
+verify(quote, body):                      # body = stored NFC content of the TARGET event only (one chunk of it for a long body, §6.2)
   if cp_len(quote) < 8 or word_count(quote) < 2 or cp_len(quote) > 400:  -> FAIL 'quote_length'
   if '…' in quote or '...' in quote:                                      -> FAIL 'ellipsis'
   q = nfc(quote)
+  if has_lone_surrogate(q):                                                -> FAIL 'quote_not_found'
 
   # 1. exact match
   hits = all_indices(body, q)                         # code-point indices
   if hits: return SPAN(hits[0], hits[0] + cp_len(q), 'exact', len(hits))
 
   # 2. normalized match: whitespace and typography only (never case, never words)
-  nb, map = normalize_with_map(body)   # curly quotes -> straight, en/em dash -> '-', NBSP -> ' ',
-  nq      = normalize(q)               #   whitespace runs -> one space, trim;
-  hits    = all_indices(nb, nq)        #   map[i] = index in body of normalized char i
+  nb, map = normalize_with_map(body)   # closed table: curly quotes -> straight, en/em dash -> '-',
+  nq      = normalize(q)               #   NBSP and other whitespace runs -> one space, trim;
+  hits    = all_indices(nb, nq)        #   map[i] = code-point index in body of normalized char i
   if hits:
      start = map[hits[0]]
      end   = map[hits[0] + cp_len(nq) - 1] + 1
@@ -797,12 +804,19 @@ verify(quote, body):                      # body = stored NFC content of the TAR
 on SPAN:
   stored_quote = body[start:end]         # store the SOURCE text, never the model's string
   assert cp_substring(body, start, end) == stored_quote
-  checks.value_in_quote = fuzzy_contains(stored_quote, claim.value)   # soft signal only, not a gate
+  checks.value_in_quote = value_in_quote(stored_quote, claim.value)   # soft signal only, never a gate
 ```
 Rules:
 - **Offsets are Unicode code points.** Postgres `substring(body FROM start+1 FOR end-start)` returns the quote exactly. JavaScript strings are UTF-16, so the verifier works on `Array.from(body)` or an index map.
-- **Only the target event is searched.** A quote found only in a context event fails.
-- **On failure** the claim is still written, with `status='held'`, the reason in `status_reason`, and **no evidence span**. It never becomes a belief, and an `extraction_error` activity entry is written. Held claims stay visible and can be re-extracted by a better extractor in slice 2 or 6.
+- **Words.** `word_count` counts `Intl.Segmenter` segments (granularity `word`) with `isWordLike` (approved Oct 24, 2026).
+- **The normalized match maps back to code-point offsets in the stored body.** `map[i]` is the code-point index in `body` of the source character that produced normalized character `i`; the span is `[map[hit], map[hit + len(nq) - 1] + 1)`, and `stored_quote` is still the body's own text.
+- **The normalization table is closed:** single and double curly quotes and primes (U+2018-201B, U+2032; U+201C-201F, U+2033) to `'` and `"`, hyphen variants and en and em dash (U+2010-2015, U+2212) to `-`, NBSP and every other whitespace character collapsed (as a run) to one space, then trim. Case, accents and zero-width characters are never folded.
+- **`occurrences`** counts all hits, overlapping ones included, in the stage that matched (exact hits for `exact`, normalized hits for `normalized`).
+- **`value_in_quote`** is true when the lowercased value, with each run of non-letter, non-digit characters stripped, is a substring of the lowercased quote with the same stripping. An empty value gives false. It is never a gate.
+- **A quote with a lone surrogate is `quote_not_found`**.
+- **A source message that genuinely contains `...` or `…` can't be quoted across it:** the ellipsis gate rejects the quote, and the claim is held as `ellipsis` (approved Oct 24, 2026).
+- **Only the target event is searched** (for a long body, only the claim's own chunk). A quote found only in a context event fails.
+- **On failure** the claim is still written, with `status='held'`, `status_reason` set to the verifier's reason, `checks = {"quote":"failed"}`, and **no evidence span**. It never becomes a belief, and an `extraction_error` activity entry is written. Held claims stay visible and can be re-extracted by a better extractor in slice 2 or 6.
 - **Fidelity audit:** a nightly SQL check asserts `substring(body …) = quote` for every span of every promoted claim. The target is 100% (design.md §15.3).
 
 ### 6.6 Promotion and commit (code; rule `promote-v1`)
@@ -813,7 +827,7 @@ A claim is **promoted** when all of these hold:
 4. Sensitivity is `normal` and the event is not tainted.
 5. No future-tense flag.
 
-Otherwise it is **held**, with the first failing reason.
+Otherwise it is **held**, with the first failing reason. A claim whose quote failed verification is held with `checks = {"quote":"failed"}` and `status_reason` set to the verifier's reason (`quote_length`, `ellipsis` or `quote_not_found`).
 
 Commit runs in one transaction:
 1. Upsert the belief on `(scope_id, subject_key, attribute_key)`.
@@ -1315,7 +1329,7 @@ It contains:
 - **`api` service** (Node). Serves `/mcp`, `/v1/*` and the web app on its custom domains with TLS: `api.nacre.so` and `app.nacre.so` (suggested, above). It reaches Postgres over Railway's private network. The database has no public TCP proxy: the pre-deploy step, `railway ssh --service api` and `railway connect nacredb` (which tunnels over SSH) all work privately (task 2 follow-up).
 - **`worker` service.** The same image with a different start command. It runs jobs and has no public port.
 - **Config as code:** task 1 put Railway's config in `.railway/railway.ts` (it replaced `railway.json`). Once the Postgres service exists (task 2), declare it there, or keep it outside the IaC with `railway config partials`; otherwise a plan will propose deleting the database. The file is **deliberately exhaustive** (PR #22): declare every resource, including ones Railway creates such as the `Postgres-PITR` bucket, and read each plan before `railway config apply`, since anything undeclared is proposed for deletion. Do not declare settings that equal Railway's defaults (PR #23): Railway stores a default as unset, so declaring it (for example `restartPolicyType: ON_FAILURE`) leaves a change in every plan that never sticks.
-- **Variables:** `DATABASE_URL`, `TOKEN_PEPPER`, `OWNER_PASSWORD_HASH`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `PUBLIC_API_URL` (`https://api.nacre.so`), `PUBLIC_APP_URL` (`https://app.nacre.so`, the base for links; both must be https when `NODE_ENV=production`, which the image sets), `DAILY_LLM_BUDGET_USD`. Both API keys are OpenAI keys (§12.3, Decided). They stay separate variables so the providers can diverge. Slice 1 has no Anthropic key; one is added with the Anthropic adapter (slice 2 or later). OAuth (§9.3) adds no new secret: the issuer is `PUBLIC_API_URL`, codes and tokens are hashed with `TOKEN_PEPPER` (the consent form's signing key is derived from it), and consent checks `OWNER_PASSWORD_HASH`. An optional `ALLOWED_ORIGINS` defaults to `PUBLIC_API_URL` and `PUBLIC_APP_URL`.
+- **Variables:** `DATABASE_URL`, `TOKEN_PEPPER`, `OWNER_PASSWORD_HASH`, `OPENAI_API_KEY`, `LLM_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `PUBLIC_API_URL` (`https://api.nacre.so`), `PUBLIC_APP_URL` (`https://app.nacre.so`, the base for links; both must be https when `NODE_ENV=production`, which the image sets), `DAILY_LLM_BUDGET_USD`. `OPENAI_API_KEY` is the OpenAI adapter's key, and `EMBEDDING_API_KEY` is also an OpenAI key (§12.3, Decided). They stay separate variables so the providers can diverge. Slice 1 has no Anthropic key; a later Anthropic adapter (slice 2 or later) reads its own `ANTHROPIC_API_KEY`. OAuth (§9.3) adds no new secret: the issuer is `PUBLIC_API_URL`, codes and tokens are hashed with `TOKEN_PEPPER` (the consent form's signing key is derived from it), and consent checks `OWNER_PASSWORD_HASH`. An optional `ALLOWED_ORIGINS` defaults to `PUBLIC_API_URL` and `PUBLIC_APP_URL`.
 
 Why Railway, and why this layout:
 - You already run Wake there, so it's the same deploy flow, logs and billing.
@@ -1330,8 +1344,8 @@ Why Railway, and why this layout:
 | MCP | `@modelcontextprotocol/server` v2, Streamable HTTP (adopted in task 1; the v1 `@modelcontextprotocol/sdk` stays only as a dev dependency for the backward-compatibility test) | Tracks the spec. The 2026-07-28 revision made the transport stateless (verified); the SDK handles version negotiation with clients on older revisions. |
 | HTTP and web | Hono, with Hono JSX for server-rendered pages | Small. One process serves MCP, REST and HTML. |
 | Database | `postgres` (postgres.js) with hand-written SQL | The schema *is* the design. An ORM would hide triggers and partial indexes. |
-| Migrations | dbmate, plain `.sql` files, run only by the `api` service's Railway pre-deploy step (`db:predeploy`: `dbmate up`, then the compiled A5 and grant verifier; either failing stops the deploy); the `worker` waits until `schema_migrations` is current (task 5) | The §4 DDL is the migration |
-| Jobs | `jobs` table + `FOR UPDATE SKIP LOCKED`, polled every second | No Redis. Enqueueing is transactional with the event insert, so no event is left without a job. |
+| Migrations | dbmate, plain `.sql` files, run only by the `api` service's Railway pre-deploy step (`db:predeploy`: `dbmate up`, then the compiled A5 and grant verifier; either failing stops the deploy); the `worker` waits until `schema_migrations` is current (task 5). `nacre_app` has SELECT on `schema_migrations` (migration `20261024120000`), used only by the worker's startup wait (Marcus approved the grant Oct 24, 2026) | The §4 DDL is the migration |
+| Jobs | `jobs` table + `FOR UPDATE SKIP LOCKED`, polled every second. `extract` jobs get 5 attempts, backoff 30 s × 4^(n−1) capped at 1 hour, a stale lock reclaimed after 10 minutes, and concurrency 1 (approved Oct 24, 2026) | No Redis. Enqueueing is transactional with the event insert, so no event is left without a job. |
 | Schemas | Zod, converted to JSON Schema for MCP tools and LLM structured output | One definition per shape |
 | Dates | `chrono-node`, plus `date-fns-tz` or Temporal | Code computes dates; the model doesn't |
 | LLM | A provider-agnostic `Extractor` interface; default OpenAI `gpt-6-luna` (Decided) through the Responses API with strict JSON-schema structured output (§12.3). Slice 1 ships the OpenAI adapter only. The interface stays provider-agnostic so an Anthropic Messages API adapter can be added later for the Claude Haiku 5.5 challenger | Swappable; the slice 2 lab confirms or replaces the model. Normal content only (design.md §9.8). |
@@ -1340,7 +1354,7 @@ Why Railway, and why this layout:
 | Logs | pino JSON → Railway logs | Structured, with `request_id` |
 
 **Cost guard (Decided budget: $0.50/day for online work).** The api and worker sum today's `model_calls.cost_usd` (the day is midnight to midnight America/Chicago). That covers per-message extraction **and** embeddings, the only paid API calls in slice 1.
-- Above `DAILY_LLM_BUDGET_USD` (default **$0.50**, about $15 a month) no new paid call starts: `extract` and `embed` jobs wait with `run_after` set to the next day, extraction runs that are attempted are logged `skipped: budget`, recall runs keyword-only, and `/admin` shows a banner.
+- Above `DAILY_LLM_BUDGET_USD` (default **$0.50**, about $15 a month) no new paid call starts: `extract` and `embed` jobs wait with `run_after` set to the next midnight America/Chicago and keep their attempt count (`attempts` is decremented, so the wait is not a failure), a run row `skipped: budget` is written for each extraction that is attempted, one `system` activity entry (`step: budget_stop`) is written per day, recall runs keyword-only, and `/admin` shows a banner.
 - **Heavy work is not on this budget.** Consolidation, backfills and re-extraction are subscription-backed: they run on Marcus's local Claude Code or Codex under the job contract (design.md §5.8, slice 7). Slice 1 has no heavy jobs. If one is needed before slice 7, it is not run against the API budget without Marcus's explicit OK.
 
 ### 12.3 Model choice (extraction and embeddings) — *Decided, Oct 21, 2026*
