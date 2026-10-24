@@ -15,7 +15,7 @@
 // use the private network).
 //
 // Secrets are `preserve()`: Marcus sets their values in the dashboard (README, "Railway steps for
-// task 3" and "for task 3b"), and preserve() keeps them but never creates one, so set them before the first deploy
+// task 3" and "for task 3b", "Steps for task 5"), and preserve() keeps them but never creates one, so set them before the first deploy
 // that needs them. Variables missing from this file are planned for deletion like resources.
 import { bucket, database, defineRailway, github, preserve, project, service } from 'railway/iac';
 
@@ -84,6 +84,14 @@ export default defineRailway(() => {
     },
     env: {
       LOG_LEVEL: 'info',
+      // The runtime connection, as nacre_app: the reference ${{api.DATABASE_URL}}, set by Marcus.
+      DATABASE_URL: preserve(),
+      // OpenAI key for extraction, set by Marcus. Unset, the worker idles and claims no jobs.
+      OPENAI_API_KEY: preserve(),
+      // Extraction model (spec §12.3); gpt-5.6-luna is the fallback.
+      LLM_MODEL: 'gpt-6-luna',
+      // Daily ceiling on all paid model calls, midnight to midnight America/Chicago (spec §12.2).
+      DAILY_LLM_BUDGET_USD: '0.50',
     },
   });
 

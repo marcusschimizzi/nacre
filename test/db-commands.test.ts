@@ -115,7 +115,10 @@ describe.skipIf(!adminUrl)('nacre db commands: migrate, app-login and the pre-de
         {
           actor: 'system',
           target_kind: 'schema',
-          details: { step: 'migrate', applied: ['20261023000000', '20261023000100'] },
+          details: {
+            step: 'migrate',
+            applied: ['20261023000000', '20261023000100', '20261024120000'],
+          },
         },
       ]);
     } finally {
@@ -184,7 +187,7 @@ describe.skipIf(!adminUrl)('nacre db commands: migrate, app-login and the pre-de
       outputs.push(first.output, second.output);
       expect([first.code, second.code]).toEqual([0, 0]);
       expect(first.output).toContain(
-        'migrate: nothing to apply; recorded 20261023000000, 20261023000100 (applied earlier); system activity entry written',
+        'migrate: nothing to apply; recorded 20261023000000, 20261023000100, 20261024120000 (applied earlier); system activity entry written',
       );
       expect(second.output).toContain('migrate: nothing to apply\n');
 
@@ -195,7 +198,7 @@ describe.skipIf(!adminUrl)('nacre db commands: migrate, app-login and the pre-de
             details: {
               step: 'migrate',
               applied: [],
-              unrecorded: ['20261023000000', '20261023000100'],
+              unrecorded: ['20261023000000', '20261023000100', '20261024120000'],
             },
           },
         ]);

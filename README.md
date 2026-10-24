@@ -6,16 +6,17 @@ Nacre keeps an append-only log of what your agents saw, turns it into claims who
 
 ## Status
 
-**v3, slice 1, task 4: event ingest.** This is a ground-up reboot. What exists today:
+**v3, slice 1, task 5: the worker and extraction.** This is a ground-up reboot. What exists today:
 - an `api` service (Hono) with a remote MCP endpoint at `/mcp` (Streamable HTTP, one `ping` tool) and `GET /healthz` (which checks the database);
 - per-agent bearer tokens (`nacre_tok_<ulid>_<secret>`, stored as HMAC hashes) checked by one verifier for static and OAuth access tokens, an exact-match `Origin` check on `/mcp` and `/v1`, and the activity log (`token_create`, `token_revoke`, `token_use_denied`, `event_append`, `system`);
-- `POST /v1/events` (static tokens with the `write` right; spec §5.1): it validates an event, strips pasted secrets (`[REDACTED:<kind>]`), hashes the redacted body, and writes the event, its content, an `event_append` entry and an `extract` job in one transaction. A repeated `client_event_id` returns the original event. The worker is still a placeholder, so queued jobs wait for task 5;
+- `POST /v1/events` (static tokens with the `write` right; spec §5.1): it validates an event, strips pasted secrets (`[REDACTED:<kind>]`), hashes the redacted body, and writes the event, its content, an `event_append` entry and an `extract` job in one transaction. A repeated `client_event_id` returns the original event;
 - a minimal OAuth 2.1 server for MCP clients that can't send a static header (Grok Bot first; spec §9.3): discovery metadata, dynamic client registration, `/oauth/authorize` with PKCE S256 and a small consent page (owner password, agent choice), and `/oauth/token` with refresh rotation and reuse detection;
 - the `nacre` CLI: `token create|revoke|list` (revoking an OAuth token revokes its whole grant), `owner-password hash`, and the deploy steps `db migrate|app-login`;
 - the full slice 1 schema (spec §4) as dbmate migrations on Postgres 18 + pgvector, the `nacre_app` role, and append-only guards enforced by triggers **and** grants, with a verifier (`pnpm db:verify`);
-- a placeholder `worker` service; CI with a Postgres service; a Dockerfile and Railway Infrastructure as Code.
+- a `worker` service that claims `extract` jobs (`FOR UPDATE SKIP LOCKED`, 5 attempts with backoff), skips assistant turns and private or restricted events, extracts claims with OpenAI `gpt-6-luna` (Responses API, strict JSON schema, prompt `extract-claims` v1), checks every quote in code, and writes `candidate` claims with evidence spans, or `held` claims with the reason, plus `extraction_runs`, `model_calls` and activity entries. It keeps to a $0.50/day budget (midnight to midnight America/Chicago) and idles without `OPENAI_API_KEY`. Nothing promotes claims to beliefs yet (task 8), and quotes are matched exactly until task 6's verifier is wired in;
+- CI with a Postgres service; a Dockerfile and Railway Infrastructure as Code.
 
-The real tools (`remember`, `recall`, `get_provenance`), extraction and the web app arrive over the rest of slice 1. v2 (the markdown knowledge-graph version) is preserved at the [`v2-final`](https://github.com/marcusschimizzi/nacre/tree/v2-final) tag and the [`v2`](https://github.com/marcusschimizzi/nacre/tree/v2) branch.
+The real tools (`remember`, `recall`, `get_provenance`), promotion to beliefs and the web app arrive over the rest of slice 1. v2 (the markdown knowledge-graph version) is preserved at the [`v2-final`](https://github.com/marcusschimizzi/nacre/tree/v2-final) tag and the [`v2`](https://github.com/marcusschimizzi/nacre/tree/v2) branch.
 
 ## Run it locally
 
@@ -29,7 +30,7 @@ cp .env.example .env     # then set TOKEN_PEPPER=$(openssl rand -base64 32) and 
 pnpm db:migrate          # create nacre_dev, apply migrations/, log a `system` activity entry
 pnpm nacre db app-login  # give nacre_app LOGIN (trust auth locally, so the password isn't checked)
 pnpm dev                 # api on http://localhost:3000, connected as nacre_app
-pnpm dev:worker          # placeholder worker, in another terminal
+pnpm dev:worker          # the worker, in another terminal (idles without OPENAI_API_KEY)
 
 curl localhost:3000/healthz                                            # {"status":"ok",…,"db":"ok"}
 pnpm nacre token create --agent claude-code > ~/.nacre/token           # token on stdout only, shown once
@@ -81,6 +82,56 @@ pnpm build && pnpm db:predeploy   # exactly what Railway runs before each api de
 If port 54329 is taken, map another one and use it in every URL. `pnpm test` creates, migrates and drops its own scratch database through `TEST_DATABASE_URL`, and connects as `nacre_app` like the api; without it the database tests are skipped locally (CI requires them). Details: [`migrations/README.md`](migrations/README.md).
 
 Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `pnpm start:api` / `pnpm start:worker`.
+
+## Steps for task 5 (Marcus)
+
+The worker needs two variables before it can extract. Without them it still deploys: with no `DATABASE_URL` it fails its config check at start, and with no key it idles. Nothing is lost either way; jobs wait in the table.
+1. **Before merging, set the worker's two secrets** in Railway's dashboard (Nacre project, `worker` service, Variables):
+   - `DATABASE_URL` = `${{api.DATABASE_URL}}` (a reference: the same `nacre_app` URL the `api` uses).
+   - `OPENAI_API_KEY` = your OpenAI key. **You** type it into the dashboard; don't paste it into a chat, a PR, an issue or a file. Optionally set a monthly spend limit on that key in OpenAI's dashboard.
+2. **Apply the infrastructure file** from a checkout of this PR's branch (the file there declares the worker's four variables):
+
+   ```bash
+   git fetch origin && git switch task-05-worker-and-extractor
+   railway config plan    # expect: worker gains DATABASE_URL, OPENAI_API_KEY (preserved), LLM_MODEL, DAILY_LLM_BUDGET_USD; nothing deleted
+   railway config apply
+   ```
+3. **Merge.** The `api` pre-deploy applies the one new migration (`migrate: applied 20261024120000`, then `76 passed, 0 failed`). The worker waits for it, then starts. In the `worker` log expect `worker started` with `"openai":"configured"`, then `schema is current`, and no further `waiting for schema` lines.
+4. **Live check, about $0.0004.** Run the smoke script inside the worker, where the key already is:
+
+   ```bash
+   railway ssh --service worker -- node dist/worker/smoke.js
+   ```
+
+   Expect a `model: gpt-6-luna…` line, the token counts, the cost, at least one claim such as `preferred_package_manager = pnpm (preference): exact`, and `PASS`. Then post one real event from your machine and note its `event_id`:
+
+   ```bash
+   NACRE_URL=https://api.nacre.so
+   NOW="$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})$/:\1/')"
+   curl -s -X POST "$NACRE_URL/v1/events" -H "Authorization: Bearer $(cat ~/.nacre/token)" -H 'Content-Type: application/json' \
+     -d "{\"client_event_id\":\"manual:task5-1\",\"kind\":\"message\",\"role\":\"user\",\"observed_at\":\"$NOW\",\"content\":\"For the record, my preferred package manager is pnpm. Can you update the README?\"}"
+   # 201 {"event_id":"evt_…","status":"accepted","job":"extract"}
+   ```
+5. **Check the rows** a few seconds later, in `railway connect nacredb`, with the `event_id` in place of `<id>`:
+
+   ```sql
+   -- The run: one row, status ok, model_version set, about 2,500 / 300 tokens, cost about 0.0004.
+   SELECT run_id, status, skip_reason, error, model_version, input_tokens, output_tokens, cost_usd
+   FROM extraction_runs WHERE event_id = '<id>' ORDER BY started_at;
+   -- The claims: candidate with checks {"quote":"exact",…}, or held with a reason.
+   SELECT claim_id, status, status_reason, attribute, value, assertion_type, checks
+   FROM claims WHERE event_id = '<id>';
+   -- The evidence: faithful is true on every row.
+   SELECT s.claim_id, s.span_start, s.span_end, s.match_kind, s.quote,
+          substring(c.body FROM s.span_start + 1 FOR s.span_end - s.span_start) = s.quote AS faithful
+   FROM evidence_spans s JOIN event_content c USING (event_id) WHERE s.event_id = '<id>';
+   -- Today's spend (Chicago day) against the $0.50 budget.
+   SELECT count(*) AS calls, coalesce(sum(cost_usd), 0) AS spent_usd FROM model_calls
+   WHERE at >= date_trunc('day', now() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago';
+   ```
+
+   The `worker` log has one `extract job finished` line for the event with ids, counts, tokens and cost, and no message text.
+6. **If something is off:** `extraction disabled: OPENAI_API_KEY is not set` means the key is missing; `extractor_auth_failed` means OpenAI rejected it (jobs wait 5 minutes each time and keep their attempts). If the budget is hit, `activity_log` gets a `system` entry with `"step":"budget_stop"` and jobs resume after midnight Chicago time.
 
 ## Steps for task 4 (Marcus)
 
@@ -152,16 +203,16 @@ Agents don't run these. **Set the variables before merging:** merging deploys `a
 
 ## Layout
 
-| Path                  | What                                                                                                                              |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `src/api/`            | Hono app: `/mcp` (Origin check, token auth), `/healthz`, OAuth (`oauth/`: discovery, `/oauth/*`, consent page), `/v1` (`v1/`)     |
-| `src/cli/`            | The `nacre` CLI: tokens, `owner-password hash`, and the deploy steps (`db migrate`, `db app-login`)                               |
-| `src/worker/`         | Job worker (placeholder loop)                                                                                                     |
-| `src/shared/`         | Config, logging, ids, tokens, OAuth, the owner password, the activity log, event ingest and redaction, postgres.js (`db/`)        |
-| `src/audit/`          | Schema guard checks (A5 and grants), shared by tests, `pnpm db:verify`, the pre-deploy step and the nightly self-audit            |
-| `migrations/`         | Hand-written dbmate `.sql` files: the §4 schema, then roles and grants                                                            |
-| `test/`               | Vitest: MCP over real HTTP, auth and A11, event ingest and redaction, the CLI, and the database suite on a real Postgres          |
-| `.railway/railway.ts` | Railway Infrastructure as Code: `nacredb` (Postgres 18) and its PITR bucket, `api` (pre-deploy: migrate, login, checks), `worker` |
+| Path                  | What                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `src/api/`            | Hono app: `/mcp` (Origin check, token auth), `/healthz`, OAuth (`oauth/`: discovery, `/oauth/*`, consent page), `/v1` (`v1/`)      |
+| `src/cli/`            | The `nacre` CLI: tokens, `owner-password hash`, and the deploy steps (`db migrate`, `db app-login`)                                |
+| `src/worker/`         | Job worker: claims `extract` jobs, the `Extractor` and OpenAI adapter, prompt v1, quote checks, claims, the budget                 |
+| `src/shared/`         | Config, logging, ids, tokens, OAuth, the owner password, the activity log, event ingest and redaction, prices, postgres.js (`db/`) |
+| `src/audit/`          | Schema guard checks (A5 and grants), shared by tests, `pnpm db:verify`, the pre-deploy step and the nightly self-audit             |
+| `migrations/`         | Hand-written dbmate `.sql` files: the §4 schema, then roles and grants                                                             |
+| `test/`               | Vitest: MCP over real HTTP, auth and A11, ingest and redaction, the worker (fake extractor, OpenAI fixtures), CLI, database suite  |
+| `.railway/railway.ts` | Railway Infrastructure as Code: `nacredb` (Postgres 18) and its PITR bucket, `api` (pre-deploy: migrate, login, checks), `worker`  |
 
 ## Docs
 

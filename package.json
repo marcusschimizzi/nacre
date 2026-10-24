@@ -28,6 +28,7 @@
     "format": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "mcp:smoke": "tsx scripts/mcp-smoke.ts",
+    "extract:smoke": "tsx --env-file-if-exists=.env src/worker/smoke.ts",
     "nacre": "tsx src/cli/main.ts",
     "db:migrate": "tsx src/cli/main.ts db migrate",
     "db:rollback": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait rollback",

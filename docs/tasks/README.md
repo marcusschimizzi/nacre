@@ -29,7 +29,7 @@ Nacre v3 is built task by task from `slices/slice-1-spec.md` §15 (and later sli
 | 3b | [Minimal OAuth 2.1 for MCP](task-03b-oauth.md) (§9.3), depends on 3 | Done (PR #26, merged Oct 24, 2026, 2:23 AM, merge `18a075c`; five open questions answered by Marcus and applied in 3c; live Grok Bot test passed Oct 24, 2026) |
 | 3c | [OAuth follow-ups from the live test](task-03c-oauth-followups.md), depends on 3b | Done (PR #27, merged Oct 24, 2026, 11:01 AM, merge `935d12c`; redirect host allow-list incl. `chatgpt.com`, 10 s refresh reuse grace, last-used agent preselection, `mcp_method` logging; spec v0.2.15) |
 | 04 | [Event ingest (`POST /v1/events`)](task-04-event-ingest.md), depends on 3 | Done (PR #28, merged Oct 24, 2026, 3:05 PM, merge `2a3ca55`; brief v1.1; key-based metadata redaction, 8 KiB metadata cap, 400/413/422 bodies, POST-only; spec v0.2.17) |
-| 05 | [Worker loop, `Extractor` + OpenAI adapter, prompt v1, `model_calls` and cost guard](task-05-worker-and-extractor.md) (§15), depends on 4 | Next, ready (brief v1.1, Oct 24, 2026) |
+| 05 | [Worker loop, `Extractor` + OpenAI adapter, prompt v1, `model_calls` and cost guard](task-05-worker-and-extractor.md) (§15), depends on 4 | In progress (PR #32; brief v1.1, Oct 24, 2026) |
 | 06 | [Quote verifier with unit and property tests (A4)](task-06-quote-verifier.md), no dependencies | Can run in parallel with 05 (brief v1.1, Oct 24, 2026) |
 
 The task 3b brief cites Copal (`~/dev/copal`) and Wake (`~/dev/wake`) OAuth code as prior art to reuse (PR #24).

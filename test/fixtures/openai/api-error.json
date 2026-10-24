@@ -1,0 +1,37 @@
+{
+  "id": "resp_fixture0000000000000000000000000000000000000000",
+  "object": "response",
+  "created_at": 1792868709,
+  "status": "failed",
+  "error": {
+    "code": "server_error",
+    "message": "FIXTURE-API-ERROR-TEXT The server had an error."
+  },
+  "incomplete_details": null,
+  "model": "gpt-6-luna",
+  "output": [],
+  "reasoning": {
+    "effort": "low",
+    "summary": null
+  },
+  "store": false,
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "name": "extract_claims",
+      "strict": true
+    }
+  },
+  "usage": {
+    "input_tokens": 2500,
+    "input_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "output_tokens": 300,
+    "output_tokens_details": {
+      "reasoning_tokens": 120
+    },
+    "total_tokens": 2800
+  }
+}

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isArgon2idPhc } from './password.js';
+import { isPricedModel, PRICED_MODELS } from './pricing.js';
 
 const logLevel = z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']);
 
@@ -71,6 +72,17 @@ const apiEnv = z
 const workerEnv = z.object({
   LOG_LEVEL: logLevel.default('info'),
   WORKER_POLL_MS: z.coerce.number().int().positive().default(1000),
+  // Connects as nacre_app (spec §4 roles), never as the owner.
+  DATABASE_URL: databaseUrl,
+  // Optional: unset, the worker idles and claims no jobs (task 5 brief §1). Never echoed: parse()
+  // reports variable names, not values.
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  // Must have a price (src/shared/pricing.ts), or the cost guard couldn't count its calls.
+  LLM_MODEL: z
+    .string()
+    .default('gpt-6-luna')
+    .refine(isPricedModel, `must be one of: ${PRICED_MODELS.join(', ')}`),
+  DAILY_LLM_BUDGET_USD: z.coerce.number().min(0).default(0.5),
 });
 
 /** `nacre token …`: runs as nacre_app, like the api. The pepper is needed only to mint tokens. */
