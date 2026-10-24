@@ -1,6 +1,6 @@
 # Nacre: design document
 
-*Status: draft v0.2.4, Oct 23, 2026 (America/Chicago). Owner: Marcus Schimizzi. v0.1 (Oct 20) is kept as `design.md.v1.bak`, v0.2 as `design.v0.2.bak.md`, v0.2.1 as `design.v0.2.1.bak.md`, v0.2.2 as `design.v0.2.2.bak.md`, and v0.2.3 as `design.v0.2.3.bak.md`. v0.2 folded in Marcus's decisions of Oct 21, 2026, which resolve most of v0.1's open questions.*
+*Status: draft v0.2.4, Oct 23, 2026 (America/Chicago). Owner: Marcus Schimizzi. Earlier versions are in git history (`git log -p docs/design.md`), from v0.2.3 on; drafts before that weren't kept. v0.2 folded in Marcus's decisions of Oct 21, 2026, which resolve most of v0.1's open questions.*
 
 **Changelog**
 - **v0.2.4, Oct 23, 2026.** §17: slice 1 now includes a minimal single-user OAuth 2.1 server for MCP clients (Decided by Marcus), because Grok Bot's connector supports only OAuth; static bearer tokens stay for Claude Code. Slice 5 keeps OAuth scopes, per-agent grants and more clients. Slice 1's exit check is now 17 acceptance tests. Details in `slices/slice-1-spec.md` v0.2.5 §9.3.
@@ -1216,7 +1216,7 @@ Nacre is built as **8 vertical slices**, not horizontal phases. **Principle: eac
 
 **Known ordering tension (inferred).** Chat-export import (slice 5) produces late events, but automatic late-arrival replay is slice 8. Until then, imports are placed by when each message was said, previewed in the lab, and any fact they would change goes to the review queue (slice 3) instead of being replayed automatically.
 
-v0.2's phased roadmap (phases 0–6, with per-event keys in phase 0) is replaced. It is kept in `design.v0.2.bak.md`.
+v0.2's phased roadmap (phases 0–6, with per-event keys in phase 0) is replaced. That draft wasn't kept: git history starts at v0.2.3.
 
 ---
 
