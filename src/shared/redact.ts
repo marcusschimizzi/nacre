@@ -225,6 +225,8 @@ export function redactSecrets(text: string): RedactResult {
 // The password rule's keys as a whole JSON key (`password`, `DB_PASSWORD`, `client_secret`), matched
 // the way the rule matches them in text.
 const PASSWORD_KEY = new RegExp(`(?<![A-Za-z0-9])(?:${PASSWORD_KEYS})$`, 'i');
+// A value other rules already replaced entirely; anything else beside a marker may be secret too.
+const ONLY_MARKERS = /^(?:\s*\[REDACTED:[a-z_]+\])+\s*$/;
 
 export interface RedactJsonResult {
   value: Json;
@@ -234,8 +236,8 @@ export interface RedactJsonResult {
 /**
  * Redact the string values of a JSON value (`metadata`), recursively; keys are kept. A string under a
  * password-style key is the secret itself, so it is replaced whole as `password` (4+ characters, as
- * for a quoted value in text) unless another rule already caught it: the text rule can't see it,
- * because the key and the value are separate strings.
+ * for a quoted value in text) unless other rules already left nothing but markers: the text rule
+ * can't see it, because the key and the value are separate strings.
  */
 export function redactJson(value: Json): RedactJsonResult {
   const found: Redaction[][] = [];
@@ -247,7 +249,7 @@ export function redactJson(value: Json): RedactJsonResult {
         key !== undefined &&
         PASSWORD_KEY.test(key) &&
         result.text.length >= 4 &&
-        !result.text.startsWith('[REDACTED:')
+        !ONLY_MARKERS.test(result.text)
       ) {
         found.push([{ kind: 'password', count: 1 }]);
         return marker('password');

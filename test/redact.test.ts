@@ -235,6 +235,15 @@ describe('redactJson (metadata)', () => {
     expect(result.redactions).toEqual([{ kind: 'api_key', count: 1 }]);
   });
 
+  it('replaces the whole value when another rule caught only part of it', () => {
+    const result = redactJson({ password: `${fakeSecrets().skKey} rest1234`, pwd: ' x ' });
+    expect(result.value).toEqual({ password: '[REDACTED:password]', pwd: ' x ' });
+    expect(result.redactions).toEqual([
+      { kind: 'api_key', count: 1 },
+      { kind: 'password', count: 1 },
+    ]);
+  });
+
   it('leaves short values and look-alike keys alone', () => {
     const value = { password: 'abc', mypassword: secret, passwordHint: secret, cwd: '/home/u' };
     expect(redactJson(value)).toEqual({ value, redactions: [] });
