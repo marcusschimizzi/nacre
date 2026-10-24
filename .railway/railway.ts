@@ -42,7 +42,8 @@ export default defineRailway(() => {
       preDeployCommand: ['npm run db:predeploy'],
       healthcheckPath: '/healthz',
       healthcheckTimeout: 60,
-      restartPolicyType: 'ON_FAILURE',
+      // Restart policy type is Railway's default (ON_FAILURE). Railway stores the default as unset,
+      // so declaring it explicitly made every plan show a change that never sticks.
       restartPolicyMaxRetries: 5,
       drainingSeconds: 15,
     },
