@@ -11,6 +11,10 @@ const MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations', import.meta.url
 /**
  * `nacre db migrate`: `dbmate up`, then one `system` activity entry listing what it applied (spec
  * §13.2), or none when nothing was pending. Runs as the database owner (MIGRATION_DATABASE_URL).
+ *
+ * dbmate commits before the entry is written, so a failed insert would lose it. The entry also
+ * lists, as `unrecorded`, applied versions that no earlier entry names, so the next run fills the
+ * gap (and the first run after task 3 records the task 2 migrations, applied before this existed).
  */
 export async function migrate(ownerUrl: string): Promise<string[]> {
   await dbmate(ownerUrl, 'wait');
@@ -20,22 +24,35 @@ export async function migrate(ownerUrl: string): Promise<string[]> {
   try {
     const after = await versions(sql);
     const applied = after.filter((v) => !before.has(v));
-    if (applied.length) {
+    const recorded = await recordedVersions(sql);
+    const unrecorded = after.filter((v) => before.has(v) && !recorded.has(v));
+    if (applied.length || unrecorded.length) {
       await logActivity(sql, {
         kind: 'system',
         actor: 'system',
         targetKind: 'schema',
         reason: 'migrate',
-        details: { step: 'migrate', applied },
+        details: { step: 'migrate', applied, ...(unrecorded.length ? { unrecorded } : {}) },
       });
-      console.log(`migrate: applied ${applied.join(', ')}; system activity entry written`);
-    } else {
-      console.log('migrate: nothing to apply');
     }
+    const parts = [applied.length ? `applied ${applied.join(', ')}` : 'nothing to apply'];
+    if (unrecorded.length) parts.push(`recorded ${unrecorded.join(', ')} (applied earlier)`);
+    if (applied.length || unrecorded.length) parts.push('system activity entry written');
+    console.log(`migrate: ${parts.join('; ')}`);
     return applied;
   } finally {
     await sql.end();
   }
+}
+
+/** Versions named by earlier `migrate` entries, as `applied` or `unrecorded`. */
+async function recordedVersions(sql: Sql): Promise<Set<string>> {
+  const rows = await sql<{ version: string }[]>`
+    SELECT jsonb_array_elements_text(details->'applied' || COALESCE(details->'unrecorded', '[]'))
+           AS version
+    FROM activity_log
+    WHERE kind = 'system' AND details->>'step' = 'migrate'`;
+  return new Set(rows.map((r) => r.version));
 }
 
 /**

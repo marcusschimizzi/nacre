@@ -3,7 +3,7 @@ import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { scramSha256Verifier } from '../src/shared/db/app-role.js';
 import { createSql, type Sql } from '../src/shared/db/sql.js';
-import { dropDatabase, scratchDatabaseName, withDatabase } from './helpers/db.js';
+import { dbmate, dropDatabase, scratchDatabaseName, withDatabase } from './helpers/db.js';
 
 const adminUrl = inject('adminDatabaseUrl');
 
@@ -170,6 +170,40 @@ describe.skipIf(!adminUrl)('nacre db commands: migrate, app-login and the pre-de
     } finally {
       await db`ALTER TABLE events ENABLE TRIGGER events_append_only`;
       await db.end();
+    }
+  });
+
+  it('migrate records applied versions no entry names yet (dbmate alone, or a lost insert), once', async () => {
+    const other = scratchDatabaseName('unrecorded');
+    const otherUrl = withDatabase(adminUrl, other);
+    try {
+      await dbmate(otherUrl, 'up'); // migrations applied, no activity entry
+      const env = { MIGRATION_DATABASE_URL: otherUrl, NACRE_APP_DB_PASSWORD: '' };
+      const first = await node('src/cli/main.ts', ['db', 'migrate'], env);
+      const second = await node('src/cli/main.ts', ['db', 'migrate'], env);
+      outputs.push(first.output, second.output);
+      expect([first.code, second.code]).toEqual([0, 0]);
+      expect(first.output).toContain(
+        'migrate: nothing to apply; recorded 20261023000000, 20261023000100 (applied earlier); system activity entry written',
+      );
+      expect(second.output).toContain('migrate: nothing to apply\n');
+
+      const db = createSql(otherUrl, { max: 1 });
+      try {
+        expect(await db`SELECT details FROM activity_log WHERE kind = 'system'`).toEqual([
+          {
+            details: {
+              step: 'migrate',
+              applied: [],
+              unrecorded: ['20261023000000', '20261023000100'],
+            },
+          },
+        ]);
+      } finally {
+        await db.end();
+      }
+    } finally {
+      await dropDatabase(adminUrl, other);
     }
   });
 
