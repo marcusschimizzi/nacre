@@ -1,5 +1,6 @@
 import type { RequestIdVariables } from 'hono/request-id';
 import type { TokenKind } from '../shared/tokens.js';
+import type { DenyReason } from './auth.js';
 
 /** Who is calling, set by the token middleware on success (spec §4 token columns). */
 export interface AuthContext {
@@ -15,5 +16,9 @@ export interface AuthContext {
 }
 
 export interface AppEnv {
-  Variables: RequestIdVariables & { auth?: AuthContext };
+  Variables: RequestIdVariables & {
+    auth?: AuthContext;
+    /** Why a token was rejected, for the request log (unknown ids are logged nowhere else). */
+    authDenied?: DenyReason;
+  };
 }

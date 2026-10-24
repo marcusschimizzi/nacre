@@ -67,6 +67,8 @@ interface TokenRow {
   revoked: boolean;
   expired: boolean;
   agent_disabled: boolean;
+  /** `last_used_at` is null or older than a minute (see the lookup). */
+  touch_due: boolean;
 }
 
 // Compared against when no row exists, so a miss costs the same HMAC and compare as a hit.
@@ -109,7 +111,9 @@ export async function verifyToken(
     if (row.resource !== deps.mcpResource) return deny('wrong_resource');
   }
 
-  await deps.sql`UPDATE agent_tokens SET last_used_at = now() WHERE token_id = ${parsed.tokenId}`;
+  if (row.touch_due) {
+    await deps.sql`UPDATE agent_tokens SET last_used_at = now() WHERE token_id = ${parsed.tokenId}`;
+  }
   return {
     ok: true,
     auth: {
@@ -131,7 +135,9 @@ async function lookup(sql: Sql, tokenId: string): Promise<TokenRow | undefined> 
            t.write_scopes, t.label_ceiling, t.rights,
            t.revoked_at IS NOT NULL AS revoked,
            t.expires_at IS NOT NULL AND t.expires_at <= now() AS expired,
-           a.disabled_at IS NOT NULL AS agent_disabled
+           a.disabled_at IS NOT NULL AS agent_disabled,
+           -- last_used_at is kept to the minute: one write per token per minute, not per request.
+           t.last_used_at IS NULL OR t.last_used_at < now() - interval '1 minute' AS touch_due
     FROM agent_tokens t JOIN agents a USING (agent_id)
     WHERE t.token_id = ${tokenId}`;
   return row;
@@ -170,7 +176,7 @@ export interface TokenAuthOptions extends VerifierDeps {
 
 /**
  * Hono middleware: verify the bearer token, reject tokens in the URL, log `token_use_denied` for
- * rejected well-formed tokens, and put the caller on the context. Every failure is the same 401.
+ * rejected tokens whose id exists, and put the caller on the context. Every failure is the same 401.
  */
 export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> {
   const { route, log } = options;
@@ -181,10 +187,14 @@ export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> 
     tokenId: string | null,
     agentId: string | null,
   ) => {
+    c.set('authDenied', reason);
+    // Activity rows are permanent and anyone can send random well-formed tokens, so a token id with
+    // no row (unknown_token, or one in the URL) stays in the request log only.
+    if (tokenId === null || agentId === null) return;
     try {
       await logActivity(options.sql, {
         kind: 'token_use_denied',
-        actor: agentId ?? 'unknown',
+        actor: agentId,
         tokenId,
         requestId: c.get('requestId'),
         targetKind: 'route',
@@ -204,10 +214,8 @@ export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> 
     const inUrl = urlToken(c);
     if (inUrl.found) {
       const parsed = inUrl.token ? parseToken(inUrl.token) : null;
-      if (parsed) {
-        const row = await lookup(options.sql, parsed.tokenId);
-        await denied(c, 'token_in_url', row ? parsed.tokenId : null, row?.agent_id ?? null);
-      }
+      const row = parsed ? await lookup(options.sql, parsed.tokenId) : undefined;
+      await denied(c, 'token_in_url', parsed && row ? parsed.tokenId : null, row?.agent_id ?? null);
       return unauthorized(c, route);
     }
 

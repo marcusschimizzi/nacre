@@ -70,16 +70,30 @@ describe.skipIf(!appDatabaseUrl)('verifyToken (spec §7, §9.3)', () => {
       }
     });
 
-    it('update last_used_at on success', async () => {
-      const { tokenId } = parseToken(staticTok) ?? { tokenId: '' };
-      const [before] =
-        await app.sql`SELECT last_used_at FROM agent_tokens WHERE token_id = ${tokenId}`;
-      await new Promise((r) => setTimeout(r, 5));
-      await verify(staticTok);
-      const [after] =
-        await app.sql`SELECT last_used_at FROM agent_tokens WHERE token_id = ${tokenId}`;
-      expect(after?.last_used_at).toBeInstanceOf(Date);
-      expect(after?.last_used_at > (before?.last_used_at ?? 0)).toBe(true);
+    it('update last_used_at on success, at most once a minute', async () => {
+      const created = await staticToken(app, testAgent('touch'));
+      const lastUsed = async () => {
+        const [row] = await app.sql<{ last_used_at: Date | null }[]>`
+          SELECT last_used_at FROM agent_tokens WHERE token_id = ${created.tokenId}`;
+        return row?.last_used_at ?? null;
+      };
+      expect(await lastUsed()).toBeNull();
+
+      expect((await verify(created.token)).ok).toBe(true);
+      const first = await lastUsed();
+      expect(first).toBeInstanceOf(Date);
+
+      // Within the minute: no write.
+      expect((await verify(created.token)).ok).toBe(true);
+      expect(await lastUsed()).toEqual(first);
+
+      // Older than a minute: the next success writes again.
+      await app.sql`
+        UPDATE agent_tokens SET last_used_at = now() - interval '2 minutes'
+        WHERE token_id = ${created.tokenId}`;
+      const stale = await lastUsed();
+      expect((await verify(created.token)).ok).toBe(true);
+      expect((await lastUsed())?.getTime()).toBeGreaterThan(stale?.getTime() ?? Infinity);
     });
 
     it('bad secret → bad_secret (row exists, so it is attributed)', async () => {

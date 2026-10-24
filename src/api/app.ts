@@ -36,6 +36,7 @@ export function createApp({ sql, config, log }: AppDeps) {
         ms: Math.round(performance.now() - started),
         agent_id: auth?.agentId,
         token_id: auth?.tokenId,
+        auth_denied: c.get('authDenied'),
         mcp_protocol: c.req.header('mcp-protocol-version'),
         mcp_method: c.req.header('mcp-method'),
         user_agent: c.req.header('user-agent'),

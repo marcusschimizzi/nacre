@@ -49,6 +49,10 @@ describe.skipIf(!appDatabaseUrl)('A11: tokens, the token-in-URL rule and Origin 
       body: INITIALIZE,
     });
   const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
+  const requestLog = (res: Response) =>
+    app.logLines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((l) => l.msg === 'request' && l.request_id === res.headers.get('x-request-id'));
   const deniedRows = (res: Response) =>
     app.sql<{ actor: string; token_id: string | null; details: { reason: string } }[]>`
       SELECT actor, token_id, details FROM activity_log
@@ -66,6 +70,22 @@ describe.skipIf(!appDatabaseUrl)('A11: tokens, the token-in-URL rule and Origin 
     const res = await post({ Authorization: 'Bearer not-a-nacre-token' });
     expect(res.status).toBe(401);
     expect(await deniedRows(res)).toHaveLength(0);
+  });
+
+  it('a well-formed token with an unknown id → 401, request log only (anyone can mint these)', async () => {
+    const unknown = `nacre_tok_01JAXK5W3J8N4Q2R7T9V0Y1Z2A_${'A'.repeat(43)}`;
+    seenTokens.push(unknown);
+    for (const res of [
+      await post(bearer(unknown)),
+      await post({}, `?access_token=${encodeURIComponent(unknown)}`),
+    ]) {
+      expect(res.status).toBe(401);
+      expect(await deniedRows(res)).toHaveLength(0);
+      expect((await requestLog(res))?.auth_denied).toMatch(/^(unknown_token|token_in_url)$/);
+    }
+    const unattributed = await app.sql`
+      SELECT 1 FROM activity_log WHERE kind = 'token_use_denied' AND token_id IS NULL`;
+    expect(unattributed).toHaveLength(0);
   });
 
   it('a created token → ping works and reports the agent', async () => {
@@ -115,6 +135,7 @@ describe.skipIf(!appDatabaseUrl)('A11: tokens, the token-in-URL rule and Origin 
     expect(await deniedRows(res)).toEqual([
       { actor: agent, token_id: tokenId, details: { reason: 'revoked' } },
     ]);
+    expect(await requestLog(res)).toMatchObject({ status: 401, auth_denied: 'revoked' });
   });
 
   it('nothing leaks: no log line or activity entry holds the token or its secret', async () => {
