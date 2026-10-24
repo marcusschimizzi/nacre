@@ -28,11 +28,12 @@
     "format": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "mcp:smoke": "tsx scripts/mcp-smoke.ts",
-    "db:migrate": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait up",
+    "nacre": "tsx src/cli/main.ts",
+    "db:migrate": "tsx src/cli/main.ts db migrate",
     "db:rollback": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait rollback",
     "db:status": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait status",
     "db:verify": "tsx src/audit/verify-cli.ts",
-    "db:predeploy": "dbmate --env MIGRATION_DATABASE_URL --migrations-dir ./migrations --no-dump-schema --wait up && node dist/audit/verify-cli.js"
+    "db:predeploy": "node dist/cli/main.js db migrate && node dist/cli/main.js db app-login && node dist/audit/verify-cli.js"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
@@ -41,6 +42,7 @@
     "hono": "^4.13.13",
     "pino": "^10.4.0",
     "postgres": "^3.4.9",
+    "ulid": "^3.0.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {

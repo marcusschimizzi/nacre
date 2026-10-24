@@ -1,8 +1,13 @@
 # Nacre Slice 1: shared memory between two agents (build spec)
 
-*Status: draft v0.2.6, Oct 23, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.4. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. v0.1 is kept as `slice-1-spec.v0.1.bak.md`, v0.2 as `slice-1-spec.v0.2.bak.md`, v0.2.1 as `slice-1-spec.v0.2.1.bak.md`, v0.2.2 as `slice-1-spec.v0.2.2.bak.md`, v0.2.3 as `slice-1-spec.v0.2.3.bak.md`, v0.2.4 as `slice-1-spec.v0.2.4.bak.md`, and v0.2.5 as `slice-1-spec.v0.2.5.bak.md`.*
+*Status: draft v0.2.11, Oct 24, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.4. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. v0.1 is kept as `slice-1-spec.v0.1.bak.md`, v0.2 as `slice-1-spec.v0.2.bak.md`, v0.2.1 as `slice-1-spec.v0.2.1.bak.md`, v0.2.2 as `slice-1-spec.v0.2.2.bak.md`, v0.2.3 as `slice-1-spec.v0.2.3.bak.md`, v0.2.4 as `slice-1-spec.v0.2.4.bak.md`, v0.2.5 as `slice-1-spec.v0.2.5.bak.md`, v0.2.6 as `slice-1-spec.v0.2.6.bak.md`, v0.2.7 as `slice-1-spec.v0.2.7.bak.md`, v0.2.8 as `slice-1-spec.v0.2.8.bak.md`, and v0.2.9 as `slice-1-spec.v0.2.9.bak.md`.*
 
 **Changelog**
+- **v0.2.11, Oct 24, 2026.** Marcus's decisions on task 3's open questions (PR #25). §13.1 and §13.2: `token_use_denied` is written only for a real token, one whose id exists and whose secret matches (revoked, expired, agent disabled, a refresh token as bearer, wrong route or resource, no expiry, or a real token in the URL). A well-formed token with an unknown id or a wrong secret is logged only in the request log, as `auth_denied`, because anyone who can reach the API can send those (token ids aren't secret) and activity rows can't be deleted. §4: `last_used_at` is kept to the minute, written at most once a minute per token, and a failed write never fails the request. §7 and §9.3: the verifier rejects an OAuth access token with no expiry (`no_expiry`); only static tokens may lack one (the table's CHECK already requires it). §12.1: `PUBLIC_API_URL` and `PUBLIC_APP_URL` must be https in production, or the api refuses to start. §13.2: the migrate entry also lists, as `unrecorded`, applied versions no earlier entry names, so an entry lost after dbmate commits is written by the next run. §12.1: `api.nacre.so` is set up now, in task 3: it is declared in `.railway/railway.ts` and is `PUBLIC_API_URL`, with no Railway-generated domain in between. `app.nacre.so` follows with the web app. A `nacre agent disable` command is not needed before the admin page (task 13). Sections touched: §4, §7, §9.3, §12.1, §13.1, §13.2.
+- **v0.2.10, Oct 23, 2026 (10:25 PM).** Railway fix merged (PR #23, merge `fe20388`, not a slice task). Factual fix: §12.1 config as code does not declare values that equal Railway's defaults (for example `api`'s `restartPolicyType: ON_FAILURE`), because Railway stores a default as unset and the plan would show the same change forever. Non-default values (such as `restartPolicyMaxRetries: 5` and the `worker`'s `ALWAYS`) stay declared. No design changes. Sections touched: §12.1.
+- **v0.2.9, Oct 23, 2026 (10:15 PM).** Railway fix merged (PR #22, merge `7dfb6f7`, not a slice task). Factual fixes: §12.1 point-in-time recovery is **on** for `nacredb`, and Railway created a `Postgres-PITR` bucket (region `iad`) to hold its archive. That bucket is now declared in `.railway/railway.ts`, so config plans no longer propose deleting it. It is not the empty bucket removed at reset. The config file is deliberately exhaustive: declare every resource, including ones Railway creates, and read each plan before `railway config apply`. Keep PITR and backup retention short (§16 R4), and A14's restore drill also covers a point-in-time restore. No design changes. Sections touched: §12.1, §14 A14, §16 R4.
+- **v0.2.8, Oct 23, 2026 (9:50 PM).** Task 2 follow-up merged (PR #21, merge `21671e0`). Factual fixes from what it built: §12.2 migrations run in the `api` service's Railway **pre-deploy step** (`db:predeploy`: `dbmate up`, then the compiled A5 and grant verifier `dist/audit/verify-cli.js`), not on start, so a failed migration or a broken append-only guard stops the deploy; §12.1 `nacredb` stays private (no public TCP proxy; pre-deploy, `railway ssh` and `railway connect` all use the private network); §14 A5's prod check now runs on every `api` deploy. `nacre_app` stays `NOLOGIN` until task 3. No design changes. Sections touched: §12.1, §12.2, §14.
+- **v0.2.7, Oct 23, 2026 (3:55 PM).** Task 2 merged (PR #20, merge `4fa3e32`). Factual fixes from what it built: the §4 role comment drops `nacre_migrator` (Marcus dropped it; migrations run as the database owner) and adds the `claims.status_reason` grant to `nacre_app`; §4 "Checked" notes the DDL now runs on Postgres 18 + pgvector in CI with a 75-check verifier; §12.2 tests use a CI Postgres service container (`pgvector/pgvector:pg18`) instead of Testcontainers, and only the `api` service runs migrations while the `worker` waits for `schema_migrations` to be current (lands in task 5); the Railway database service is named `nacredb`. No design changes. Sections touched: §4, §12.1, §12.2.
 - **v0.2.6, Oct 23, 2026 (1:55 PM).** Task 1 merged (PR #19, merge `07973a9`). Factual fixes from what it built: §12.2 now names `@modelcontextprotocol/server` v2 as the MCP package (the v1 `@modelcontextprotocol/sdk` is a dev dependency for the backward-compatibility test only) and Node 24 LTS (`.node-version`); §12.1 notes that Railway config as code lives in `.railway/railway.ts`, not `railway.json`, and that Postgres must be declared there (or kept outside it with config partials) before task 2 deploys. No design changes. Sections touched: §12.1, §12.2.
 - **v0.2.5, Oct 23, 2026 (12:30 PM).** Marcus decided that slice 1 gets a **minimal, single-user OAuth 2.1 server**, because Grok Bot's custom MCP connector never sends a static `Authorization` header and supports only OAuth. It covers discovery (RFC 9728 protected-resource metadata and RFC 8414 server metadata), PKCE with S256 only, dynamic client registration, a tiny server-rendered consent page, and access and refresh tokens stored as rows in the token table. Static bearer tokens stay for Claude Code. Tokens in URLs stay off the table. Slice 5 keeps the broader work (more agents, scopes and per-agent grants in tokens, ChatGPT and Claude.ai capture). New §9.3 and new task **3b**; Origin validation now lands in tasks 3 and 3b, before the consent form and task 13's cookie login. New acceptance test A17. Sections touched: Bottom line, the answers table, §1.3, §2, §3, §4 (`oauth_clients`, `oauth_auth_codes`, new `agent_tokens` columns, roles), §7, §7.4, §9.1, §9.3 (new), §11, §12.1, §13.2, §14 (A11, new A17), §15 (tasks 1, 3, 3b, 12, 13, 15), §16 (R2, new R11), §17 (new Q10), §19; design.md §17.
 - **v0.2.4, Oct 21, 2026 (8:16 PM).** Marcus decided the domain is **`nacre.so`**. The `nacre.example.com` placeholder is replaced everywhere: MCP and API URLs now use `api.nacre.so`, and web links use `app.nacre.so` (both subdomains are suggested). Railway's own domain still works until DNS is set. The empty bucket is **removed** at reset time and re-added only if a later slice needs it. All slice 1 questions are now decided. Sections touched: Labels, the answers table, §5.2, §7.2, §8.1, §8.4, §9.1, §12.1, §15 task 1, §17 Q6 and "Still open".
@@ -166,7 +171,7 @@ Facts are made only in the worker, never by a client (design.md §12.1, "only th
 - **Enumerations** are `text` with `CHECK` constraints, not Postgres `ENUM`s. Later slices add values with a one-line constraint swap instead of `ALTER TYPE`.
 - **All times** are `timestamptz`. Each valid-time column has a precision sibling (design.md §4.3).
 - **Append-only is enforced in the database** with triggers and role grants, not by convention.
-- **Checked:** the v0.1 DDL below was loaded into a scratch Postgres 17 this session, with `vector` swapped for `real[]` and the HNSW index left out because pgvector isn't installed on the box. The guard behavior was then exercised: event `UPDATE` blocked, content `DELETE` blocked, claim text edit blocked, claim status change allowed, a single `expired_at` close allowed and a second blocked, a duplicate `client_event_id` rejected. The `model_calls` table added in v0.2 was checked the same way (see §12.3). Still to check on Railway: the vector parts and the recall SQL.
+- **Checked:** the v0.1 DDL below was loaded into a scratch Postgres 17 this session, with `vector` swapped for `real[]` and the HNSW index left out because pgvector isn't installed on the box. The guard behavior was then exercised: event `UPDATE` blocked, content `DELETE` blocked, claim text edit blocked, claim status change allowed, a single `expired_at` close allowed and a second blocked, a duplicate `client_event_id` rejected. The `model_calls` table added in v0.2 was checked the same way (see §12.3). Since task 2 (PR #20), the full DDL runs on Postgres 18 + pgvector in CI with a 75-check verifier covering these guards and the role grants (A5). Still to check: the recall SQL (task 9).
 
 ```sql
 -- 0001_init.sql
@@ -253,7 +258,7 @@ CREATE TABLE agent_tokens (
   created_at    timestamptz NOT NULL DEFAULT now(),
   expires_at    timestamptz,
   revoked_at    timestamptz,
-  last_used_at  timestamptz,
+  last_used_at  timestamptz,                         -- to the minute: written at most once a minute
   CHECK (kind = 'static' OR (oauth_client_id IS NOT NULL AND grant_id IS NOT NULL
                              AND resource IS NOT NULL AND expires_at IS NOT NULL))
 );
@@ -547,8 +552,8 @@ CREATE INDEX jobs_ready_idx ON jobs (run_after) WHERE status = 'queued';
 
 -- ---------- Roles ----------
 -- nacre_app (api + worker): SELECT/INSERT on all tables; UPDATE only on agent_tokens(last_used_at,
---   revoked_at, rotated_at), oauth_clients(approved_at, disabled_at), oauth_auth_codes(used_at), extraction_runs, claims (status), belief_versions (expired_at), jobs. No DELETE anywhere.
--- nacre_migrator: DDL only, used by CI deploys. Slice 8 adds nacre_purge.
+--   revoked_at, rotated_at), oauth_clients(approved_at, disabled_at), oauth_auth_codes(used_at), extraction_runs, claims (status, status_reason), belief_versions (expired_at), jobs. No DELETE anywhere.
+-- Migrations run as the database owner from the api service; there is no separate migrator role. Slice 8 adds nacre_purge.
 ```
 
 **Why each forward-compatible choice** (*recommendation*):
@@ -804,7 +809,7 @@ This is design.md §5.4 in its simplest form. Re-opening what the claims had clo
 
 *Recommendation.* There are three tools on one Streamable HTTP endpoint, `https://<host>/mcp`.
 - Each returns `structuredContent` matching its `outputSchema`, plus the same JSON as a text block. The spec recommends the text block for backward compatibility (verified, MCP spec 2026-07-28, Tools).
-- Auth is `Authorization: Bearer nacre_<token_id>_<secret>`: either a static token (Claude Code, §8.1) or an OAuth access token (Grok Bot, §9.3). Both have the same format and go through the same verifier. A token in a URL or query string is never accepted.
+- Auth is `Authorization: Bearer nacre_<token_id>_<secret>`: either a static token (Claude Code, §8.1) or an OAuth access token (Grok Bot, §9.3). Both have the same format and go through the same verifier. A token in a URL or query string is never accepted; it is logged as `token_use_denied` (`token_in_url`) only when its secret matches, because token ids aren't secret. An OAuth access token with no expiry is rejected (`no_expiry`); only static tokens may have none.
 - Every call writes an activity entry with the agent, token, tool, argument digest, result ids and latency.
 
 ### 7.1 `remember`
@@ -1257,23 +1262,23 @@ A **Railway project named "Nacre"**, separate from Wake's project so a mistake i
 - **Reset and reuse the existing project (Decided, Oct 21, 2026).** Marcus confirmed the old Nacre project exists. It holds only an old Postgres database and an empty S3-style bucket, and he is fine resetting it for the new Nacre. **The reset is done by Marcus, or with his explicit go-ahead, at build time.** Nothing in the project is changed before then.
   - **Old Postgres:** expect to **replace it** with a fresh Postgres 18 service that has pgvector (below), not reuse it as is. Its version and extensions are unknown, and the new schema starts empty. Reuse it only if it already is Postgres 18 with `CREATE EXTENSION vector` working. Nothing from the old database is migrated.
   - **Empty bucket: remove it** at reset time (Decided). Slice 1 doesn't use it. Re-add one if a later slice needs it (for example exports or attachments).
-- **Domain: `nacre.so` (Decided, Oct 21, 2026).** Subdomains (*suggested*):
+- **Domain: `nacre.so` (Decided, Oct 21, 2026).** Subdomains (`api.` Decided Oct 24; `app.` *suggested*):
   - **`api.nacre.so`**: the MCP endpoint (`https://api.nacre.so/mcp`) and the HTTP API (`/v1/*`, used by the hooks through `NACRE_URL`).
   - **`app.nacre.so`**: the web app and every provenance link (`/events/…`, `/beliefs/…`). The bare `nacre.so` can redirect there, or serve the app itself if Marcus prefers.
   - In slice 1 both hostnames point at the **same `api` service**, since Railway allows several custom domains per service. Splitting them now keeps URLs stable if the web app moves to its own service later. The session cookie is host-only on `app.nacre.so`.
-  - **Until DNS is set**, the `api` service runs on its Railway-provided `*.up.railway.app` domain. Point `NACRE_URL`, the MCP URL and `PUBLIC_APP_URL` at it for now, then switch them over.
+  - **`api.nacre.so` is set up in task 3** (Decided, Oct 24): `.railway/railway.ts` declares it on `api`, `PUBLIC_API_URL` is `https://api.nacre.so` from the first deploy that needs it, and Marcus adds the DNS records Railway shows. There is no Railway-generated domain step. `app.nacre.so` is added the same way with the web app; until then `PUBLIC_APP_URL` is unset.
 
 It contains:
 
-- **Postgres 18 service.**
+- **Postgres 18 service** (named `nacredb` in `.railway/railway.ts` since task 2).
   - Railway's own Postgres 18 image installs `postgresql-18-pgvector` 0.8. **Verified** in `Dockerfile.18` of `railwayapp-templates/postgres-ssl`.
   - Confirm on first deploy with `CREATE EXTENSION vector;`.
   - Fallback: the marketplace `pgvector/pgvector:pg18` template. Railway's docs say its default templates don't add extensions and point to marketplace pgvector templates (verified).
-  - Turn on Railway's native **backups**, and point-in-time recovery if the plan has it. Both are documented features (verified). Test one restore before calling the slice done (A14).
-- **`api` service** (Node). Serves `/mcp`, `/v1/*` and the web app on its custom domains with TLS: `api.nacre.so` and `app.nacre.so` (suggested, above). It reaches Postgres over Railway's private network.
+  - Turn on Railway's native **backups** and point-in-time recovery. Both are documented features (verified). **PITR is on** (PR #22): Railway created a `Postgres-PITR` bucket (region `iad`) for the archive, declared in `.railway/railway.ts`. Keep retention short (§16 R4). Test one restore before calling the slice done (A14).
+- **`api` service** (Node). Serves `/mcp`, `/v1/*` and the web app on its custom domains with TLS: `api.nacre.so` and `app.nacre.so` (suggested, above). It reaches Postgres over Railway's private network. The database has no public TCP proxy: the pre-deploy step, `railway ssh --service api` and `railway connect nacredb` (which tunnels over SSH) all work privately (task 2 follow-up).
 - **`worker` service.** The same image with a different start command. It runs jobs and has no public port.
-- **Config as code:** task 1 put Railway's config in `.railway/railway.ts` (it replaced `railway.json`). Once the Postgres service exists (task 2), declare it there, or keep it outside the IaC with `railway config partials`; otherwise a plan will propose deleting the database.
-- **Variables:** `DATABASE_URL`, `TOKEN_PEPPER`, `OWNER_PASSWORD_HASH`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `PUBLIC_API_URL` (`https://api.nacre.so`), `PUBLIC_APP_URL` (`https://app.nacre.so`, the base for links), `DAILY_LLM_BUDGET_USD`. Both API keys are OpenAI keys (§12.3, Decided). They stay separate variables so the providers can diverge. Slice 1 has no Anthropic key; one is added with the Anthropic adapter (slice 2 or later). OAuth (§9.3) adds no new secret: the issuer is `PUBLIC_API_URL`, codes and tokens are hashed with `TOKEN_PEPPER` (the consent form's signing key is derived from it), and consent checks `OWNER_PASSWORD_HASH`. An optional `ALLOWED_ORIGINS` defaults to `PUBLIC_API_URL` and `PUBLIC_APP_URL`.
+- **Config as code:** task 1 put Railway's config in `.railway/railway.ts` (it replaced `railway.json`). Once the Postgres service exists (task 2), declare it there, or keep it outside the IaC with `railway config partials`; otherwise a plan will propose deleting the database. The file is **deliberately exhaustive** (PR #22): declare every resource, including ones Railway creates such as the `Postgres-PITR` bucket, and read each plan before `railway config apply`, since anything undeclared is proposed for deletion. Do not declare settings that equal Railway's defaults (PR #23): Railway stores a default as unset, so declaring it (for example `restartPolicyType: ON_FAILURE`) leaves a change in every plan that never sticks.
+- **Variables:** `DATABASE_URL`, `TOKEN_PEPPER`, `OWNER_PASSWORD_HASH`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `PUBLIC_API_URL` (`https://api.nacre.so`), `PUBLIC_APP_URL` (`https://app.nacre.so`, the base for links; both must be https when `NODE_ENV=production`, which the image sets), `DAILY_LLM_BUDGET_USD`. Both API keys are OpenAI keys (§12.3, Decided). They stay separate variables so the providers can diverge. Slice 1 has no Anthropic key; one is added with the Anthropic adapter (slice 2 or later). OAuth (§9.3) adds no new secret: the issuer is `PUBLIC_API_URL`, codes and tokens are hashed with `TOKEN_PEPPER` (the consent form's signing key is derived from it), and consent checks `OWNER_PASSWORD_HASH`. An optional `ALLOWED_ORIGINS` defaults to `PUBLIC_API_URL` and `PUBLIC_APP_URL`.
 
 Why Railway, and why this layout:
 - You already run Wake there, so it's the same deploy flow, logs and billing.
@@ -1288,13 +1293,13 @@ Why Railway, and why this layout:
 | MCP | `@modelcontextprotocol/server` v2, Streamable HTTP (adopted in task 1; the v1 `@modelcontextprotocol/sdk` stays only as a dev dependency for the backward-compatibility test) | Tracks the spec. The 2026-07-28 revision made the transport stateless (verified); the SDK handles version negotiation with clients on older revisions. |
 | HTTP and web | Hono, with Hono JSX for server-rendered pages | Small. One process serves MCP, REST and HTML. |
 | Database | `postgres` (postgres.js) with hand-written SQL | The schema *is* the design. An ORM would hide triggers and partial indexes. |
-| Migrations | dbmate, plain `.sql` files | The §4 DDL is the migration |
+| Migrations | dbmate, plain `.sql` files, run only by the `api` service's Railway pre-deploy step (`db:predeploy`: `dbmate up`, then the compiled A5 and grant verifier; either failing stops the deploy); the `worker` waits until `schema_migrations` is current (task 5) | The §4 DDL is the migration |
 | Jobs | `jobs` table + `FOR UPDATE SKIP LOCKED`, polled every second | No Redis. Enqueueing is transactional with the event insert, so no event is left without a job. |
 | Schemas | Zod, converted to JSON Schema for MCP tools and LLM structured output | One definition per shape |
 | Dates | `chrono-node`, plus `date-fns-tz` or Temporal | Code computes dates; the model doesn't |
 | LLM | A provider-agnostic `Extractor` interface; default OpenAI `gpt-6-luna` (Decided) through the Responses API with strict JSON-schema structured output (§12.3). Slice 1 ships the OpenAI adapter only. The interface stays provider-agnostic so an Anthropic Messages API adapter can be added later for the Claude Haiku 5.5 challenger | Swappable; the slice 2 lab confirms or replaces the model. Normal content only (design.md §9.8). |
 | Embeddings | A provider-agnostic `Embedder` interface; default `text-embedding-3-small` (Decided), 1,536 dims (§12.3) | Swappable; a model change is a new `belief_embeddings.model` value plus a backfill |
-| Tests | Vitest + Testcontainers (`pgvector/pgvector:pg18`) + a stub extractor | Real database in tests; deterministic extraction end to end |
+| Tests | Vitest against a Postgres service container (`pgvector/pgvector:pg18`) in CI, the same image locally, + a stub extractor (task 2 chose this over Testcontainers) | Real database in tests; deterministic extraction end to end |
 | Logs | pino JSON → Railway logs | Structured, with `request_id` |
 
 **Cost guard (Decided budget: $0.50/day for online work).** The api and worker sum today's `model_calls.cost_usd` (the day is midnight to midnight America/Chicago). That covers per-message extraction **and** embeddings, the only paid API calls in slice 1.
@@ -1357,7 +1362,7 @@ OpenAI still lists only these three embedding models. In April 2026 it corrected
 ## 13. Observability and the activity log
 
 ### 13.1 Logs, counters, alerts
-- **Request logs** (pino JSON) record `request_id`, route or tool, `agent_id`, `token_id`, status and latency.
+- **Request logs** (pino JSON) record `request_id`, route or tool, `agent_id`, `token_id`, status and latency, plus `auth_denied` (the reason) when a well-formed token is rejected. For an unknown id or a wrong secret this is the only record (§13.2).
   - **Never logged:** message content, quotes or token secrets. Content lives only in the database.
 - **`/admin` counters** (SQL over the last 24 h and 7 d):
   - events by agent and role;
@@ -1392,10 +1397,10 @@ OpenAI still lists only these three embedding models. In April 2026 it corrected
 | `belief_add` / `belief_reinforce` | Commit step |
 | `retraction` | Owner retracted something; lists the claims and versions affected |
 | `read` | Every recall (MCP, hook or web search) and every `get_provenance` call |
-| `token_create` / `token_revoke` / `token_use_denied` | Auth events, for static and OAuth tokens alike |
+| `token_create` / `token_revoke` / `token_use_denied` | Auth events, for static and OAuth tokens alike. `token_use_denied` only for a real token (id exists, secret matches); unknown ids and wrong secrets go to the request log only (§13.1) |
 | `oauth_client_register` / `oauth_consent` / `oauth_refresh_reuse` | OAuth events (§9.3): a client registered; consent approved or denied; a rotated refresh token or used code came back, so the grant was revoked |
 | `owner_login` | Web login |
-| `system` | Self-audit, budget stop, migrations |
+| `system` | Self-audit, budget stop, migrations (the migrate entry lists `applied`, plus `unrecorded`: versions applied earlier that no entry named yet) |
 
 ---
 
@@ -1425,7 +1430,7 @@ Every box is checked on the deployed Railway environment unless the test says CI
 - [ ] **A4. Quote check (CI).**
   - A stub extractor returns one claim whose quote isn't in the message, and one whose quote is only in a context event. Both are `held` with `quote_not_found`, no belief exists, and an `extraction_error` is logged.
   - A quote that differs only by curly quotes or spacing verifies as `normalized`, and the stored quote equals the source substring.
-- [ ] **A5. Append-only (CI and prod).** As `nacre_app`:
+- [ ] **A5. Append-only (CI and prod).** In prod, the `api` pre-deploy step runs these checks on every deploy and a failure stops it. As `nacre_app`:
   - `UPDATE` and `DELETE` on `events`, `event_content`, `evidence_spans`, `activity_log` and `belief_version_claims` fail;
   - `UPDATE belief_versions` fails except a single `expired_at` close;
   - `UPDATE claims` fails except on `status`.
@@ -1470,7 +1475,7 @@ Every box is checked on the deployed Railway environment unless the test says CI
   - `recall` p95 under 800 ms;
   - `/v1/hooks/user-prompt` round trip p95 under 1.5 s;
   - event-to-belief p95 under 30 s.
-- [ ] **A14. Backup restore.** Restore the latest Railway backup into a scratch database and run the self-audit against it. It passes.
+- [ ] **A14. Backup restore.** Restore the latest Railway backup into a scratch database and run the self-audit against it. It passes. Do the same with a point-in-time restore from the PITR archive.
 
 **Privacy**
 - [ ] **A16. Secret redaction (CI and prod).**
@@ -1520,7 +1525,7 @@ That is about 27–37 working days in total. Tasks 3b and 6 and parts of task 13
 | R1 | **Grok Bot doesn't call `recall` or `remember` when it should** (model-mediated) | High / High | Tested instructions (§9.2, task 12); tool descriptions also say when to call; A1 and A2 rerun weekly. Slice 5 adds a backstop (native intake). |
 | R2 | **MCP client/spec mismatch**: the 2026-07-28 revision is stateless, and clients may lag | Medium / High | Official SDK with version negotiation; the task 1 spike with both real clients comes before other work. The spike found Grok Bot supports only OAuth, which led to §9.3. |
 | R3 | **Duplicate beliefs** from free-text attribute names | High / Medium | Visible in the list; the prompt asks for plain names; the slice 2 lab measures it; slices 3 and 4 fix it |
-| R4 | **Plaintext content and backups before slice 8**, which a purge can't reach | Certain / Medium | Accepted (§17 Q1: keys deferred to slice 8). Separate `event_content` table; secrets stripped before storage (§17 Q2, A16); short backup retention |
+| R4 | **Plaintext content and backups before slice 8**, which a purge can't reach | Certain / Medium | Accepted (§17 Q1: keys deferred to slice 8). Separate `event_content` table; secrets stripped before storage (§17 Q2, A16); short backup and PITR retention |
 | R5 | **Memory poisoning** via pasted text or tool output | Medium / High | Assistant turns not extracted; tainted sessions held; recall framed as data; every memory shows its source; retract exists |
 | R5a | **Secret redaction misses or over-matches** (a new key format slips through; a harmless random string is removed) | Medium / Medium | Pattern list plus an entropy check; A16 in CI; the `[REDACTED:<kind>]` marker shows where text was cut; a missed secret still waits for slice 8 purge |
 | R6 | **Hook latency slows typing** | Medium / Medium | 2.5 s client cap; p95 target under 1.5 s; hooks always exit 0 and spool on failure |

@@ -55,13 +55,23 @@ describe.skipIf(!databaseUrl)('database: migrations, roles and append-only guard
   });
 
   it('leaves no rows behind', async () => {
-    const counts = () =>
-      sql<{ t: string; n: number }[]>`
-        SELECT t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM %I', t), false, true, '')))[1]::text::int AS n
-        FROM unnest(${sql.array([...TABLES])}::text[]) AS t`;
-    const before = await counts();
-    await verifySchemaGuards(sql);
-    expect(await counts()).toEqual(before);
+    // Its own database: other test files write to the shared one while this runs.
+    const name = scratchDatabaseName('rows');
+    const url = withDatabase(adminUrl, name);
+    await dbmate(url, 'up');
+    const own = createSql(url, { max: 1 });
+    try {
+      const counts = () =>
+        own<{ t: string; n: number }[]>`
+          SELECT t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM %I', t), false, true, '')))[1]::text::int AS n
+          FROM unnest(${[...TABLES]}::text[]) AS t`;
+      const before = await counts();
+      await verifySchemaGuards(own);
+      expect(await counts()).toEqual(before);
+    } finally {
+      await own.end();
+      await dropDatabase(adminUrl, name);
+    }
   });
 
   describe('the checks bite', () => {

@@ -7,7 +7,11 @@ Hand-written [dbmate](https://github.com/amacneil/dbmate) `.sql` files (`-- migr
 | `20261023000000_init.sql`  | The spec §4 DDL, verbatim: `vector`, the guard functions, the 18 tables, indexes, append-only triggers and the `personal` scope |
 | `20261023000100_roles.sql` | The `nacre_app` role (created `NOLOGIN`, no password) and its grants                                                            |
 
-Scripts (all read `MIGRATION_DATABASE_URL`, an **owner** URL, from the environment or `.env`): `pnpm db:migrate`, `pnpm db:status`, `pnpm db:rollback` (the latest migration only), `pnpm db:verify` (the A5 and grant checks in `src/audit/schema-guards.ts`; one PASS/FAIL line each, exit 1 on any FAIL, no rows left behind), and `pnpm db:predeploy` (migrate, then the compiled checks: what Railway runs; needs `pnpm build` first).
+Scripts (all read `MIGRATION_DATABASE_URL`, an **owner** URL, from the environment or `.env`):
+- `pnpm db:migrate`: `nacre db migrate`, which runs `dbmate up` and writes one `system` activity entry (actor `system`, `details.applied` = the versions) when it applied something, and none when nothing was pending.
+- `pnpm db:status`, `pnpm db:rollback` (the latest migration only): plain dbmate.
+- `pnpm db:verify`: the A5 and grant checks in `src/audit/schema-guards.ts`. One PASS/FAIL line each, exit 1 on any FAIL, no rows left behind.
+- `pnpm db:predeploy`: what Railway runs, from the compiled `dist/` (run `pnpm build` first). `nacre db migrate`, then `nacre db app-login`, then the checks.
 
 Rules for new migrations:
 - Create one with `pnpm exec dbmate --migrations-dir ./migrations new <name>`. Never edit a migration that has been applied anywhere; add a new one.
@@ -21,10 +25,11 @@ Rules for new migrations:
 `.railway/railway.ts` declares the database (`nacredb`, Railway's `postgres-ssl:18` image with pgvector 0.8) and gives `api` the owner URL as `MIGRATION_DATABASE_URL`. Only Marcus applies it (done Oct 23, 2026: plan, apply, backups on). The database is **private**: nothing below needs public access, so leave its TCP proxy off.
 
 **Every `api` deploy** runs `npm run db:predeploy` before the new version starts, inside Railway's private network and as the database owner:
-1. `dbmate up` applies any pending migrations (each in its own transaction). Merging a migration to `main` runs it.
-2. `node dist/audit/verify-cli.js` runs the A5 and grant checks: one `PASS`/`FAIL` line each in the deploy log, in a transaction that is rolled back. The only trace is that the `jobs` id sequence advances by one.
+1. `node dist/cli/main.js db migrate`: `dbmate up` applies any pending migrations (each in its own transaction), plus a `system` activity entry when something was applied. Merging a migration to `main` runs it.
+2. `node dist/cli/main.js db app-login`: when `NACRE_APP_DB_PASSWORD` is set, `ALTER ROLE nacre_app WITH LOGIN PASSWORD` with a SCRAM-SHA-256 verifier computed in Node, the way psql's `\password` does. The password itself is never sent to Postgres or logged, and the role is set on every deploy, so rotating the variable rotates the login. When it is unset, the role is left alone (one line says so).
+3. `node dist/audit/verify-cli.js` runs the A5 and grant checks: one `PASS`/`FAIL` line each in the deploy log, in a transaction that is rolled back. The only trace is that the `jobs` id sequence advances by one. It still passes with `LOGIN` on.
 
-If either step fails, Railway doesn't proceed with the deploy, and the previous version keeps serving. Railway puts no time limit on pre-deploy commands by default: set **Pre-deploy Timeout** on `api` (Settings, once the command shows there) to about 300 seconds, so a hung run fails rather than holding the deploy.
+If any step fails, Railway doesn't proceed with the deploy, and the previous version keeps serving. Railway puts no time limit on pre-deploy commands by default: set **Pre-deploy Timeout** on `api` (Settings, once the command shows there) to about 300 seconds, so a hung run fails rather than holding the deploy.
 
 **Run the checks on demand** inside the running `api` container, over the private network, with the URL it already has:
 
@@ -34,4 +39,4 @@ railway ssh --service api -- node dist/audit/verify-cli.js
 
 (`railway ssh` needs an SSH key registered with Railway; the CLI offers to add one the first time.) For a psql shell, `railway connect nacredb` tunnels over SSH when the database has no public proxy.
 
-**Not yet:** `nacre_app` stays `NOLOGIN` until task 3, which is the first code that connects as it. Task 3 can set its password from a Railway variable in this same pre-deploy step, so nobody needs to open psql.
+**`nacre_app`'s login** comes from `NACRE_APP_DB_PASSWORD` in step 2, so nobody opens psql to set it. The api connects with `DATABASE_URL` as `nacre_app` (README, "Railway steps for task 3").

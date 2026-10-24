@@ -10,8 +10,13 @@
 // WARNING: in a single-file project, resources missing from this file are planned for deletion.
 // This file is deliberately exhaustive (decided Oct 24, 2026): declare every resource, including
 // ones Railway creates itself (like the PITR bucket below), and read each plan before applying.
-// Renaming `nacredb` below would plan the database's deletion, so don't. The database stays private: nothing here or in the docs needs a
-// public TCP proxy (pre-deploy and `railway ssh` both use the private network).
+// Renaming `nacredb` below would plan the database's deletion, so don't. The database stays
+// private: nothing here or in the docs needs a public TCP proxy (pre-deploy and `railway ssh` both
+// use the private network).
+//
+// Secrets are `preserve()`: Marcus sets their values in the dashboard (README, "Railway steps for
+// task 3"), and preserve() keeps them but never creates one, so set them before the first deploy
+// that needs them. Variables missing from this file are planned for deletion like resources.
 import { bucket, database, defineRailway, github, preserve, project, service } from 'railway/iac';
 
 export default defineRailway(() => {
@@ -37,8 +42,9 @@ export default defineRailway(() => {
     deploy: {
       startCommand: 'node dist/api/main.js',
       // Before each deploy, over the private network and as the database owner: apply pending
-      // migrations, then run the A5 / grant checks (src/audit). Either failing stops the deploy, so
-      // merging a migration runs it, and a broken append-only guard never ships.
+      // migrations (`nacre db migrate`, with a `system` activity entry), give nacre_app its login
+      // from NACRE_APP_DB_PASSWORD, then run the A5 / grant checks (src/audit). Any failure stops
+      // the deploy, so merging a migration runs it, and a broken append-only guard never ships.
       preDeployCommand: ['npm run db:predeploy'],
       healthcheckPath: '/healthz',
       healthcheckTimeout: 60,
@@ -47,13 +53,22 @@ export default defineRailway(() => {
       restartPolicyMaxRetries: 5,
       drainingSeconds: 15,
     },
-    // PORT is injected by Railway. Custom domains (api.nacre.so, app.nacre.so) are added with DNS.
+    // MCP and the HTTP API (spec §12.1). Applying this creates the domain on Railway; the CNAME and
+    // TXT records it then shows go in nacre.so's DNS (Marcus). With no port the SDK targets 8080,
+    // the PORT Railway injects (api logs "listening" on 8080). app.nacre.so is added with the web app.
+    domains: ['api.nacre.so'],
     env: {
       LOG_LEVEL: 'info',
-      NACRE_DEV_TOKEN: preserve(),
-      // The owner URL, for migrations only. The runtime DATABASE_URL (as nacre_app) arrives with
-      // task 3, after Marcus gives nacre_app a password on Railway.
+      // The owner URL: pre-deploy steps only (migrations, the nacre_app login, the checks).
       MIGRATION_DATABASE_URL: db.env.DATABASE_URL,
+      // nacre_app's password; the pre-deploy step applies it, so rotating it rotates the login.
+      NACRE_APP_DB_PASSWORD: preserve(),
+      // The runtime connection, as nacre_app on nacredb's private host (references the password).
+      DATABASE_URL: preserve(),
+      // HMAC key for token secrets. Changing it invalidates every token.
+      TOKEN_PEPPER: preserve(),
+      // The OAuth issuer and /mcp resource base: https://api.nacre.so.
+      PUBLIC_API_URL: preserve(),
     },
   });
 

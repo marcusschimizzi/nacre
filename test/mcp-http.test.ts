@@ -1,26 +1,27 @@
-import { randomBytes } from 'node:crypto';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { Client as V1Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport as V1Transport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp } from '../src/api/app.js';
-import { type RunningServer, startServer } from '../src/api/server.js';
-import { createLogger } from '../src/shared/logger.js';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { startTestApp, staticToken, type TestApp, testAgent } from './helpers/app.js';
 
-const token = randomBytes(32).toString('base64url');
-const logLines: string[] = [];
+// The api now checks tokens against the database, so these run only with TEST_DATABASE_URL.
+const appDatabaseUrl = inject('appDatabaseUrl');
+const skip = !appDatabaseUrl;
 
-let server: RunningServer;
+let app: TestApp;
 let mcpUrl: URL;
+let token: string;
+const agentId = testAgent('mcp');
 
 beforeAll(async () => {
-  const log = createLogger('nacre-api-test', 'debug', { write: (line) => logLines.push(line) });
-  server = await startServer(createApp({ token, log }), 0, '127.0.0.1');
-  mcpUrl = new URL(`http://127.0.0.1:${server.port}/mcp`);
+  if (skip) return;
+  app = await startTestApp(appDatabaseUrl);
+  mcpUrl = app.mcpUrl;
+  token = (await staticToken(app, agentId)).token;
 });
 
 afterAll(async () => {
-  await server.close();
+  await app?.close();
 });
 
 const authHeaders = (value = token) => ({ Authorization: `Bearer ${value}` });
@@ -49,20 +50,20 @@ async function expectPing(client: PingClient) {
 
   const result = await client.callTool({ name: 'ping', arguments: {} });
   expect(result.isError).toBeFalsy();
-  expect(result.structuredContent).toMatchObject({ pong: true });
+  expect(result.structuredContent).toMatchObject({ pong: true, agent_id: agentId });
   const serverTime = (result.structuredContent as { server_time: string }).server_time;
   expect(Number.isNaN(Date.parse(serverTime))).toBe(false);
 }
 
-describe('GET /healthz', () => {
-  it('returns 200 without auth', async () => {
+describe.skipIf(skip)('GET /healthz', () => {
+  it('returns 200 without auth, with the database reachable', async () => {
     const res = await fetch(new URL('/healthz', mcpUrl));
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ status: 'ok', service: 'nacre-api' });
+    expect(await res.json()).toMatchObject({ status: 'ok', service: 'nacre-api', db: 'ok' });
   });
 });
 
-describe('/mcp auth', () => {
+describe.skipIf(skip)('/mcp auth', () => {
   const initialize = {
     jsonrpc: '2.0',
     id: 1,
@@ -114,12 +115,12 @@ describe('/mcp auth', () => {
   });
 
   it('never logs the token', () => {
-    expect(logLines.length).toBeGreaterThan(0);
-    expect(logLines.join('')).not.toContain(token);
+    expect(app.logLines.length).toBeGreaterThan(0);
+    expect(app.logLines.join('')).not.toContain(token);
   });
 
   it('logs the shape of the Authorization header, so a client that drops it is visible', () => {
-    const shapes = logLines
+    const shapes = app.logLines
       .map((line) => JSON.parse(line) as { msg?: string; path?: string; auth?: string })
       .filter((entry) => entry.msg === 'request' && entry.path === '/mcp')
       .map((entry) => entry.auth);
@@ -127,7 +128,7 @@ describe('/mcp auth', () => {
   });
 });
 
-describe('MCP over Streamable HTTP', () => {
+describe.skipIf(skip)('MCP over Streamable HTTP', () => {
   it('2026-07-28 (stateless, no initialize): lists and calls ping', async () => {
     const client = await connectV2({ versionNegotiation: { mode: { pin: '2026-07-28' } } });
     expect(client.getNegotiatedProtocolVersion()).toBe('2026-07-28');

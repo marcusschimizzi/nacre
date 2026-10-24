@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { TestProject } from 'vitest/node';
+import { createSql } from '../src/shared/db/sql.js';
 import { dbmate, dropDatabase, scratchDatabaseName, withDatabase } from './helpers/db.js';
 
 declare module 'vitest' {
@@ -8,6 +9,8 @@ declare module 'vitest' {
     databaseUrl: string;
     /** The TEST_DATABASE_URL the run started from ('' when unset). */
     adminDatabaseUrl: string;
+    /** The same scratch database as nacre_app, which app and CLI tests use ('' when skipped). */
+    appDatabaseUrl: string;
   }
 }
 
@@ -31,12 +34,24 @@ export default async function setup(project: TestProject) {
         '  export TEST_DATABASE_URL=postgres://postgres@localhost:54329/postgres?sslmode=disable\n',
     );
     project.provide('databaseUrl', '');
+    project.provide('appDatabaseUrl', '');
     return;
   }
 
   const name = scratchDatabaseName('run');
   const url = withDatabase(adminUrl, name);
   await dbmate(url, 'up');
+  // App and CLI tests connect as nacre_app, like production. LOGIN only, no password: test clusters
+  // use trust auth. (On Railway the pre-deploy step sets LOGIN with NACRE_APP_DB_PASSWORD.)
+  const admin = createSql(url, { max: 1 });
+  try {
+    await admin`ALTER ROLE nacre_app LOGIN`;
+  } finally {
+    await admin.end();
+  }
+  const appUrl = new URL(url);
+  appUrl.username = 'nacre_app';
   project.provide('databaseUrl', url);
+  project.provide('appDatabaseUrl', appUrl.href);
   return () => dropDatabase(adminUrl, name);
 }
