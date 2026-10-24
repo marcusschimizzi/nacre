@@ -330,7 +330,8 @@ describe.skipIf(!appDatabaseUrl)('POST /v1/events', () => {
   describe('secrets (A16)', () => {
     const s = fakeSecrets();
     const password = `hunter2${'hunter2'}`;
-    const secrets = [s.skKey, s.jwt, password, s.githubToken];
+    const dbPassword = `correct${'horse'}battery`;
+    const secrets = [s.skKey, s.jwt, password, s.githubToken, dbPassword];
     const content = `My preferred package manager is pnpm. key ${s.skKey} jwt ${s.jwt} password=${password}`;
 
     /** Every place a secret could have landed, as text. */
@@ -348,7 +349,10 @@ describe.skipIf(!appDatabaseUrl)('POST /v1/events', () => {
       const res = await postEvent(
         app,
         token,
-        validEvent({ content, metadata: { note: `token is ${s.githubToken}`, cwd: '/r' } }),
+        validEvent({
+          content,
+          metadata: { note: `token is ${s.githubToken}`, cwd: '/r', DB_PASSWORD: dbPassword },
+        }),
       );
       expect(res.status).toBe(201);
       const responseText = await res.text();
@@ -366,9 +370,13 @@ describe.skipIf(!appDatabaseUrl)('POST /v1/events', () => {
       expect(row?.redactions).toEqual([
         { kind: 'api_key', count: 2 },
         { kind: 'jwt', count: 1 },
-        { kind: 'password', count: 1 },
+        { kind: 'password', count: 2 },
       ]);
-      expect(row?.metadata).toEqual({ note: 'token is [REDACTED:api_key]', cwd: '/r' });
+      expect(row?.metadata).toEqual({
+        note: 'token is [REDACTED:api_key]',
+        cwd: '/r',
+        DB_PASSWORD: '[REDACTED:password]',
+      });
       expect(row?.content_hash.equals(createHash('sha256').update(row.body).digest())).toBe(true);
 
       const [act] = await app.sql<{ details: { redactions: unknown } }[]>`

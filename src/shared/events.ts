@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type Json, logActivity } from './activity.js';
 import type { Sql } from './db/sql.js';
 import { newId } from './ids.js';
-import { mergeRedactions, type Redaction, redactSecrets } from './redact.js';
+import { mergeRedactions, redactJson, redactSecrets } from './redact.js';
 
 /**
  * Event ingest (spec §5.1, §6.2): validate a client's event, strip secrets, hash, and write the
@@ -172,20 +172,6 @@ export function timeZoneOrNull(tz: string | null | undefined): string | null {
   }
 }
 
-/** Redact the string values (not the keys) of a JSON value, recursively. */
-function redactJson(value: Json, found: Redaction[][]): Json {
-  if (typeof value === 'string') {
-    const result = redactSecrets(value);
-    found.push(result.redactions);
-    return result.text;
-  }
-  if (Array.isArray(value)) return value.map((v) => redactJson(v, found));
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactJson(v, found)]));
-  }
-  return value;
-}
-
 export interface IngestCaller {
   agentId: string;
   tokenId: string;
@@ -214,9 +200,8 @@ export async function ingestEvent(
   const observedAt = new Date(input.observed_at);
   // NFC first, so offsets are stable; then secrets out, before anything is hashed or stored.
   const content = redactSecrets(input.content.normalize('NFC'));
-  const metadataRedactions: Redaction[][] = [];
-  const metadata = redactJson(input.metadata ?? {}, metadataRedactions);
-  const redactions = mergeRedactions(content.redactions, ...metadataRedactions);
+  const metadata = redactJson(input.metadata ?? {});
+  const redactions = mergeRedactions(content.redactions, metadata.redactions);
   const hash = contentHash(content.text);
   const flags = clockFlags(observedAt, receivedAt);
   const sensitivity = input.sensitivity_hint ?? 'normal';
@@ -236,7 +221,7 @@ export async function ingestEvent(
               ${observedAt}, ${timeZoneOrNull(input.observed_tz)}, ${receivedAt}, ${flags},
               ${hash}, 'sha256', 'text/plain', ${input.scope_hint ?? null}, 'personal',
               ${sensitivity}, ${input.role === 'user' ? 'user_typed' : 'agent_inferred'},
-              ${json(redactions.map((r) => ({ ...r })))}, ${json(metadata)})
+              ${json(redactions.map((r) => ({ ...r })))}, ${json(metadata.value)})
       ON CONFLICT (agent_id, client_event_id) DO NOTHING
       RETURNING event_id`;
 

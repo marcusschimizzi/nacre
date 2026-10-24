@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { isHighEntropy, REDACTION_KINDS, redactSecrets } from '../src/shared/redact.js';
+import { isHighEntropy, REDACTION_KINDS, redactJson, redactSecrets } from '../src/shared/redact.js';
 import { mintToken } from '../src/shared/tokens.js';
 import { fakeSecrets, randomToken } from './helpers/events.js';
 
@@ -187,6 +187,62 @@ describe('redactSecrets: properties', () => {
       expect(result.redactions).toEqual(count > 0 ? [{ kind: 'jwt', count }] : []);
     }
     expect(hits).toBeGreaterThan(100);
+  });
+});
+
+describe('redactJson (metadata)', () => {
+  const secret = `hunter2${'hunter2'}`;
+
+  it('replaces a value under a password-style key, which the text rule cannot see', () => {
+    const result = redactJson({
+      password: secret,
+      DB_PASSWORD: 'correct horse battery',
+      nested: { client_secret: 'abcd1234efgh', list: { token: [secret, 'x'] } },
+    });
+    expect(result.value).toEqual({
+      password: '[REDACTED:password]',
+      DB_PASSWORD: '[REDACTED:password]',
+      nested: {
+        client_secret: '[REDACTED:password]',
+        list: { token: ['[REDACTED:password]', 'x'] },
+      },
+    });
+    expect(result.redactions).toEqual([{ kind: 'password', count: 4 }]);
+  });
+
+  it('runs the text rules on every string value, and keeps the keys', () => {
+    const s = fakeSecrets();
+    const result = redactJson({
+      note: `key ${s.skKey}`,
+      [s.awsKeyId]: 1,
+      n: 5,
+      ok: true,
+      nil: null,
+    });
+    expect(result.value).toEqual({
+      note: 'key [REDACTED:api_key]',
+      [s.awsKeyId]: 1,
+      n: 5,
+      ok: true,
+      nil: null,
+    });
+    expect(result.redactions).toEqual([{ kind: 'api_key', count: 1 }]);
+  });
+
+  it('counts a key under `token` once, as api_key', () => {
+    const result = redactJson({ token: fakeSecrets().skKey });
+    expect(result.value).toEqual({ token: '[REDACTED:api_key]' });
+    expect(result.redactions).toEqual([{ kind: 'api_key', count: 1 }]);
+  });
+
+  it('leaves short values and look-alike keys alone', () => {
+    const value = { password: 'abc', mypassword: secret, passwordHint: secret, cwd: '/home/u' };
+    expect(redactJson(value)).toEqual({ value, redactions: [] });
+  });
+
+  it('is idempotent', () => {
+    const once = redactJson({ password: secret, note: fakeSecrets().jwt }).value;
+    expect(redactJson(once)).toEqual({ value: once, redactions: [] });
   });
 });
 

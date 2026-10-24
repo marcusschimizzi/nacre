@@ -1,3 +1,5 @@
+import type { Json } from './activity.js';
+
 /**
  * Secret redaction at ingest (spec §6.2, §17 Q2): pasted secrets are replaced with
  * `[REDACTED:<kind>]` before the body is hashed or stored, so no secret reaches the database, a
@@ -218,6 +220,49 @@ export function redactSecrets(text: string): RedactResult {
     );
   }
   return { text: out, redactions: toRedactions(counts) };
+}
+
+// The password rule's keys as a whole JSON key (`password`, `DB_PASSWORD`, `client_secret`), matched
+// the way the rule matches them in text.
+const PASSWORD_KEY = new RegExp(`(?<![A-Za-z0-9])(?:${PASSWORD_KEYS})$`, 'i');
+
+export interface RedactJsonResult {
+  value: Json;
+  redactions: Redaction[];
+}
+
+/**
+ * Redact the string values of a JSON value (`metadata`), recursively; keys are kept. A string under a
+ * password-style key is the secret itself, so it is replaced whole as `password` (4+ characters, as
+ * for a quoted value in text) unless another rule already caught it: the text rule can't see it,
+ * because the key and the value are separate strings.
+ */
+export function redactJson(value: Json): RedactJsonResult {
+  const found: Redaction[][] = [];
+  const walk = (v: Json, key: string | undefined): Json => {
+    if (typeof v === 'string') {
+      const result = redactSecrets(v);
+      found.push(result.redactions);
+      if (
+        key !== undefined &&
+        PASSWORD_KEY.test(key) &&
+        result.text.length >= 4 &&
+        !result.text.startsWith('[REDACTED:')
+      ) {
+        found.push([{ kind: 'password', count: 1 }]);
+        return marker('password');
+      }
+      return result.text;
+    }
+    // An array's items belong to the key that holds it.
+    if (Array.isArray(v)) return v.map((item) => walk(item, key));
+    if (v !== null && typeof v === 'object') {
+      return Object.fromEntries(Object.entries(v).map(([k, item]) => [k, walk(item, k)]));
+    }
+    return v;
+  };
+  const redacted = walk(value, undefined);
+  return { value: redacted, redactions: mergeRedactions(...found) };
 }
 
 /** Sums several redaction lists kind by kind (the content's and the metadata's). */
