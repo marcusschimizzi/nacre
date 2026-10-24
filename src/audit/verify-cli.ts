@@ -3,8 +3,13 @@
 // (`npm run db:predeploy`, compiled as dist/audit/verify-cli.js), so a deploy stops if a guard is broken.
 // Needs MIGRATION_DATABASE_URL, an owner (admin) URL that is never printed. Leaves no rows behind:
 // everything runs in one transaction that is rolled back (only the jobs id sequence advances).
+import { existsSync } from 'node:fs';
 import { createSql } from '../shared/db/sql.js';
 import { verifySchemaGuards } from './schema-guards.js';
+
+// Read .env like dbmate does, so `pnpm db:predeploy` works locally (already-set variables win).
+// The image has no .env, so on Railway this is a no-op and the deploy log stays clean.
+if (existsSync('.env')) process.loadEnvFile('.env');
 
 const url = process.env.MIGRATION_DATABASE_URL;
 if (!url) {
