@@ -41,7 +41,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      # What Railway runs before each api deploy: migrations, then the compiled verifier.
-      - run: pnpm db:predeploy
+      # What Railway runs before each api deploy: migrate, the nacre_app login, then the verifier.
+      # A throwaway password made here, so the login step runs without one in the repo.
+      - run: NACRE_APP_DB_PASSWORD="$(openssl rand -hex 32)" pnpm db:predeploy
       # The same checks through tsx, as `pnpm db:verify` runs them locally.
       - run: pnpm db:verify
