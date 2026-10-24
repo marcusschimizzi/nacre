@@ -109,6 +109,15 @@ describe.skipIf(!appDatabaseUrl)('A11: tokens, the token-in-URL rule and Origin 
     ]);
   });
 
+  it('<real id, wrong secret> in the header → 401, request log only (ids are not secret)', async () => {
+    const wrongSecret = `nacre_${tokenId}_${'C'.repeat(43)}`;
+    seenTokens.push(wrongSecret);
+    const res = await post(bearer(wrongSecret));
+    expect(res.status).toBe(401);
+    expect(await deniedRows(res)).toHaveLength(0);
+    expect((await requestLog(res))?.auth_denied).toBe('bad_secret');
+  });
+
   it('?access_token=<real id, wrong secret> → 401, not attributed (ids are not secret)', async () => {
     const wrongSecret = `nacre_${tokenId}_${'B'.repeat(43)}`;
     seenTokens.push(wrongSecret);

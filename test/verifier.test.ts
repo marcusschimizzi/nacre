@@ -124,7 +124,7 @@ describe.skipIf(!appDatabaseUrl)('verifyToken (spec §7, §9.3)', () => {
       expect(warnings).toEqual(['last_used_at not updated']);
     });
 
-    it('bad secret → bad_secret (row exists, so it is attributed)', async () => {
+    it('bad secret → bad_secret, with the row it names (the middleware logs it to the request log only)', async () => {
       const parsed = parseToken(staticTok);
       const wrong = `nacre_${parsed?.tokenId}_${'A'.repeat(43)}`;
       const result = await verify(wrong);

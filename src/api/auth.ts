@@ -203,7 +203,7 @@ export interface TokenAuthOptions extends VerifierDeps {
 
 /**
  * Hono middleware: verify the bearer token, reject tokens in the URL, log `token_use_denied` for
- * rejected tokens whose id exists, and put the caller on the context. Every failure is the same 401.
+ * rejected real tokens (the secret matched), and put the caller on the context. Every failure is the same 401.
  */
 export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> {
   const { route, log } = options;
@@ -215,8 +215,9 @@ export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> 
     agentId: string | null,
   ) => {
     c.set('authDenied', reason);
-    // Activity rows are permanent and anyone can send random well-formed tokens, so a token id with
-    // no row (unknown_token, or one in the URL) stays in the request log only.
+    // Activity rows are permanent, and anyone can send a well-formed token with a made-up id, or a
+    // real id (ids aren't secret) with a made-up secret. Those (unknown_token, bad_secret, and the
+    // same in the URL) stay in the request log only; callers pass null ids for them.
     if (tokenId === null || agentId === null) return;
     try {
       await logActivity(options.sql, {
@@ -254,7 +255,10 @@ export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> 
 
     const result = await verifyToken(options, c.req.header('authorization'), route);
     if (!result.ok) {
-      if (result.wellFormed) await denied(c, result.reason, result.tokenId, result.agentId);
+      if (result.wellFormed) {
+        const real = result.reason !== 'unknown_token' && result.reason !== 'bad_secret';
+        await denied(c, result.reason, real ? result.tokenId : null, real ? result.agentId : null);
+      }
       return unauthorized(c, route);
     }
     c.set('auth', result.auth);
