@@ -129,6 +129,18 @@ describe.skipIf(!adminUrl)('worker against Postgres, as nacre_app', () => {
       expect(job.locked_at?.getTime()).toBe(later.getTime());
     });
 
+    it('a job another worker holds locked is skipped at once, not waited for', async () => {
+      const [e = ''] = await seedEvents(s, [{ content: PNPM }]);
+      const later = new Date(Date.now() + 1000);
+      let claimed: unknown = 'not run';
+      await sql.begin(async (tx) => {
+        await tx`SELECT 1 FROM jobs WHERE ref_id = ${e} FOR UPDATE`;
+        const blocked = new Promise((resolve) => setTimeout(() => resolve('blocked'), 2000));
+        claimed = await Promise.race([claimJob(sql, later), blocked]);
+      });
+      expect(claimed).toBeNull();
+    });
+
     it('the claim statement uses FOR UPDATE SKIP LOCKED', () => {
       expect(readFileSync('src/worker/jobs.ts', 'utf8')).toMatch(/FOR UPDATE SKIP LOCKED/);
     });
