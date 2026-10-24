@@ -26,4 +26,5 @@ Nacre v3 is built task by task from `slices/slice-1-spec.md` §15 (and later sli
 | 01 | [Fresh start and MCP spike](task-01-fresh-start-and-mcp-spike.md) | Done (PR #19, merged Oct 23, 2026) |
 | 02 | [Schema, roles and append-only triggers](task-02-schema-roles-and-triggers.md) | Done (PR #20, merged Oct 23, 2026) |
 | 03 | [Token CLI, auth middleware, activity log and Origin check](task-03-tokens-auth-and-origin.md) | Done (PR #25, merged Oct 24, 2026) |
-| 03b | [Minimal OAuth 2.1 for MCP](task-03b-oauth.md) | In review |
+| 03b | [Minimal OAuth 2.1 for MCP](task-03b-oauth.md) | Done (PR #26, merged Oct 24, 2026) |
+| 03c | [OAuth follow-ups from the live test](task-03c-oauth-followups.md) | In progress |
