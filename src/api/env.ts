@@ -20,5 +20,9 @@ export interface AppEnv {
     auth?: AuthContext;
     /** Why a token was rejected, for the request log (unknown ids are logged nowhere else). */
     authDenied?: DenyReason;
+    /** OAuth step and outcome for the request log (`register:ok`, `token:refresh`, …). */
+    oauth?: string;
+    /** An unknown `client_id` that is an https URL: how a CIMD-first client would show up. */
+    oauthClientIdIsUrl?: boolean;
   };
 }

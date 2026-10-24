@@ -63,7 +63,10 @@ export async function create(
   }
 }
 
-/** `nacre token revoke <token_id>`. Exit 0 when revoked or already revoked; 1 when not found. */
+/**
+ * `nacre token revoke <token_id>`: an OAuth token revokes its whole grant. Exit 0 when revoked or already
+ * revoked; 1 when not found.
+ */
 export async function revoke(argv: string[], databaseUrl: string): Promise<number> {
   const [tokenId] = argv;
   if (!tokenId || !TOKEN_ID.test(tokenId))
@@ -71,13 +74,16 @@ export async function revoke(argv: string[], databaseUrl: string): Promise<numbe
   const sql = createSql(databaseUrl, { max: 1 });
   try {
     const result = await revokeToken(sql, tokenId);
+    const grant = result.grantId ? ` (grant ${result.grantId})` : '';
     const messages = {
-      revoked: `revoked ${tokenId}`,
-      already_revoked: `${tokenId} was already revoked; nothing changed`,
+      revoked: result.grantId
+        ? `revoked grant ${result.grantId}: ${result.revoked} token(s), including ${tokenId}`
+        : `revoked ${tokenId}`,
+      already_revoked: `${tokenId}${grant} was already revoked; nothing changed`,
       not_found: `no token ${tokenId}`,
     };
-    console.error(messages[result]);
-    return result === 'not_found' ? 1 : 0;
+    console.error(messages[result.status]);
+    return result.status === 'not_found' ? 1 : 0;
   } finally {
     await sql.end();
   }
@@ -90,11 +96,12 @@ export async function list(databaseUrl: string): Promise<void> {
     const rows = await listTokens(sql);
     const day = (d: Date | null) => (d ? d.toISOString().replace(/\.\d+Z$/, 'Z') : '-');
     const table = [
-      ['token_id', 'agent', 'kind', 'created', 'last_used', 'expires', 'revoked'],
+      ['token_id', 'agent', 'kind', 'grant', 'created', 'last_used', 'expires', 'revoked'],
       ...rows.map((r) => [
         r.token_id,
         r.agent_id,
         r.kind,
+        r.grant_id ?? '-',
         day(r.created_at),
         day(r.last_used_at),
         day(r.expires_at),

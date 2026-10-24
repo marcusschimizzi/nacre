@@ -2,12 +2,14 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { parseToken, revokeToken } from '../src/shared/tokens.js';
 import {
+  CHALLENGE,
   PUBLIC_API_URL,
   startTestApp,
   staticToken,
   type TestApp,
   testAgent,
 } from './helpers/app.js';
+import { connect } from './helpers/oauth.js';
 
 const appDatabaseUrl = inject('appDatabaseUrl');
 
@@ -58,10 +60,12 @@ describe.skipIf(!appDatabaseUrl)('A11: tokens, the token-in-URL rule and Origin 
       SELECT actor, token_id, details FROM activity_log
       WHERE kind = 'token_use_denied' AND request_id = ${res.headers.get('x-request-id')}`;
 
-  it('no token → 401 with WWW-Authenticate: Bearer realm="nacre", and no activity entry', async () => {
+  it('no token → 401 with WWW-Authenticate naming the resource metadata, and no activity entry', async () => {
     const res = await post({});
     expect(res.status).toBe(401);
-    expect(res.headers.get('www-authenticate')).toBe('Bearer realm="nacre"');
+    expect(res.headers.get('www-authenticate')).toBe(
+      `Bearer realm="nacre", resource_metadata="${PUBLIC_API_URL}/.well-known/oauth-protected-resource/mcp"`,
+    );
     expect(await res.json()).toEqual({ error: 'unauthorized' });
     expect(await deniedRows(res)).toHaveLength(0);
   });
@@ -146,14 +150,27 @@ describe.skipIf(!appDatabaseUrl)('A11: tokens, the token-in-URL rule and Origin 
   });
 
   it('after revoke, the same token → 401 and exactly one token_use_denied entry', async () => {
-    expect(await revokeToken(app.sql, tokenId)).toBe('revoked');
+    expect((await revokeToken(app.sql, tokenId)).status).toBe('revoked');
     const res = await post(bearer(token));
     expect(res.status).toBe(401);
-    expect(res.headers.get('www-authenticate')).toBe('Bearer realm="nacre"');
+    expect(res.headers.get('www-authenticate')).toBe(CHALLENGE);
     expect(await deniedRows(res)).toEqual([
       { actor: agent, token_id: tokenId, details: { reason: 'revoked' } },
     ]);
     expect(await requestLog(res)).toMatchObject({ status: 401, auth_denied: 'revoked' });
+  });
+
+  it('a grant-revoked OAuth access token → 401 and a token_use_denied entry (revoked)', async () => {
+    const { tokens } = await connect(app, 'A11 OAuth Client');
+    seenTokens.push(tokens.access_token, tokens.refresh_token);
+    expect((await post(bearer(tokens.access_token))).status).toBe(200);
+    const accessId = parseToken(tokens.access_token)?.tokenId ?? '';
+    expect(await revokeToken(app.sql, accessId)).toMatchObject({ status: 'revoked', revoked: 2 });
+    const res = await post(bearer(tokens.access_token));
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toBe(CHALLENGE);
+    const [row] = await deniedRows(res);
+    expect(row).toMatchObject({ token_id: accessId, details: { reason: 'revoked' } });
   });
 
   it('nothing leaks: no log line or activity entry holds the token or its secret', async () => {
