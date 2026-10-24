@@ -1,8 +1,10 @@
 # Nacre Slice 1: shared memory between two agents (build spec)
 
-*Status: draft v0.2.14, Oct 24, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.4. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. v0.1 is kept as `slice-1-spec.v0.1.bak.md`, v0.2 as `slice-1-spec.v0.2.bak.md`, v0.2.1 as `slice-1-spec.v0.2.1.bak.md`, v0.2.2 as `slice-1-spec.v0.2.2.bak.md`, v0.2.3 as `slice-1-spec.v0.2.3.bak.md`, v0.2.4 as `slice-1-spec.v0.2.4.bak.md`, v0.2.5 as `slice-1-spec.v0.2.5.bak.md`, v0.2.6 as `slice-1-spec.v0.2.6.bak.md`, v0.2.7 as `slice-1-spec.v0.2.7.bak.md`, v0.2.8 as `slice-1-spec.v0.2.8.bak.md`, v0.2.9 as `slice-1-spec.v0.2.9.bak.md`, v0.2.10 as `slice-1-spec.v0.2.10.bak.md`, v0.2.11 as `slice-1-spec.v0.2.11.bak.md`, v0.2.12 as `slice-1-spec.v0.2.12.bak.md`, and v0.2.13 as `slice-1-spec.v0.2.13.bak.md`.*
+*Status: draft v0.2.16, Oct 24, 2026 (America/Chicago). Build spec for Marcus to mark up. It implements the first slice of the agreed slice plan on top of `design.md` v0.2.4. Where this spec and design.md disagree, design.md wins unless the difference is listed in §1.3 as a slice-1 simplification. v0.1 is kept as `slice-1-spec.v0.1.bak.md`, v0.2 as `slice-1-spec.v0.2.bak.md`, v0.2.1 as `slice-1-spec.v0.2.1.bak.md`, v0.2.2 as `slice-1-spec.v0.2.2.bak.md`, v0.2.3 as `slice-1-spec.v0.2.3.bak.md`, v0.2.4 as `slice-1-spec.v0.2.4.bak.md`, v0.2.5 as `slice-1-spec.v0.2.5.bak.md`, v0.2.6 as `slice-1-spec.v0.2.6.bak.md`, v0.2.7 as `slice-1-spec.v0.2.7.bak.md`, v0.2.8 as `slice-1-spec.v0.2.8.bak.md`, v0.2.9 as `slice-1-spec.v0.2.9.bak.md`, v0.2.10 as `slice-1-spec.v0.2.10.bak.md`, v0.2.11 as `slice-1-spec.v0.2.11.bak.md`, v0.2.12 as `slice-1-spec.v0.2.12.bak.md`, v0.2.13 as `slice-1-spec.v0.2.13.bak.md`, a local-only v0.2.14 (the 2:30 AM A17.1 note) as `slice-1-spec.v0.2.14.bak.md`, and v0.2.15 as `slice-1-spec.v0.2.15.bak.md`.*
 
 **Changelog**
+- **v0.2.16, Oct 24, 2026 (11:55 AM).** Folds in the "Spec updates to apply" from the task 4 brief, with Marcus's two decisions on its open questions. **Decided (Marcus, Oct 24, 2026):** an event over 100,000 characters of content, or a request body over 512 KiB, gets `413` and is rejected, never truncated; a repeat of the same `agent_id` + `client_event_id` returns `200` with the original `event_id` and `duplicate: true` even when the content differs, the new content is not stored, and the mismatch is logged as `duplicate_mismatch`. Also: `source_client` is always the `agent_id`; invalid shape gets `422`; more than 120 requests a minute per agent gets `429` with `Retry-After`; `/v1` applies the exact `Origin` check and requires the `write` right; `future` is set only when observed time is more than 60 seconds after received time (task 4 brief bumped to v1.1 to match); the redaction kinds are listed exactly (`private_key`, `jwt`, `url_credentials`, `bearer_token`, `api_key`, `password`, `high_entropy`); the §7 token format typo is fixed (`nacre_tok_<ulid>_<secret>`); and the §8.3 hook script deletes a spooled file on any HTTP 4xx other than 408 and 429 instead of retrying it forever (task 11). Sections touched: §5.1, §6.2, §7, §7.4, §8.3.
+- **v0.2.15, Oct 24, 2026 (11:05 AM).** Task 3c merged (PR #27, merge `935d12c`, 11:01 AM); the repo's v0.2.14 is taken as the base. Two v0.2.14s existed: the repo's (task 3c decisions, below) and a local one from 2:30 AM that only added the A17.1 `ping` note after task 3b. This version folds that note back in (now naming tasks 3b and 3c). No design change. Sections touched: §14 A17.
 - **v0.2.14, Oct 24, 2026.** Marcus's decisions after the task 3b live test (PR #26; grok.com and Cursor registered dynamically, and later so did claude.ai and chatgpt.com). `https` redirect URIs must name a host on an allow-list in code (`grok.com`, `www.cursor.com`, `claude.ai`, `chatgpt.com`, all seen registering against prod, plus `claude.com`; exact, default port), checked at registration and again at authorization; loopback stays allowed on any port. A rotated refresh token that comes back within 10 seconds is refused with `invalid_grant` without revoking the grant (a lost parallel refresh, not a replay); later reuse still revokes it. The consent page preselects the agent the client was last approved for (the same `client_id`, or an approved client with the same name and redirect URIs) before the slug match, and says why. Deny keeps requiring the password, the refresh lifetime stays absolute, and there is still no `agent_create` kind. Sections touched: §9.3, §14 A17. Task 3c.
 - **v0.2.13, Oct 24, 2026.** Marcus's decision: on the consent page, the agent select preselects the existing enabled agent whose id equals the slug derived from the client's registered name, and preselects "create new agent" (slug prefilled, `-2`, `-3` for taken ids) only when no existing agent matches; the owner can still change the choice. A reconnect (second consent, or a revoked client registered again under the same name) reuses its agent instead of creating `-2`. Sections touched: §9.1, §9.3, §14 A17, §17 (Agent mapping).
 - **v0.2.12, Oct 24, 2026.** Marcus's decision: the OAuth consent page must not hardcode or default to `grok-bot`; it works the same for any OAuth client. It shows the registering client's name (`client_name`, escaped) and redirect host, and the owner chooses which agent the token acts as: an existing agent, or "create new agent" with an editable id prefilled as a slug of the client's name (`Grok Bot` -> `grok-bot`), checked against a new agent id format (§4: `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`, 2–32 characters, not `owner`, `worker` or `system`). A new agent is created on approval and recorded in the `oauth_consent` entry (§13.2 has no separate agent-creation kind). Sections touched: §4, §9.1, §9.3, §13.2, §14 A17, §17 (Agent mapping).
@@ -598,13 +600,19 @@ CREATE INDEX jobs_ready_idx ON jobs (run_after) WHERE status = 'queued';
 }
 ```
 The server adds the rest from the token and its own clock:
-- `event_id`, `agent_id`, `token_id` and `source_client`;
+- `event_id`, `agent_id`, `token_id` and `source_client` (`source_client` is always the `agent_id`; a client cannot set it);
 - `received_at`, `redactions` and `content_hash` (computed over the redacted body, §6.2);
-- `clock_flags`: `drift` if device and hub differ by more than 5 minutes, `future` if observed time is later than received time;
+- `clock_flags`: `drift` if device and hub differ by more than 5 minutes, `future` only if observed time is more than 60 seconds later than received time (a few seconds of device clock skew is normal and sets nothing);
 - `trust_tier`: `user_typed` for role `user`, `agent_inferred` for `assistant` and for `remember`;
 - the final `sensitivity` (the stricter of hint and default wins) and `scope_id`, which is always `personal` in slice 1 (Decided, §17 Q3). `scope_hint` is stored but not acted on.
 
-**Response:** `201 {event_id, status:"accepted", job:"extract"}`. A repeated `client_event_id` returns `200` with the original `event_id`.
+**Response:** `201 {event_id, status:"accepted", job:"extract"}`. A repeat of the same `agent_id` + `client_event_id` returns `200` with the original `event_id` and `duplicate: true`, **even if the content differs** (**Decided, Marcus, Oct 24, 2026**). The new content is not stored, and the mismatch is logged as `duplicate_mismatch`.
+
+**Limits and errors.**
+- **`413` (Decided, Marcus, Oct 24, 2026):** event `content` over 100,000 characters, or a request body over 512 KiB. The event is rejected, never truncated.
+- **`422`:** the body is JSON but its shape is invalid.
+- **`429`:** more than 120 requests per minute per agent, with a `Retry-After` header.
+- `/v1` applies the exact `Origin` check and requires the token's `write` right (§7.4).
 
 ### 5.2 Event: stored and returned shape (e.g. in `get_provenance`)
 ```json
@@ -684,7 +692,7 @@ The server adds the rest from the token and its own clock:
 
 ### 6.2 Pre-processing (code)
 1. **Normalize** the body to Unicode NFC at ingest, before hashing and storing, so offsets are stable.
-2. **Redact secrets (Decided, §17 Q2)**: API-key patterns, JWTs, private-key blocks, `password=`-style pairs, and long high-entropy tokens, each replaced with `[REDACTED:<kind>]`.
+2. **Redact secrets (Decided, §17 Q2)**: API-key patterns, JWTs, private-key blocks, `password=`-style pairs, and long high-entropy tokens, each replaced with `[REDACTED:<kind>]`. The kinds are exactly `private_key`, `jwt`, `url_credentials`, `bearer_token`, `api_key`, `password` and `high_entropy`.
    - It runs at ingest, **before** hashing and storing, so the **stored** body never contains the secret. Kinds and counts go in `events.redactions`; the secret itself is not kept anywhere (not in the body, the hash, the activity log or request logs).
    - The extraction copy, the embedding text and recall queries are built from the redacted body, so no secret reaches a model provider.
    - Marcus's reasoning: a memory should never contain an actual secret, so the raw event minus its secrets is the right thing to keep. design.md §4.2 records this as the one exception to "events unchanged".
@@ -813,7 +821,7 @@ This is design.md §5.4 in its simplest form. Re-opening what the claims had clo
 
 *Recommendation.* There are three tools on one Streamable HTTP endpoint, `https://<host>/mcp`.
 - Each returns `structuredContent` matching its `outputSchema`, plus the same JSON as a text block. The spec recommends the text block for backward compatibility (verified, MCP spec 2026-07-28, Tools).
-- Auth is `Authorization: Bearer nacre_<token_id>_<secret>`: either a static token (Claude Code, §8.1) or an OAuth access token (Grok Bot, §9.3). Both have the same format and go through the same verifier. A token in a URL or query string is never accepted; it is logged as `token_use_denied` (`token_in_url`) only when its secret matches, because token ids aren't secret. An OAuth access token with no expiry is rejected (`no_expiry`); only static tokens may have none.
+- Auth is `Authorization: Bearer nacre_tok_<ulid>_<secret>`: either a static token (Claude Code, §8.1) or an OAuth access token (Grok Bot, §9.3). Both have the same format and go through the same verifier. A token in a URL or query string is never accepted; it is logged as `token_use_denied` (`token_in_url`) only when its secret matches, because token ids aren't secret. An OAuth access token with no expiry is rejected (`no_expiry`); only static tokens may have none.
 - Every call writes an activity entry with the agent, token, tool, argument digest, result ids and latency.
 
 ### 7.1 `remember`
@@ -991,6 +999,8 @@ Description: *"Show where a memory came from: the exact quote, the original mess
 
 The hook endpoints return ready-to-print text, so the client script stays dumb and formatting changes ship server-side.
 
+**`/v1` rules (the status codes and limits are in §5.1).** Every `/v1` route does the exact `Origin` check (a request with no `Origin`, such as a hook script, passes; a foreign one gets `403`) and then token auth. `POST /v1/events` also requires the token's `write` right (`403` without it), then applies the 120 requests a minute per agent limit (`429` with `Retry-After`), and answers `413` for an oversized event or body and `422` for an invalid shape. A repeated key returns `200` with `duplicate: true`.
+
 ---
 
 ## 8. Claude Code setup (hooks + MCP)
@@ -1058,8 +1068,16 @@ post() {  # post <path> <json> <max_seconds>
 }
 spool() { printf '%s' "$1" > "$SPOOL/$(date +%s)-$$-$RANDOM.json"; }
 flush_spool() {  # best effort, in the background, at most 20 files per run
+  # 2xx: posted, delete. 408, 429, 5xx, no answer: keep and retry next time.
+  # Any other 4xx (413, 422, ...): the server will never accept it, so delete it (task 11).
   ( for f in $(ls -1 "$SPOOL" 2>/dev/null | head -20); do
-      post /v1/events "$(cat "$SPOOL/$f")" 5 >/dev/null && rm -f "$SPOOL/$f"
+      CODE=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" \
+             -H 'Content-Type: application/json' -X POST "$URL/v1/events" --data "$(cat "$SPOOL/$f")") || continue
+      case "$CODE" in
+        2??) rm -f "$SPOOL/$f" ;;
+        408|429) ;;
+        4??) rm -f "$SPOOL/$f" ;;
+      esac
     done ) >/dev/null 2>&1 &
 }
 
@@ -1462,7 +1480,7 @@ Every box is checked on the deployed Railway environment unless the test says CI
   - A token passed in the query string instead of the header gets 401.
   - A request to `/mcp` with an `Origin` that is not on the allow-list gets 403.
 - [ ] **A17. OAuth for Grok Bot (CI and prod).**
-  1. In CI, the SDK's OAuth client runs discovery from the 401, registration, consent (with the owner password), code exchange and a `recall` call. It works.
+  1. In CI, the SDK's OAuth client runs discovery from the 401, registration, consent (with the owner password), code exchange and a `recall` call. It works. (Tasks 3b and 3c call the spike's `ping` tool instead, since `recall` arrives in task 7; the full check runs in task 15.)
   1a. Two test clients with different names each go through consent: one creates a new agent from the suggested slug, the other picks an existing agent (or creates one with an edited id). Each token acts as its own agent. A second consent for the same client name, and a revoked-then-reconnected client, preselect the existing agent (not create-new) and reuse it; a client approved as an agent whose id isn't its slug preselects that agent on its next consent (and so does a fresh registration with the same name and redirect URIs); a name that matches no enabled agent preselects create-new. The consent page HTML-escapes `client_name`, and invalid agent ids are rejected (nothing is created, no code is issued).
   2. PKCE `plain`, a wrong verifier, a reused code, a redirect URI that doesn't match exactly, and a `resource` other than `https://api.nacre.so/mcp` all fail. A mismatched redirect URI never redirects. Registration refuses an `https` redirect host off the allow-list (a lookalike suffix, a subdomain, a non-default port), and authorization refuses a stored one without redirecting.
   3. A consent POST with a foreign or missing `Origin`, or a wrong password, is rejected and approves nothing.
