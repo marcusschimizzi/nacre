@@ -53,7 +53,10 @@ export default defineRailway(() => {
       restartPolicyMaxRetries: 5,
       drainingSeconds: 15,
     },
-    // PORT is injected by Railway. Custom domains (api.nacre.so, app.nacre.so) are added with DNS.
+    // MCP and the HTTP API (spec §12.1). Applying this creates the domain on Railway; the CNAME and
+    // TXT records it then shows go in nacre.so's DNS (Marcus). With no port the SDK targets 8080,
+    // the PORT Railway injects (api logs "listening" on 8080). app.nacre.so is added with the web app.
+    domains: ['api.nacre.so'],
     env: {
       LOG_LEVEL: 'info',
       // The owner URL: pre-deploy steps only (migrations, the nacre_app login, the checks).
@@ -64,7 +67,7 @@ export default defineRailway(() => {
       DATABASE_URL: preserve(),
       // HMAC key for token secrets. Changing it invalidates every token.
       TOKEN_PEPPER: preserve(),
-      // The OAuth issuer and /mcp resource base: the Railway domain until DNS is set.
+      // The OAuth issuer and /mcp resource base: https://api.nacre.so.
       PUBLIC_API_URL: preserve(),
     },
   });
