@@ -8,10 +8,11 @@
 //   railway config apply
 //
 // WARNING: in a single-file project, resources missing from this file are planned for deletion.
-// The database is declared here, so a plan keeps it. Renaming `nacredb` below would plan the
-// database's deletion, so don't. The database stays private: nothing here or in the docs needs a
+// This file is deliberately exhaustive (decided Oct 24, 2026): declare every resource, including
+// ones Railway creates itself (like the PITR bucket below), and read each plan before applying.
+// Renaming `nacredb` below would plan the database's deletion, so don't. The database stays private: nothing here or in the docs needs a
 // public TCP proxy (pre-deploy and `railway ssh` both use the private network).
-import { database, defineRailway, github, preserve, project, service } from 'railway/iac';
+import { bucket, database, defineRailway, github, preserve, project, service } from 'railway/iac';
 
 export default defineRailway(() => {
   const source = github('marcusschimizzi/nacre', { branch: 'main' });
@@ -25,6 +26,10 @@ export default defineRailway(() => {
     output: 'DATABASE_URL',
     defaultMountPath: '/var/lib/postgresql/data',
   });
+  // Point-in-time recovery archive (WAL + pgBackRest base backups) for nacredb. Railway creates it
+  // when PITR is enabled in the dashboard, so the file must declare it: an undeclared bucket is
+  // planned for deletion, which would destroy the backups. Name and region match what Railway made.
+  const pitr = bucket('Postgres-PITR', { region: 'iad' });
 
   const api = service('api', {
     source,
@@ -64,5 +69,5 @@ export default defineRailway(() => {
     },
   });
 
-  return project('Nacre', { resources: [db, api, worker] });
+  return project('Nacre', { resources: [db, pitr, api, worker] });
 });
