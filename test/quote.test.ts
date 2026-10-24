@@ -417,6 +417,9 @@ describe('valueInQuote (§4)', () => {
     ['she said "use pnpm" twice', '“use pnpm”', true],
     ['I PREFER Pnpm Daily', 'pnpm daily', true],
     ['我喜欢用pnpm工具', '用pnpm', true],
+    // Both sides are NFC first: a decomposed accent would otherwise become a word break.
+    ['un café au lait', 'café', true],
+    ['I drink café au lait', 'cafe', false],
   ];
   for (const [quote, value, expected] of rows) {
     it(`(${JSON.stringify(quote)}, ${JSON.stringify(value)}) → ${expected}`, () => {
