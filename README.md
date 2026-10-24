@@ -6,9 +6,10 @@ Nacre keeps an append-only log of what your agents saw, turns it into claims who
 
 ## Status
 
-**v3, slice 1, task 3b: minimal OAuth 2.1 for MCP.** This is a ground-up reboot. What exists today:
+**v3, slice 1, task 4: event ingest.** This is a ground-up reboot. What exists today:
 - an `api` service (Hono) with a remote MCP endpoint at `/mcp` (Streamable HTTP, one `ping` tool) and `GET /healthz` (which checks the database);
-- per-agent bearer tokens (`nacre_tok_<ulid>_<secret>`, stored as HMAC hashes) checked by one verifier for static and OAuth access tokens, an exact-match `Origin` check on `/mcp`, and the activity log (`token_create`, `token_revoke`, `token_use_denied`, `system`);
+- per-agent bearer tokens (`nacre_tok_<ulid>_<secret>`, stored as HMAC hashes) checked by one verifier for static and OAuth access tokens, an exact-match `Origin` check on `/mcp` and `/v1`, and the activity log (`token_create`, `token_revoke`, `token_use_denied`, `event_append`, `system`);
+- `POST /v1/events` (static tokens with the `write` right; spec §5.1): it validates an event, strips pasted secrets (`[REDACTED:<kind>]`), hashes the redacted body, and writes the event, its content, an `event_append` entry and an `extract` job in one transaction. A repeated `client_event_id` returns the original event. The worker is still a placeholder, so queued jobs wait for task 5;
 - a minimal OAuth 2.1 server for MCP clients that can't send a static header (Grok Bot first; spec §9.3): discovery metadata, dynamic client registration, `/oauth/authorize` with PKCE S256 and a small consent page (owner password, agent choice), and `/oauth/token` with refresh rotation and reuse detection;
 - the `nacre` CLI: `token create|revoke|list` (revoking an OAuth token revokes its whole grant), `owner-password hash`, and the deploy steps `db migrate|app-login`;
 - the full slice 1 schema (spec §4) as dbmate migrations on Postgres 18 + pgvector, the `nacre_app` role, and append-only guards enforced by triggers **and** grants, with a verifier (`pnpm db:verify`);
@@ -53,6 +54,16 @@ curl -si -X POST localhost:3000/mcp | grep -i '^www-authenticate'   # Bearer rea
 curl -s localhost:3000/.well-known/oauth-authorization-server | jq -c '[.code_challenge_methods_supported,.token_endpoint_auth_methods_supported]'   # [["S256"],["none"]]
 ```
 
+Try ingest (it holds fake secrets, which are stored as markers; the key is split so no secret-shaped literal sits in the repo):
+
+```bash
+FAKE_KEY="sk-""test-abcdefghijklmnopqrstuvwx"
+NOW="$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})$/:\1/')"
+curl -s -X POST localhost:3000/v1/events -H "Authorization: Bearer $(cat ~/.nacre/token)" -H 'Content-Type: application/json' \
+  -d "{\"client_event_id\":\"manual:try-1\",\"kind\":\"message\",\"role\":\"user\",\"observed_at\":\"$NOW\",\"content\":\"My preferred package manager is pnpm. password=hunter2hunter2 key=$FAKE_KEY\"}"
+# 201 {"event_id":"evt_…","status":"accepted","job":"extract"}; the same again: 200 with "duplicate":true
+```
+
 Tokens go in the `Authorization` header only: a token in the query string gets 401 even next to a valid header, and a browser `Origin` that isn't `PUBLIC_API_URL` (or `ALLOWED_ORIGINS`) gets 403.
 
 ### Database
@@ -71,15 +82,24 @@ If port 54329 is taken, map another one and use it in every URL. `pnpm test` cre
 
 Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `pnpm start:api` / `pnpm start:worker`.
 
-## Steps for task 3c (Marcus)
+## Steps for task 4 (Marcus)
 
-No Railway change: no new variable, no migration, nothing in `.railway/railway.ts`. **Merge the PR**, wait for the `api` deploy (pre-deploy logs `migrate: nothing to apply` and `75 passed, 0 failed`), then:
-1. **Cursor:** reconnect it. On the consent page choose `grok-bot`, enter the owner password, Approve, and ask it to call `ping` (`agent_id: "grok-bot"`).
-2. **Reconnect:** `railway ssh --service api`, `node dist/cli/main.js token list`, and `node dist/cli/main.js token revoke <Cursor's oauth_access token_id>`. Then reconnect Cursor: the page preselects `grok-bot` and says "Last used by this client."
-3. **grok.com:** reconnect it. The consent page opens, so `grok.com` is on the redirect allow-list.
-4. **After an hour of use:** the `api` logs show `"oauth":"token:refresh"` for each client, and their `tools/call` request lines carry `mcp_method`.
+No Railway change: no new variable, no migration, nothing in `.railway/railway.ts`. **Merge the PR** and wait for the `api` deploy (pre-deploy logs `migrate: nothing to apply` and `75 passed, 0 failed`, as before). Then:
+1. **Post an event** from your machine with your `claude-code` token. It holds fake secrets; the key is split so no secret-shaped literal sits in the repo. Expect `201`; run it again and expect `200` with `"duplicate":true` and the same `event_id`:
 
-A new OAuth client whose `https` redirect host isn't on `OAUTH_REDIRECT_HOSTS` (`src/shared/oauth.ts`) gets `400 invalid_redirect_uri` at registration. Adding a host is a reviewed code change. Loopback redirects (any port) are always allowed.
+   ```bash
+   NACRE_URL=https://api.nacre.so
+   FAKE_KEY="sk-""test-abcdefghijklmnopqrstuvwx"   # split so no secret-shaped literal sits in the repo
+   NOW="$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})$/:\1/')"
+   curl -s -X POST "$NACRE_URL/v1/events" -H "Authorization: Bearer $(cat ~/.nacre/token)" -H 'Content-Type: application/json' \
+     -d "{\"client_event_id\":\"manual:try-1\",\"kind\":\"message\",\"role\":\"user\",\"observed_at\":\"$NOW\",\"content\":\"My preferred package manager is pnpm. password=hunter2hunter2 key=$FAKE_KEY\"}"
+   ```
+2. **Check the rows** in a `psql` on the Railway database (for example `railway connect nacredb`):
+   - `SELECT event_id, redactions, clock_flags FROM events ORDER BY received_at DESC LIMIT 1;` shows `api_key` and `password`, each with count 1, and no clock flags.
+   - `SELECT body FROM event_content WHERE event_id = '<id>';` shows the markers and no secret.
+   - `SELECT kind, ref_id, status FROM jobs ORDER BY job_id DESC LIMIT 1;` shows `extract`, `queued`.
+   - `SELECT kind, actor, details FROM activity_log WHERE target_id = '<id>';` shows one `event_append` from `claude-code`.
+3. **Check the logs:** the `api` request line for the post has `"ingest":"created"` and the `event_id`, the second has `"ingest":"duplicate"`, and neither carries any content.
 
 ## Railway steps for task 3b (done, Oct 24, 2026)
 
@@ -134,13 +154,13 @@ Agents don't run these. **Set the variables before merging:** merging deploys `a
 
 | Path                  | What                                                                                                                              |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `src/api/`            | Hono app: `/mcp` (Origin check, token auth), `/healthz`, OAuth (`oauth/`: discovery, `/oauth/*`, the consent page); later `/v1/*` |
+| `src/api/`            | Hono app: `/mcp` (Origin check, token auth), `/healthz`, OAuth (`oauth/`: discovery, `/oauth/*`, consent page), `/v1` (`v1/`)     |
 | `src/cli/`            | The `nacre` CLI: tokens, `owner-password hash`, and the deploy steps (`db migrate`, `db app-login`)                               |
 | `src/worker/`         | Job worker (placeholder loop)                                                                                                     |
-| `src/shared/`         | Config, logging, ids, tokens, OAuth grants and codes, the owner password, the activity log, and the postgres.js client (`db/`)    |
+| `src/shared/`         | Config, logging, ids, tokens, OAuth, the owner password, the activity log, event ingest and redaction, postgres.js (`db/`)        |
 | `src/audit/`          | Schema guard checks (A5 and grants), shared by tests, `pnpm db:verify`, the pre-deploy step and the nightly self-audit            |
 | `migrations/`         | Hand-written dbmate `.sql` files: the §4 schema, then roles and grants                                                            |
-| `test/`               | Vitest: MCP clients over real HTTP, auth and A11, the CLI, and the database suite on a real Postgres                              |
+| `test/`               | Vitest: MCP over real HTTP, auth and A11, event ingest and redaction, the CLI, and the database suite on a real Postgres          |
 | `.railway/railway.ts` | Railway Infrastructure as Code: `nacredb` (Postgres 18) and its PITR bucket, `api` (pre-deploy: migrate, login, checks), `worker` |
 
 ## Docs

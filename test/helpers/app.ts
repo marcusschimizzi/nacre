@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { createApp } from '../../src/api/app.js';
 import type { OAuthLimits } from '../../src/api/oauth/routes.js';
 import { type RunningServer, startServer } from '../../src/api/server.js';
+import type { EventLimits } from '../../src/api/v1/events.js';
 import { createSql, type Sql } from '../../src/shared/db/sql.js';
 import { createLogger } from '../../src/shared/logger.js';
 import { hashOwnerPassword } from '../../src/shared/password.js';
@@ -25,8 +26,12 @@ export interface TestAppOptions {
   ownerPasswordHash?: string | null;
   /** Default: the spec's limits. */
   oauthLimits?: Partial<OAuthLimits>;
-  /** Origins allowed on /mcp; default `[PUBLIC_API_URL]`. */
+  /** Origins allowed on /mcp and /v1; default `[PUBLIC_API_URL]`. */
   allowedOrigins?: string[];
+  /** Default: 120 events a minute per agent. */
+  eventLimits?: Partial<EventLimits>;
+  /** The hub's clock; default the real one. */
+  now?: () => Date;
 }
 
 export interface TestApp {
@@ -61,6 +66,8 @@ export async function startTestApp(
     },
     log,
     ...(options.oauthLimits ? { oauthLimits: options.oauthLimits } : {}),
+    ...(options.eventLimits ? { eventLimits: options.eventLimits } : {}),
+    ...(options.now ? { now: options.now } : {}),
   });
   const server: RunningServer = await startServer(app, 0, '127.0.0.1');
   const base = new URL(`http://127.0.0.1:${server.port}`);

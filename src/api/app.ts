@@ -9,6 +9,8 @@ import type { AppEnv } from './env.js';
 import { createMcpEndpoint } from './mcp.js';
 import { type OAuthLimits, oauthRoutes } from './oauth/routes.js';
 import { originCheck } from './origin.js';
+import type { EventLimits } from './v1/events.js';
+import { v1Routes } from './v1/routes.js';
 
 export interface AppDeps {
   sql: Sql;
@@ -19,11 +21,22 @@ export interface AppDeps {
   log: Logger;
   /** Overrides the OAuth rate limits (spec §9.3 values by default); tests use it. */
   oauthLimits?: Partial<OAuthLimits>;
+  /** Overrides the `/v1/events` rate limit (120 a minute per agent by default); tests use it. */
+  eventLimits?: Partial<EventLimits>;
+  /** The hub's clock for `received_at` and the clock flags; tests fix it. */
+  now?: () => Date;
 }
 
 const HEALTH_DB_TIMEOUT_MS = 3000;
 
-export function createApp({ sql, config, log, oauthLimits }: AppDeps) {
+export function createApp({
+  sql,
+  config,
+  log,
+  oauthLimits,
+  eventLimits,
+  now = () => new Date(),
+}: AppDeps) {
   const app = new Hono<AppEnv>();
 
   app.use(requestId());
@@ -48,6 +61,8 @@ export function createApp({ sql, config, log, oauthLimits }: AppDeps) {
         client_id_is_url: c.get('oauthClientIdIsUrl'),
         mcp_protocol: c.req.header('mcp-protocol-version'),
         mcp_method: c.req.header('mcp-method') ?? c.get('mcpMethod'),
+        ingest: c.get('ingest'),
+        event_id: c.get('eventId'),
         user_agent: c.req.header('user-agent'),
         auth: authShape(c.req.header('authorization')),
       },
@@ -101,6 +116,7 @@ export function createApp({ sql, config, log, oauthLimits }: AppDeps) {
   });
 
   app.route('/', oauthRoutes({ sql, config, log, limits: oauthLimits }));
+  app.route('/v1', v1Routes({ sql, config, log, now, eventLimits }));
 
   return app;
 }

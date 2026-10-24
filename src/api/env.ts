@@ -26,5 +26,9 @@ export interface AppEnv {
     oauthClientIdIsUrl?: boolean;
     /** The JSON-RPC method from a `/mcp` body, for clients that send no `Mcp-Method` header. */
     mcpMethod?: string;
+    /** `POST /v1/events` outcome: `created`, `duplicate`, `duplicate_mismatch`, `rejected:<code>`. */
+    ingest?: string;
+    /** The event a `/v1/events` request created or matched. */
+    eventId?: string;
   };
 }
