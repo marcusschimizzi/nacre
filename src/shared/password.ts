@@ -1,5 +1,4 @@
-import { argon2, randomBytes, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
+import * as crypto from 'node:crypto';
 
 /**
  * The owner password (spec §9.3, §11): stored only as an argon2id PHC string in
@@ -7,7 +6,18 @@ import { promisify } from 'node:util';
  * no native dependency. The async form runs on the libuv pool, so a consent check doesn't block
  * the event loop.
  */
-const argon2Async = promisify(argon2);
+function argon2Async(algorithm: 'argon2id', params: crypto.Argon2Parameters): Promise<Buffer> {
+  // Looked up at call time, not imported by name: on an older Node a named import fails the whole
+  // module (and so the api) at load, with an error that doesn't say why.
+  if (typeof crypto.argon2 !== 'function') {
+    throw new Error(
+      `argon2 needs Node 24.7 or later; this is Node ${process.version} (see .node-version)`,
+    );
+  }
+  return new Promise((resolve, reject) =>
+    crypto.argon2(algorithm, params, (err, tag) => (err ? reject(err) : resolve(tag))),
+  );
+}
 
 export interface Argon2Params {
   /** KiB. */
@@ -62,7 +72,7 @@ export async function hashOwnerPassword(
   password: string,
   params: Argon2Params = DEFAULT_ARGON2_PARAMS,
 ): Promise<string> {
-  const salt = randomBytes(SALT_BYTES);
+  const salt = crypto.randomBytes(SALT_BYTES);
   const tag = await argon2Async('argon2id', {
     message: password,
     nonce: salt,
@@ -84,5 +94,5 @@ export async function verifyOwnerPassword(phc: string, password: string): Promis
     passes: parsed.passes,
     parallelism: parsed.parallelism,
   });
-  return timingSafeEqual(tag, parsed.tag);
+  return crypto.timingSafeEqual(tag, parsed.tag);
 }
