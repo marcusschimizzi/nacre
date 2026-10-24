@@ -61,7 +61,7 @@ The Claude Code docs say it asks HTTP servers whether they support 2026-07-28 an
 ## Claude Code setup (user level)
 
 ```bash
-# Token: from `nacre token create --agent claude-code` once task 3 exists; NACRE_DEV_TOKEN for now.
+# Token: from `nacre token create --agent claude-code` (task 3; README "Railway steps for task 3").
 mkdir -p ~/.nacre && chmod 700 ~/.nacre
 printf '%s' '<token>' > ~/.nacre/token && chmod 600 ~/.nacre/token
 echo 'export NACRE_TOKEN="$(cat ~/.nacre/token)"' >> ~/.zshrc

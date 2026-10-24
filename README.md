@@ -6,68 +6,100 @@ Nacre keeps an append-only log of what your agents saw, turns it into claims who
 
 ## Status
 
-**v3, slice 1, task 2: schema, roles and append-only triggers.** This is a ground-up reboot. What exists today:
-- an `api` service (Hono) with a remote MCP endpoint at `/mcp` (Streamable HTTP, one `ping` tool, bearer-token auth) and `GET /healthz`;
-- a placeholder `worker` service;
+**v3, slice 1, task 3: tokens, auth, activity log and Origin check.** This is a ground-up reboot. What exists today:
+- an `api` service (Hono) with a remote MCP endpoint at `/mcp` (Streamable HTTP, one `ping` tool) and `GET /healthz` (which checks the database);
+- per-agent bearer tokens (`nacre_tok_<ulid>_<secret>`, stored as HMAC hashes) checked by one verifier for static and OAuth access tokens, an exact-match `Origin` check on `/mcp`, and the activity log (`token_create`, `token_revoke`, `token_use_denied`, `system`);
+- the `nacre` CLI: `token create|revoke|list` and the deploy steps `db migrate|app-login`;
 - the full slice 1 schema (spec §4) as dbmate migrations on Postgres 18 + pgvector, the `nacre_app` role, and append-only guards enforced by triggers **and** grants, with a verifier (`pnpm db:verify`);
-- CI (with a Postgres service), a Dockerfile and Railway Infrastructure as Code (not deployed).
+- a placeholder `worker` service; CI with a Postgres service; a Dockerfile and Railway Infrastructure as Code.
 
-The real tools (`remember`, `recall`, `get_provenance`), tokens, extraction and the web app arrive over the rest of slice 1. v2 (the markdown knowledge-graph version) is preserved at the [`v2-final`](https://github.com/marcusschimizzi/nacre/tree/v2-final) tag and the [`v2`](https://github.com/marcusschimizzi/nacre/tree/v2) branch.
+The real tools (`remember`, `recall`, `get_provenance`), OAuth for Grok Bot (task 3b), extraction and the web app arrive over the rest of slice 1. v2 (the markdown knowledge-graph version) is preserved at the [`v2-final`](https://github.com/marcusschimizzi/nacre/tree/v2-final) tag and the [`v2`](https://github.com/marcusschimizzi/nacre/tree/v2) branch.
 
 ## Run it locally
 
-Needs Node 24 (see `.node-version`) and pnpm, pinned through `packageManager` (`corepack enable` picks the right version).
+Needs Node 24 (see `.node-version`), pnpm (pinned through `packageManager`; `corepack enable` picks the right version) and Docker for Postgres.
 
 ```bash
 pnpm install
-cp .env.example .env          # then set NACRE_DEV_TOKEN, e.g. $(openssl rand -base64 32)
-pnpm dev                      # api on http://localhost:3000
-pnpm dev:worker               # placeholder worker, in another terminal
+docker run -d --name nacre-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 54329:5432 pgvector/pgvector:pg18
+cp .env.example .env     # then set TOKEN_PEPPER=$(openssl rand -base64 32) and NACRE_APP_DB_PASSWORD=$(openssl rand -hex 32)
 
-curl localhost:3000/healthz
+pnpm db:migrate          # create nacre_dev, apply migrations/, log a `system` activity entry
+pnpm nacre db app-login  # give nacre_app LOGIN (trust auth locally, so the password isn't checked)
+pnpm dev                 # api on http://localhost:3000, connected as nacre_app
+pnpm dev:worker          # placeholder worker, in another terminal
+
+curl localhost:3000/healthz                                            # {"status":"ok",…,"db":"ok"}
+pnpm nacre token create --agent claude-code > ~/.nacre/token           # token on stdout only, shown once
+NACRE_TOKEN="$(cat ~/.nacre/token)" pnpm mcp:smoke http://localhost:3000/mcp
+pnpm nacre token list                                                  # ids, agents, dates; never secrets
+pnpm nacre token revoke tok_…                                          # the next call gets 401
 ```
 
-Connect Claude Code to the local server (see [`docs/spike-mcp.md`](docs/spike-mcp.md)):
+Connect Claude Code (see [`docs/spike-mcp.md`](docs/spike-mcp.md)):
 
 ```bash
-export NACRE_TOKEN=<the same value as NACRE_DEV_TOKEN>
+export NACRE_TOKEN="$(cat ~/.nacre/token)"
 claude mcp add --transport http nacre --scope user http://localhost:3000/mcp \
   --header 'Authorization: Bearer ${NACRE_TOKEN}'
 claude mcp get nacre
 ```
 
+Tokens go in the `Authorization` header only: a token in the query string gets 401 even next to a valid header, and a browser `Origin` that isn't `PUBLIC_API_URL` (or `ALLOWED_ORIGINS`) gets 403.
+
 ### Database
 
-Postgres 18 with pgvector, in Docker. Trust auth, so there is no password to keep anywhere:
+Postgres 18 with pgvector, in Docker. Trust auth, so there is no password to keep anywhere locally. The URLs live in `.env` (dbmate, the `db:` scripts, the `nacre` CLI and the test setup read it):
 
 ```bash
-docker run -d --name nacre-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 54329:5432 pgvector/pgvector:pg18
-
-# in .env (dbmate, the db: scripts and the test setup read it):
-MIGRATION_DATABASE_URL=postgres://postgres@localhost:54329/nacre_dev?sslmode=disable
-TEST_DATABASE_URL=postgres://postgres@localhost:54329/postgres?sslmode=disable
-
-pnpm db:migrate     # create the database if needed and apply migrations/ (dbmate)
+pnpm db:migrate     # `nacre db migrate`: dbmate up, plus a `system` activity entry when it applied something
 pnpm db:status      # applied and pending migrations
 pnpm db:rollback    # undo the latest migration
 pnpm db:verify      # append-only and grant checks (A5); prints PASS/FAIL, leaves no rows
+pnpm build && pnpm db:predeploy   # exactly what Railway runs before each api deploy: migrate, app-login, verify
 ```
 
-If port 54329 is taken, map another one and use it in both URLs. `pnpm test` creates, migrates and drops its own scratch database through `TEST_DATABASE_URL`; without it the database tests are skipped locally (CI requires them). Nothing connects as `nacre_app` yet: task 3 adds the runtime `DATABASE_URL`. On Railway, every `api` deploy runs the migrations and then these checks first (`pnpm db:predeploy`; see [`migrations/README.md`](migrations/README.md)).
+If port 54329 is taken, map another one and use it in every URL. `pnpm test` creates, migrates and drops its own scratch database through `TEST_DATABASE_URL`, and connects as `nacre_app` like the api; without it the database tests are skipped locally (CI requires them). Details: [`migrations/README.md`](migrations/README.md).
 
 Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `pnpm start:api` / `pnpm start:worker`.
 
+## Railway steps for task 3 (Marcus)
+
+Agents don't run these. **Set the variables before merging:** merging deploys `api` from `main`, and the new code needs them.
+1. **A public domain for `api`.** Settings → Networking → Generate Domain (or add `api.nacre.so` once DNS is set). Claude Code needs it, and it is `PUBLIC_API_URL`. Generated domains aren't part of `.railway/railway.ts`.
+2. **Variables on `api`** (dashboard → `api` → Variables). Type each secret once; nothing goes in a file.
+   - `NACRE_APP_DB_PASSWORD`: `openssl rand -hex 32`. Hex, not base64, because it goes inside a URL.
+   - `DATABASE_URL`: `postgresql://nacre_app:${{NACRE_APP_DB_PASSWORD}}@${{nacredb.RAILWAY_PRIVATE_DOMAIN}}:5432/${{nacredb.PGDATABASE}}`. Railway fills in the references, so the password is typed only once, and the host is `nacredb`'s private one.
+   - `TOKEN_PEPPER`: `openssl rand -base64 32`. Changing it later invalidates every token.
+   - `PUBLIC_API_URL`: `https://<the api domain>`, with no path or trailing slash.
+3. **Merge the PR.** The `api` deploy's pre-deploy log should show `migrate: nothing to apply`, then `app-login: nacre_app has LOGIN with the password from NACRE_APP_DB_PASSWORD`, then `75 passed, 0 failed`. A wrong password or URL fails the health check instead (`/healthz` returns 503 with `"db":"error"`).
+4. **`railway config plan`, then `railway config apply`.** Expect one destructive line: deleting `api`'s old shared dev-token variable from task 1, which nothing reads any more. The new variables are `preserve()`, so they show no change. `Postgres-PITR` must not appear.
+5. **Check:** `curl https://<domain>/healthz` → `"db":"ok"`.
+6. **Mint Claude Code's token** inside the running container, over the private network: `railway ssh --service api`, then `node dist/cli/main.js token create --agent claude-code`. Put the printed line in `~/.nacre/token`, replacing the old dev token (it no longer works).
+7. **Claude Code:** `claude mcp add --transport http nacre --scope user https://<domain>/mcp --header 'Authorization: Bearer ${NACRE_TOKEN}'` (remove the old entry first), then `claude mcp get nacre` and ask a session to call `ping`. It answers with `"agent_id":"claude-code"`.
+8. **The A11 checks against prod:**
+
+   ```bash
+   curl -si -X POST https://<domain>/mcp | grep -iE '^HTTP|www-auth'                    # 401, Bearer realm="nacre"
+   curl -si -X POST "https://<domain>/mcp?access_token=$NACRE_TOKEN" \
+     -H "Authorization: Bearer $NACRE_TOKEN" | head -1                                  # 401
+   curl -si -X POST https://<domain>/mcp -H "Authorization: Bearer $NACRE_TOKEN" \
+     -H 'Origin: https://evil.example' | head -1                                        # 403
+   NACRE_TOKEN="$NACRE_TOKEN" pnpm mcp:smoke https://<domain>/mcp                       # all ok
+   ```
+
 ## Layout
 
-| Path                  | What                                                                                              |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| `src/api/`            | Hono app: `/mcp`, `/healthz`; later `/v1/*` and the web app                                       |
-| `src/worker/`         | Job worker (placeholder loop)                                                                     |
-| `src/shared/`         | Config, logging, build info, and the postgres.js client (`db/`)                                   |
-| `src/audit/`          | Schema guard checks (A5 and grants), shared by tests, `pnpm db:verify` and the nightly self-audit |
-| `migrations/`         | Hand-written dbmate `.sql` files: the §4 schema, then roles and grants                            |
-| `test/`               | Vitest: MCP clients over real HTTP, and the database suite on a real Postgres                     |
-| `.railway/railway.ts` | Railway Infrastructure as Code: Postgres 18, `api` (runs migrations before deploy), `worker`      |
+| Path                  | What                                                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `src/api/`            | Hono app: `/mcp` (Origin check, token auth), `/healthz`; later `/v1/*` and the web app                                            |
+| `src/cli/`            | The `nacre` CLI: tokens, and the deploy steps (`db migrate`, `db app-login`)                                                      |
+| `src/worker/`         | Job worker (placeholder loop)                                                                                                     |
+| `src/shared/`         | Config, logging, ids, tokens, the activity log, and the postgres.js client (`db/`)                                                |
+| `src/audit/`          | Schema guard checks (A5 and grants), shared by tests, `pnpm db:verify`, the pre-deploy step and the nightly self-audit            |
+| `migrations/`         | Hand-written dbmate `.sql` files: the §4 schema, then roles and grants                                                            |
+| `test/`               | Vitest: MCP clients over real HTTP, auth and A11, the CLI, and the database suite on a real Postgres                              |
+| `.railway/railway.ts` | Railway Infrastructure as Code: `nacredb` (Postgres 18) and its PITR bucket, `api` (pre-deploy: migrate, login, checks), `worker` |
 
 ## Docs
 
