@@ -6,14 +6,15 @@ Nacre keeps an append-only log of what your agents saw, turns it into claims who
 
 ## Status
 
-**v3, slice 1, task 3: tokens, auth, activity log and Origin check.** This is a ground-up reboot. What exists today:
+**v3, slice 1, task 3b: minimal OAuth 2.1 for MCP.** This is a ground-up reboot. What exists today:
 - an `api` service (Hono) with a remote MCP endpoint at `/mcp` (Streamable HTTP, one `ping` tool) and `GET /healthz` (which checks the database);
 - per-agent bearer tokens (`nacre_tok_<ulid>_<secret>`, stored as HMAC hashes) checked by one verifier for static and OAuth access tokens, an exact-match `Origin` check on `/mcp`, and the activity log (`token_create`, `token_revoke`, `token_use_denied`, `system`);
-- the `nacre` CLI: `token create|revoke|list` and the deploy steps `db migrate|app-login`;
+- a minimal OAuth 2.1 server for MCP clients that can't send a static header (Grok Bot first; spec §9.3): discovery metadata, dynamic client registration, `/oauth/authorize` with PKCE S256 and a small consent page (owner password, agent choice), and `/oauth/token` with refresh rotation and reuse detection;
+- the `nacre` CLI: `token create|revoke|list` (revoking an OAuth token revokes its whole grant), `owner-password hash`, and the deploy steps `db migrate|app-login`;
 - the full slice 1 schema (spec §4) as dbmate migrations on Postgres 18 + pgvector, the `nacre_app` role, and append-only guards enforced by triggers **and** grants, with a verifier (`pnpm db:verify`);
 - a placeholder `worker` service; CI with a Postgres service; a Dockerfile and Railway Infrastructure as Code.
 
-The real tools (`remember`, `recall`, `get_provenance`), OAuth for Grok Bot (task 3b), extraction and the web app arrive over the rest of slice 1. v2 (the markdown knowledge-graph version) is preserved at the [`v2-final`](https://github.com/marcusschimizzi/nacre/tree/v2-final) tag and the [`v2`](https://github.com/marcusschimizzi/nacre/tree/v2) branch.
+The real tools (`remember`, `recall`, `get_provenance`), extraction and the web app arrive over the rest of slice 1. v2 (the markdown knowledge-graph version) is preserved at the [`v2-final`](https://github.com/marcusschimizzi/nacre/tree/v2-final) tag and the [`v2`](https://github.com/marcusschimizzi/nacre/tree/v2) branch.
 
 ## Run it locally
 
@@ -45,6 +46,13 @@ claude mcp add --transport http nacre --scope user http://localhost:3000/mcp \
 claude mcp get nacre
 ```
 
+OAuth clients (Grok Bot's custom connector, or the SDK's `OAuthClientProvider`) need only the URL: the 401 from `/mcp` points them at `/.well-known/oauth-protected-resource/mcp`, they register themselves, and the consent page at `/oauth/authorize` asks for the owner password. Set it up locally with `printf '%s\n' 'your password here' | pnpm nacre owner-password hash` (or run it without a pipe for a hidden prompt) and put the printed `$argon2id$…` line in `.env` as `OWNER_PASSWORD_HASH`, in single quotes. Without it the consent form answers 503 and everything else works.
+
+```bash
+curl -si -X POST localhost:3000/mcp | grep -i '^www-authenticate'   # Bearer realm="nacre", resource_metadata="…/.well-known/oauth-protected-resource/mcp"
+curl -s localhost:3000/.well-known/oauth-authorization-server | jq -c '[.code_challenge_methods_supported,.token_endpoint_auth_methods_supported]'   # [["S256"],["none"]]
+```
+
 Tokens go in the `Authorization` header only: a token in the query string gets 401 even next to a valid header, and a browser `Origin` that isn't `PUBLIC_API_URL` (or `ALLOWED_ORIGINS`) gets 403.
 
 ### Database
@@ -63,7 +71,31 @@ If port 54329 is taken, map another one and use it in every URL. `pnpm test` cre
 
 Other scripts: `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, then `pnpm start:api` / `pnpm start:worker`.
 
-## Railway steps for task 3 (Marcus)
+## Railway steps for task 3b (Marcus)
+
+Agents don't run these. **Set the variable before merging**, so the consent form works on the first deploy (without it the form answers 503; `/mcp` and Claude Code's static token are unaffected either way).
+1. **`OWNER_PASSWORD_HASH` on `api`.** On your machine, run `pnpm nacre owner-password hash`: it asks for the owner password twice without echoing it (12 characters or more) and prints one `$argon2id$v=19$m=65536,t=3,p=4$…` line. In the dashboard (`api` → Variables), set `OWNER_PASSWORD_HASH` to that line exactly, as a raw value, not a reference. The password never leaves your machine; only the hash is stored.
+2. **Nothing else changes.** `api.nacre.so` is live and `PUBLIC_API_URL=https://api.nacre.so` is set, so there is no other variable and no DNS step. `railway config plan` should show no change: `OWNER_PASSWORD_HASH` is `preserve()`, which keeps the value you set. Don't apply anything else.
+3. **Merge the PR**, wait for the `api` deploy (pre-deploy still logs `migrate: nothing to apply`, the login line and `75 passed, 0 failed`; this task adds no migration), then:
+
+   ```bash
+   curl -si -X POST https://api.nacre.so/mcp | grep -iE '^HTTP|www-auth'
+   # 401, Bearer realm="nacre", resource_metadata="https://api.nacre.so/.well-known/oauth-protected-resource/mcp"
+   curl -s https://api.nacre.so/.well-known/oauth-protected-resource/mcp
+   # {"resource":"https://api.nacre.so/mcp","authorization_servers":["https://api.nacre.so"],"bearer_methods_supported":["header"]}
+   curl -s https://api.nacre.so/.well-known/oauth-authorization-server | jq -c '[.code_challenge_methods_supported,.token_endpoint_auth_methods_supported]'
+   # [["S256"],["none"]]
+   ```
+
+   Don't test `POST /oauth/register` against prod by hand: every registration writes a permanent `oauth_client_register` row. Claude Code's `ping` should still work.
+4. **Grok Bot** (A17.6; the PR lists these steps with a result line for each):
+   1. In Grok Bot, add a **custom connector** with the URL `https://api.nacre.so/mcp` and nothing else.
+   2. The consent page opens. Check the client name it registered and the redirect host. On a first connection "Create new agent" is preselected with the suggested id (expected `grok-bot`); keep it (if a `grok-bot` agent already exists, the page preselects it instead). Enter the owner password and Approve.
+   3. Ask Grok Bot to call `ping`: it answers `pong` with `agent_id: "grok-bot"` (or the id you chose).
+   4. `railway ssh --service api`, then `node dist/cli/main.js token list`: an `oauth_access` and an `oauth_refresh` row for that agent, with a `grt_…` grant. `node dist/cli/main.js token revoke <that token_id>` revokes the whole grant; ask Grok Bot to call `ping` again, and it fails with 401.
+   5. From the api logs (`request` lines with `user_agent` `grok-connectors-manager/…`), note how it registered: `"oauth":"register:ok"` on `POST /oauth/register` is dynamic registration; `"client_id_is_url":true` on `/oauth/authorize` means it wanted CIMD (stop and report: spec §16 R11); also note its `Origin`, if any, and `mcp_protocol`.
+
+## Railway steps for task 3 (done, Oct 24, 2026)
 
 Agents don't run these. **Set the variables before merging:** merging deploys `api` from `main`, and the new code needs them.
 1. **Variables on `api`** (dashboard → `api` → Variables). Type each secret once; nothing goes in a file.
@@ -92,10 +124,10 @@ Agents don't run these. **Set the variables before merging:** merging deploys `a
 
 | Path                  | What                                                                                                                              |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `src/api/`            | Hono app: `/mcp` (Origin check, token auth), `/healthz`; later `/v1/*` and the web app                                            |
-| `src/cli/`            | The `nacre` CLI: tokens, and the deploy steps (`db migrate`, `db app-login`)                                                      |
+| `src/api/`            | Hono app: `/mcp` (Origin check, token auth), `/healthz`, OAuth (`oauth/`: discovery, `/oauth/*`, the consent page); later `/v1/*` |
+| `src/cli/`            | The `nacre` CLI: tokens, `owner-password hash`, and the deploy steps (`db migrate`, `db app-login`)                               |
 | `src/worker/`         | Job worker (placeholder loop)                                                                                                     |
-| `src/shared/`         | Config, logging, ids, tokens, the activity log, and the postgres.js client (`db/`)                                                |
+| `src/shared/`         | Config, logging, ids, tokens, OAuth grants and codes, the owner password, the activity log, and the postgres.js client (`db/`)    |
 | `src/audit/`          | Schema guard checks (A5 and grants), shared by tests, `pnpm db:verify`, the pre-deploy step and the nightly self-audit            |
 | `migrations/`         | Hand-written dbmate `.sql` files: the §4 schema, then roles and grants                                                            |
 | `test/`               | Vitest: MCP clients over real HTTP, auth and A11, the CLI, and the database suite on a real Postgres                              |
