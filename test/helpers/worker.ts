@@ -123,6 +123,14 @@ export async function seedEvents(
     );
     ids.push(result.eventId);
   }
+  // `jobs.run_after` defaults to the database's now(), with microseconds, while tests claim with a
+  // JavaScript Date, which has milliseconds: a claim in the same millisecond as the seed would
+  // miss the job. Make the jobs due a second ago (one shift for all, so their order is unchanged).
+  if (ids.length > 0) {
+    await s.sql`
+      UPDATE jobs SET run_after = run_after - interval '1 second'
+      WHERE kind = 'extract' AND ref_id IN ${s.sql(ids)} AND status = 'queued'`;
+  }
   return ids;
 }
 

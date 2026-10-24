@@ -544,6 +544,54 @@ describe.skipIf(!adminUrl)('worker against Postgres, as nacre_app', () => {
       expect((await jobFor(e)).locked_at?.getTime()).toBe(t2.getTime());
     });
 
+    it('a worker that lost its job to a reclaim stops at the next chunk and leaves the job alone', async () => {
+      const filler = 'lorem ipsum dolor '.repeat(270);
+      const quotes = [
+        'I drink green tea every morning',
+        'my sister Dana lives in Austin',
+        'I ride a red bicycle to work',
+      ];
+      const body = quotes.map((q, i) => `Fact ${i + 1}: ${q}. ${filler}`).join('\n\n');
+      const [e = ''] = await seedEvents(s, [{ content: body }]);
+      const t0 = new Date(Date.now() + 1000);
+      const clock = t0;
+      const captured = captureLog();
+      const reclaimedAt = new Date(t0.getTime() + 11 * 60_000);
+      const reclaim: { job: Awaited<ReturnType<typeof claimJob>> } = { job: null };
+      const seen: number[] = [];
+      const fake = new FakeExtractor(async (input) => {
+        const n = quotes.findIndex((q) => input.target.text.includes(q));
+        seen.push(n + 1);
+        if (n === 1) {
+          // During chunk 2's call the lock goes stale and another worker reclaims the job.
+          reclaim.job = await claimJob(sql, reclaimedAt);
+        }
+        return [rawClaim(quotes[n] ?? '', { value: 'x' })];
+      });
+
+      const results = await drain(makeDeps(sql, fake, { now: () => clock, log: captured.log }));
+      expect(results).toEqual([{ outcome: 'released' }]);
+      expect(reclaim.job).toMatchObject({ eventId: e, attempts: 2 });
+      // Chunk 3 was never extracted. Chunk 2 was already in flight when the lock was lost, so its
+      // claim stands; the loss shows at chunk 3's refresh.
+      expect(seen).toEqual([1, 2]);
+      expect(await claimsFor(e)).toHaveLength(2);
+      expect((await runsFor(e)).map((r) => r.status)).toEqual(['ok', 'ok']);
+      // The new owner's state is untouched: still running under its claim, not done, failed or requeued.
+      const job = await jobFor(e);
+      expect([job.status, job.attempts, job.last_error]).toEqual(['running', 2, null]);
+      expect(job.locked_at?.getTime()).toBe(reclaimedAt.getTime());
+      const lost = captured.records().filter((r) => r.code === 'lock_lost');
+      expect(lost).toHaveLength(1);
+      expect(lost[0]).toMatchObject({
+        job_id: Number(job.job_id),
+        event_id: e,
+        chunk: 3,
+        attempts: 1,
+      });
+      expect(captured.lines.join('\n')).not.toContain('lorem');
+    });
+
     it('a run left running by a crash is closed as abandoned', async () => {
       const [e = ''] = await seedEvents(s, [{ content: PNPM }]);
       const fake = new FakeExtractor(() => []);

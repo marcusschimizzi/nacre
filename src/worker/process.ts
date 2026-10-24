@@ -296,8 +296,23 @@ async function pipeline(
       return { outcome: 'released' };
     }
 
-    // Keep the lock fresh: a body of many slow chunks can outlast the stale-lock window.
-    await refreshLock(sql, job, deps.now());
+    // Keep the lock fresh: a body of many slow chunks can outlast the stale-lock window. If this
+    // claim no longer holds the job, another worker reclaimed it and owns its state now: stop
+    // without writing runs or claims, or touching the job row.
+    if (!(await refreshLock(sql, job, deps.now()))) {
+      log.warn(
+        {
+          job_id: job.jobId,
+          event_id: event.event_id,
+          code: 'lock_lost',
+          chunk: i + 1,
+          chunks: chunks.length,
+          attempts: job.attempts,
+        },
+        'extract job lock lost; another worker reclaimed it',
+      );
+      return { outcome: 'released' };
+    }
 
     const runId = await insertRunningRun(sql, id, { eventId: event.event_id, inputEventIds });
     totals.runId = runId;
