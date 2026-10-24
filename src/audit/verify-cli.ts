@@ -1,8 +1,10 @@
-// Run the A5 / grant checks against a live database and print one line per check.
-// Usage: MIGRATION_DATABASE_URL=… pnpm db:verify   (an owner/admin URL; it is never printed)
-// Leaves no rows behind: everything runs in one transaction that is rolled back.
-import { verifySchemaGuards } from '../src/audit/schema-guards.js';
-import { createSql } from '../src/shared/db/sql.js';
+// Run the A5 / grant checks against a live database and print one line per check; exit 1 on any FAIL.
+// Locally: `pnpm db:verify`. On Railway it runs after the migrations in api's pre-deploy step
+// (`npm run db:predeploy`, compiled as dist/audit/verify-cli.js), so a deploy stops if a guard is broken.
+// Needs MIGRATION_DATABASE_URL, an owner (admin) URL that is never printed. Leaves no rows behind:
+// everything runs in one transaction that is rolled back (only the jobs id sequence advances).
+import { createSql } from '../shared/db/sql.js';
+import { verifySchemaGuards } from './schema-guards.js';
 
 const url = process.env.MIGRATION_DATABASE_URL;
 if (!url) {
