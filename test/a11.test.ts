@@ -109,6 +109,15 @@ describe.skipIf(!appDatabaseUrl)('A11: tokens, the token-in-URL rule and Origin 
     ]);
   });
 
+  it('?access_token=<real id, wrong secret> → 401, not attributed (ids are not secret)', async () => {
+    const wrongSecret = `nacre_${tokenId}_${'B'.repeat(43)}`;
+    seenTokens.push(wrongSecret);
+    const res = await post({}, `?access_token=${encodeURIComponent(wrongSecret)}`);
+    expect(res.status).toBe(401);
+    expect(await deniedRows(res)).toHaveLength(0);
+    expect((await requestLog(res))?.auth_denied).toBe('token_in_url');
+  });
+
   it.each([
     ['?token=anything', '?token=anything'],
     ['a token-looking value under another name', '?q=nacre_tok_whatever'],

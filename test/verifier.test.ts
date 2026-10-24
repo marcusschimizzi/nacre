@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
-import { type AuthRoute, type VerifyResult, verifyToken } from '../src/api/auth.js';
+import {
+  type AuthRoute,
+  denyReason,
+  type TokenRow,
+  type VerifyResult,
+  verifyToken,
+} from '../src/api/auth.js';
 import { logActivity } from '../src/shared/activity.js';
 import { createSql, type Sql } from '../src/shared/db/sql.js';
 import { parseToken } from '../src/shared/tokens.js';
@@ -96,6 +102,28 @@ describe.skipIf(!appDatabaseUrl)('verifyToken (spec §7, §9.3)', () => {
       expect((await lastUsed())?.getTime()).toBeGreaterThan(stale?.getTime() ?? Infinity);
     });
 
+    it('a failed last_used_at write is logged and the token still works', async () => {
+      const created = await staticToken(app, testAgent('touchfail'));
+      const warnings: string[] = [];
+      // Every query goes to the real client except the UPDATE, which fails like a lost connection.
+      const failingUpdate = ((strings: TemplateStringsArray, ...values: unknown[]) =>
+        strings.join('').includes('UPDATE agent_tokens')
+          ? Promise.reject(new Error('connection lost'))
+          : app.sql(strings, ...(values as never[]))) as unknown as Sql;
+      const result = await verifyToken(
+        {
+          sql: failingUpdate,
+          pepper: app.pepper,
+          mcpResource: MCP_RESOURCE,
+          log: { warn: (_obj: unknown, msg: string) => warnings.push(msg) } as never,
+        },
+        `Bearer ${created.token}`,
+        'mcp',
+      );
+      expect(result.ok).toBe(true);
+      expect(warnings).toEqual(['last_used_at not updated']);
+    });
+
     it('bad secret → bad_secret (row exists, so it is attributed)', async () => {
       const parsed = parseToken(staticTok);
       const wrong = `nacre_${parsed?.tokenId}_${'A'.repeat(43)}`;
@@ -169,6 +197,29 @@ describe.skipIf(!appDatabaseUrl)('verifyToken (spec §7, §9.3)', () => {
         expiresAt: new Date(Date.now() - 1000),
       });
       expect(denied(await verify(token, 'mcp'))).toBe('expired');
+    });
+
+    it('access token with no expiry → no_expiry (only static tokens may lack one)', () => {
+      // The table's CHECK won't store such a row, so the rule is tested on the row shape directly.
+      const row: TokenRow = {
+        agent_id: agent,
+        secret_hash: Buffer.alloc(32),
+        kind: 'oauth_access',
+        resource: MCP_RESOURCE,
+        oauth_client_id: 'cli_test',
+        read_scopes: ['*'],
+        write_scopes: ['*'],
+        label_ceiling: 'restricted',
+        rights: ['read', 'write'],
+        revoked: false,
+        expired: false,
+        has_expiry: false,
+        agent_disabled: false,
+        touch_due: false,
+      };
+      expect(denyReason(row, 'mcp', MCP_RESOURCE)).toBe('no_expiry');
+      expect(denyReason({ ...row, has_expiry: true }, 'mcp', MCP_RESOURCE)).toBeNull();
+      expect(denyReason({ ...row, kind: 'static', resource: null }, 'v1', MCP_RESOURCE)).toBeNull();
     });
 
     it.each(['mcp', 'v1'] as const)(

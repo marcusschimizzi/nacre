@@ -32,6 +32,7 @@ export type DenyReason =
   | 'refresh_token_as_bearer'
   | 'wrong_route'
   | 'wrong_resource'
+  | 'no_expiry'
   | 'token_in_url';
 
 export type VerifyResult =
@@ -52,9 +53,11 @@ export interface VerifierDeps {
   pepper: string;
   /** `PUBLIC_API_URL + '/mcp'`: the only resource OAuth access tokens are valid for. */
   mcpResource: string;
+  /** Where a failed `last_used_at` write is reported (it never fails the request). */
+  log?: Logger;
 }
 
-interface TokenRow {
+export interface TokenRow {
   agent_id: string;
   secret_hash: Buffer;
   kind: TokenKind;
@@ -66,6 +69,7 @@ interface TokenRow {
   rights: string[];
   revoked: boolean;
   expired: boolean;
+  has_expiry: boolean;
   agent_disabled: boolean;
   /** `last_used_at` is null or older than a minute (see the lookup). */
   touch_due: boolean;
@@ -103,16 +107,19 @@ export async function verifyToken(
   if (!row) return deny('unknown_token');
   if (!matches) return deny('bad_secret');
   if (row.kind === 'oauth_refresh') return deny('refresh_token_as_bearer');
-  if (row.revoked) return deny('revoked');
-  if (row.expired) return deny('expired');
-  if (row.agent_disabled) return deny('agent_disabled');
-  if (row.kind === 'oauth_access') {
-    if (route !== 'mcp') return deny('wrong_route');
-    if (row.resource !== deps.mcpResource) return deny('wrong_resource');
-  }
+  const reason = denyReason(row, route, deps.mcpResource);
+  if (reason) return deny(reason);
 
   if (row.touch_due) {
-    await deps.sql`UPDATE agent_tokens SET last_used_at = now() WHERE token_id = ${parsed.tokenId}`;
+    try {
+      await deps.sql`UPDATE agent_tokens SET last_used_at = now() WHERE token_id = ${parsed.tokenId}`;
+    } catch (err) {
+      // Bookkeeping only: a valid token still gets through.
+      deps.log?.warn(
+        { err: { name: (err as Error).name, message: (err as Error).message } },
+        'last_used_at not updated',
+      );
+    }
   }
   return {
     ok: true,
@@ -129,12 +136,32 @@ export async function verifyToken(
   };
 }
 
+/** The checks after the secret matched and the kind is a bearer kind (spec §7, §9.3). Null: good. */
+export function denyReason(
+  row: TokenRow,
+  route: AuthRoute,
+  mcpResource: string,
+): DenyReason | null {
+  if (row.revoked) return 'revoked';
+  if (row.expired) return 'expired';
+  if (row.agent_disabled) return 'agent_disabled';
+  if (row.kind === 'oauth_access') {
+    // Only static tokens may live forever. The table's CHECK already requires an expiry for OAuth
+    // rows; this keeps the verifier from relying on it.
+    if (!row.has_expiry) return 'no_expiry';
+    if (route !== 'mcp') return 'wrong_route';
+    if (row.resource !== mcpResource) return 'wrong_resource';
+  }
+  return null;
+}
+
 async function lookup(sql: Sql, tokenId: string): Promise<TokenRow | undefined> {
   const [row] = await sql<TokenRow[]>`
     SELECT t.agent_id, t.secret_hash, t.kind, t.resource, t.oauth_client_id, t.read_scopes,
            t.write_scopes, t.label_ceiling, t.rights,
            t.revoked_at IS NOT NULL AS revoked,
            t.expires_at IS NOT NULL AND t.expires_at <= now() AS expired,
+           t.expires_at IS NOT NULL AS has_expiry,
            a.disabled_at IS NOT NULL AS agent_disabled,
            -- last_used_at is kept to the minute: one write per token per minute, not per request.
            t.last_used_at IS NULL OR t.last_used_at < now() - interval '1 minute' AS touch_due
@@ -213,9 +240,15 @@ export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> 
   return async (c, next) => {
     const inUrl = urlToken(c);
     if (inUrl.found) {
+      // Attributed only when the secret matches, i.e. the token really leaked into a URL: token ids
+      // aren't secret (`nacre token list` prints them), so an id alone could write rows to an agent.
       const parsed = inUrl.token ? parseToken(inUrl.token) : null;
       const row = parsed ? await lookup(options.sql, parsed.tokenId) : undefined;
-      await denied(c, 'token_in_url', parsed && row ? parsed.tokenId : null, row?.agent_id ?? null);
+      const leaked =
+        parsed && row && timingSafeEqual(hashSecret(options.pepper, parsed.secret), row.secret_hash)
+          ? { tokenId: parsed.tokenId, agentId: row.agent_id }
+          : null;
+      await denied(c, 'token_in_url', leaked?.tokenId ?? null, leaked?.agentId ?? null);
       return unauthorized(c, route);
     }
 
