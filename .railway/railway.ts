@@ -15,7 +15,7 @@
 // use the private network).
 //
 // Secrets are `preserve()`: Marcus sets their values in the dashboard (README, "Railway steps for
-// task 3"), and preserve() keeps them but never creates one, so set them before the first deploy
+// task 3" and "for task 3b"), and preserve() keeps them but never creates one, so set them before the first deploy
 // that needs them. Variables missing from this file are planned for deletion like resources.
 import { bucket, database, defineRailway, github, preserve, project, service } from 'railway/iac';
 
@@ -69,6 +69,8 @@ export default defineRailway(() => {
       TOKEN_PEPPER: preserve(),
       // The OAuth issuer and /mcp resource base: https://api.nacre.so.
       PUBLIC_API_URL: preserve(),
+      // argon2id hash of the owner password (`nacre owner-password hash`), checked on OAuth consent.
+      OWNER_PASSWORD_HASH: preserve(),
     },
   });
 

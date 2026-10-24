@@ -1,12 +1,33 @@
 import { randomBytes } from 'node:crypto';
 import { createApp } from '../../src/api/app.js';
+import type { OAuthLimits } from '../../src/api/oauth/routes.js';
 import { type RunningServer, startServer } from '../../src/api/server.js';
 import { createSql, type Sql } from '../../src/shared/db/sql.js';
 import { createLogger } from '../../src/shared/logger.js';
+import { hashOwnerPassword } from '../../src/shared/password.js';
 import { createStaticToken, mintToken, type TokenKind } from '../../src/shared/tokens.js';
 
 export const PUBLIC_API_URL = 'https://api.nacre.test';
 export const MCP_RESOURCE = `${PUBLIC_API_URL}/mcp`;
+/** `/mcp`'s 401 challenge (spec §9.3). */
+export const CHALLENGE = `Bearer realm="nacre", resource_metadata="${PUBLIC_API_URL}/.well-known/oauth-protected-resource/mcp"`;
+
+/** The consent form's owner password in tests, hashed with the cheapest argon2id parameters. */
+export const OWNER_PASSWORD = 'test owner password';
+const ownerPasswordHash = hashOwnerPassword(OWNER_PASSWORD, {
+  memory: 8,
+  passes: 1,
+  parallelism: 1,
+});
+
+export interface TestAppOptions {
+  /** Default: a hash of `OWNER_PASSWORD`. `null`: unset, as before the variable is configured. */
+  ownerPasswordHash?: string | null;
+  /** Default: the spec's limits. */
+  oauthLimits?: Partial<OAuthLimits>;
+  /** Origins allowed on /mcp; default `[PUBLIC_API_URL]`. */
+  allowedOrigins?: string[];
+}
 
 export interface TestApp {
   base: URL;
@@ -20,15 +41,26 @@ export interface TestApp {
 }
 
 /** A real api on a free port, against the scratch database as nacre_app, with a fresh pepper. */
-export async function startTestApp(appDatabaseUrl: string): Promise<TestApp> {
+export async function startTestApp(
+  appDatabaseUrl: string,
+  options: TestAppOptions = {},
+): Promise<TestApp> {
   const logLines: string[] = [];
   const log = createLogger('nacre-api-test', 'debug', { write: (line) => logLines.push(line) });
   const sql = createSql(appDatabaseUrl, { max: 4 });
   const pepper = randomBytes(32).toString('base64url');
+  const hash =
+    options.ownerPasswordHash === undefined ? await ownerPasswordHash : options.ownerPasswordHash;
   const app = createApp({
     sql,
-    config: { TOKEN_PEPPER: pepper, PUBLIC_API_URL, allowedOrigins: [PUBLIC_API_URL] },
+    config: {
+      TOKEN_PEPPER: pepper,
+      PUBLIC_API_URL,
+      allowedOrigins: options.allowedOrigins ?? [PUBLIC_API_URL],
+      ...(hash ? { OWNER_PASSWORD_HASH: hash } : {}),
+    },
     log,
+    ...(options.oauthLimits ? { oauthLimits: options.oauthLimits } : {}),
   });
   const server: RunningServer = await startServer(app, 0, '127.0.0.1');
   const base = new URL(`http://127.0.0.1:${server.port}`);

@@ -171,15 +171,23 @@ async function lookup(sql: Sql, tokenId: string): Promise<TokenRow | undefined> 
 }
 
 /**
- * The 401 challenge, built in one place. Task 3b adds `resource_metadata` here for `/mcp` (§9.3);
- * `/v1/*` keeps the plain challenge.
+ * The 401 challenge, built in one place. `/mcp` points OAuth clients at its protected-resource
+ * metadata (spec §9.3, RFC 9728 §5.1; no `scope`). `realm` stays: the spec's example omits it, but
+ * it is harmless and Claude Code's static-token setup has always seen it. `/v1/*` keeps the plain
+ * challenge, since the hooks use static tokens.
  */
-export function bearerChallenge(_route: AuthRoute): string {
-  return 'Bearer realm="nacre"';
+export function bearerChallenge(route: AuthRoute, resourceMetadataUrl?: string): string {
+  return route === 'mcp' && resourceMetadataUrl
+    ? `Bearer realm="nacre", resource_metadata="${resourceMetadataUrl}"`
+    : 'Bearer realm="nacre"';
 }
 
-export function unauthorized(c: Context<AppEnv>, route: AuthRoute): Response {
-  c.header('WWW-Authenticate', bearerChallenge(route));
+export function unauthorized(
+  c: Context<AppEnv>,
+  route: AuthRoute,
+  resourceMetadataUrl?: string,
+): Response {
+  c.header('WWW-Authenticate', bearerChallenge(route, resourceMetadataUrl));
   return c.json({ error: 'unauthorized' }, 401);
 }
 
@@ -199,6 +207,8 @@ function urlToken(c: Context<AppEnv>): { found: boolean; token?: string } {
 export interface TokenAuthOptions extends VerifierDeps {
   route: AuthRoute;
   log: Logger;
+  /** `/mcp` only: named in the 401 challenge so OAuth clients can find the authorization server. */
+  resourceMetadataUrl?: string;
 }
 
 /**
@@ -206,7 +216,7 @@ export interface TokenAuthOptions extends VerifierDeps {
  * rejected real tokens (the secret matched), and put the caller on the context. Every failure is the same 401.
  */
 export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> {
-  const { route, log } = options;
+  const { route, log, resourceMetadataUrl } = options;
 
   const denied = async (
     c: Context<AppEnv>,
@@ -250,7 +260,7 @@ export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> 
           ? { tokenId: parsed.tokenId, agentId: row.agent_id }
           : null;
       await denied(c, 'token_in_url', leaked?.tokenId ?? null, leaked?.agentId ?? null);
-      return unauthorized(c, route);
+      return unauthorized(c, route, resourceMetadataUrl);
     }
 
     const result = await verifyToken(options, c.req.header('authorization'), route);
@@ -259,7 +269,7 @@ export function tokenAuth(options: TokenAuthOptions): MiddlewareHandler<AppEnv> 
         const real = result.reason !== 'unknown_token' && result.reason !== 'bad_secret';
         await denied(c, result.reason, real ? result.tokenId : null, real ? result.agentId : null);
       }
-      return unauthorized(c, route);
+      return unauthorized(c, route, resourceMetadataUrl);
     }
     c.set('auth', result.auth);
     await next();

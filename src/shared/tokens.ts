@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { logActivity } from './activity.js';
-import type { Sql } from './db/sql.js';
+import type { Sql, TransactionSql } from './db/sql.js';
 import { newId, ULID_PATTERN } from './ids.js';
 
 /**
@@ -93,26 +93,68 @@ export async function createStaticToken(
   });
 }
 
-export type RevokeResult = 'revoked' | 'already_revoked' | 'not_found';
+export type RevokeStatus = 'revoked' | 'already_revoked' | 'not_found';
 
-/** `nacre token revoke`: set `revoked_at` once and log `token_revoke`. Grant-wide revoke is task 3b. */
+export interface RevokeResult {
+  status: RevokeStatus;
+  /** OAuth tokens: the grant whose every token was revoked. Null for static tokens. */
+  grantId: string | null;
+  /** Tokens this call revoked (0 unless `revoked`). */
+  revoked: number;
+}
+
+/**
+ * Serializes everything that issues or revokes tokens in one grant (refresh rotation, reuse
+ * detection, grant revoke) for the rest of the transaction. Without it, a revoke running beside a
+ * refresh could miss the new pair: its UPDATE only sees rows committed when it started. Advisory
+ * locks need no table privilege, and nacre_app can't lock `agent_tokens` rows it can't update.
+ */
+export async function lockGrant(tx: TransactionSql, grantId: string): Promise<void> {
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grant:${grantId}`}, 0))`;
+}
+
+/** Revoke every live token in a grant; the caller holds `lockGrant`. Returns how many. */
+export async function revokeGrantTokens(tx: TransactionSql, grantId: string): Promise<number> {
+  const rows = await tx`
+    UPDATE agent_tokens SET revoked_at = now()
+    WHERE grant_id = ${grantId} AND revoked_at IS NULL
+    RETURNING token_id`;
+  return rows.length;
+}
+
+/**
+ * `nacre token revoke`: set `revoked_at` and log one `token_revoke`. A static token is revoked
+ * alone; an OAuth token revokes its whole grant (spec §9.3), every access and refresh token in it.
+ */
 export async function revokeToken(sql: Sql, tokenId: string): Promise<RevokeResult> {
   return sql.begin(async (tx) => {
-    const [row] = await tx<{ agent_id: string; revoked: boolean }[]>`
-      SELECT agent_id, revoked_at IS NOT NULL AS revoked FROM agent_tokens
-      WHERE token_id = ${tokenId} FOR UPDATE`;
-    if (!row) return 'not_found';
-    if (row.revoked) return 'already_revoked';
-    await tx`UPDATE agent_tokens SET revoked_at = now() WHERE token_id = ${tokenId}`;
+    const [row] = await tx<{ agent_id: string; grant_id: string | null; revoked: boolean }[]>`
+      SELECT agent_id, grant_id, revoked_at IS NOT NULL AS revoked FROM agent_tokens
+      WHERE token_id = ${tokenId}`;
+    if (!row) return { status: 'not_found', grantId: null, revoked: 0 };
+    let revoked: number;
+    if (row.grant_id) {
+      await lockGrant(tx, row.grant_id);
+      revoked = await revokeGrantTokens(tx, row.grant_id);
+    } else {
+      const rows = await tx`
+        UPDATE agent_tokens SET revoked_at = now()
+        WHERE token_id = ${tokenId} AND revoked_at IS NULL RETURNING token_id`;
+      revoked = rows.length;
+    }
+    if (revoked === 0) return { status: 'already_revoked', grantId: row.grant_id, revoked: 0 };
     await logActivity(tx, {
       kind: 'token_revoke',
       actor: 'owner',
       tokenId,
-      targetKind: 'agent_token',
-      targetId: tokenId,
-      details: { agent_id: row.agent_id },
+      targetKind: row.grant_id ? 'oauth_grant' : 'agent_token',
+      targetId: row.grant_id ?? tokenId,
+      details: {
+        agent_id: row.agent_id,
+        ...(row.grant_id ? { grant_id: row.grant_id, revoked_count: revoked } : {}),
+      },
     });
-    return 'revoked';
+    return { status: 'revoked', grantId: row.grant_id, revoked };
   });
 }
 
@@ -120,6 +162,7 @@ export interface TokenListing {
   token_id: string;
   agent_id: string;
   kind: TokenKind;
+  grant_id: string | null;
   created_at: Date;
   last_used_at: Date | null;
   expires_at: Date | null;
@@ -129,5 +172,5 @@ export interface TokenListing {
 /** `nacre token list`: never secrets or hashes. */
 export const listTokens = (sql: Sql): Promise<TokenListing[]> =>
   sql<TokenListing[]>`
-    SELECT token_id, agent_id, kind, created_at, last_used_at, expires_at, revoked_at
+    SELECT token_id, agent_id, kind, grant_id, created_at, last_used_at, expires_at, revoked_at
     FROM agent_tokens ORDER BY created_at`;

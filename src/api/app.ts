@@ -1,23 +1,29 @@
 import { Hono } from 'hono';
 import { requestId } from 'hono/request-id';
 import { buildInfo } from '../shared/build-info.js';
-import { type ApiConfig, mcpResource } from '../shared/config.js';
+import { type ApiConfig, mcpResource, resourceMetadataUrl } from '../shared/config.js';
 import type { Sql } from '../shared/db/sql.js';
 import type { Logger } from '../shared/logger.js';
 import { authShape, tokenAuth } from './auth.js';
 import type { AppEnv } from './env.js';
 import { createMcpEndpoint } from './mcp.js';
+import { type OAuthLimits, oauthRoutes } from './oauth/routes.js';
 import { originCheck } from './origin.js';
 
 export interface AppDeps {
   sql: Sql;
-  config: Pick<ApiConfig, 'TOKEN_PEPPER' | 'PUBLIC_API_URL' | 'allowedOrigins'>;
+  config: Pick<
+    ApiConfig,
+    'TOKEN_PEPPER' | 'PUBLIC_API_URL' | 'allowedOrigins' | 'OWNER_PASSWORD_HASH'
+  >;
   log: Logger;
+  /** Overrides the OAuth rate limits (spec §9.3 values by default); tests use it. */
+  oauthLimits?: Partial<OAuthLimits>;
 }
 
 const HEALTH_DB_TIMEOUT_MS = 3000;
 
-export function createApp({ sql, config, log }: AppDeps) {
+export function createApp({ sql, config, log, oauthLimits }: AppDeps) {
   const app = new Hono<AppEnv>();
 
   app.use(requestId());
@@ -37,6 +43,9 @@ export function createApp({ sql, config, log }: AppDeps) {
         agent_id: auth?.agentId,
         token_id: auth?.tokenId,
         auth_denied: c.get('authDenied'),
+        // Never codes, verifiers, tokens or the password: the step and outcome only.
+        oauth: c.get('oauth'),
+        client_id_is_url: c.get('oauthClientIdIsUrl'),
         mcp_protocol: c.req.header('mcp-protocol-version'),
         mcp_method: c.req.header('mcp-method'),
         user_agent: c.req.header('user-agent'),
@@ -70,10 +79,13 @@ export function createApp({ sql, config, log }: AppDeps) {
       mcpResource: mcpResource(config),
       route: 'mcp',
       log,
+      resourceMetadataUrl: resourceMetadataUrl(config),
     }),
   );
   const mcp = createMcpEndpoint(log);
   app.all('/mcp', (c) => mcp(c.req.raw, c.get('auth')));
+
+  app.route('/', oauthRoutes({ sql, config, log, limits: oauthLimits }));
 
   return app;
 }

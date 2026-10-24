@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isArgon2idPhc } from './password.js';
 
 const logLevel = z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']);
 
@@ -27,10 +28,17 @@ const apiEnv = z
     LOG_LEVEL: logLevel.default('info'),
     // Connects as nacre_app (spec §4 roles), never as the owner.
     DATABASE_URL: databaseUrl,
-    // HMAC key for token secrets (and, in task 3b, OAuth codes). Changing it invalidates every token.
+    // HMAC key for token secrets, OAuth codes and the consent form's signature. Changing it
+    // invalidates every token.
     TOKEN_PEPPER: z.string().min(32, 'must be at least 32 characters'),
     PUBLIC_API_URL: origin.transform(normalizeOrigin),
     PUBLIC_APP_URL: origin.transform(normalizeOrigin).optional(),
+    // argon2id PHC string from `nacre owner-password hash`; the OAuth consent form checks it.
+    // Optional: unset, the consent form answers 503 and everything else still works.
+    OWNER_PASSWORD_HASH: z
+      .string()
+      .refine(isArgon2idPhc, 'must be an argon2id PHC string from `nacre owner-password hash`')
+      .optional(),
     // Comma-separated origins allowed to call /mcp from a browser (spec §11).
     ALLOWED_ORIGINS: z.string().optional(),
     // The image sets production (Dockerfile); there the public URLs must be https.
@@ -110,3 +118,7 @@ export const loadDbCliConfig = (env: NodeJS.ProcessEnv = process.env): DbCliConf
 /** The one protected resource (spec §9.3): OAuth access tokens are valid only for this. */
 export const mcpResource = (config: Pick<ApiConfig, 'PUBLIC_API_URL'>): string =>
   `${config.PUBLIC_API_URL}/mcp`;
+
+/** Where `/mcp`'s protected-resource metadata lives (RFC 9728 §3.1: the path after the well-known part). */
+export const resourceMetadataUrl = (config: Pick<ApiConfig, 'PUBLIC_API_URL'>): string =>
+  `${config.PUBLIC_API_URL}/.well-known/oauth-protected-resource/mcp`;

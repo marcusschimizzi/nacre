@@ -3,17 +3,20 @@
 //   nacre token create --agent <id> [--client-kind <kind>] [--note <text>] [--expires-at <iso>]
 //   nacre token revoke <token_id>
 //   nacre token list
+//   nacre owner-password hash   (prints OWNER_PASSWORD_HASH; prompts, or reads stdin when piped)
 //   nacre db migrate      (deploy step, as the owner: dbmate up + a `system` activity entry)
 //   nacre db app-login    (deploy step, as the owner: nacre_app LOGIN from NACRE_APP_DB_PASSWORD)
 import { existsSync } from 'node:fs';
 import { loadDbCliConfig, loadTokenCliConfig } from '../shared/config.js';
 import * as db from './db.js';
+import * as ownerPassword from './owner-password.js';
 import * as token from './token.js';
 
 const USAGE = `usage:
   nacre token create --agent <agent_id> [--client-kind <kind>] [--note <text>] [--expires-at <iso>]
   nacre token revoke <token_id>
   nacre token list
+  nacre owner-password hash
   nacre db migrate
   nacre db app-login`;
 
@@ -33,6 +36,10 @@ async function main(args: string[]): Promise<number> {
       await token.list(config.DATABASE_URL);
       return 0;
     }
+  }
+  if (group === 'owner-password' && command === 'hash' && rest.length === 0) {
+    await ownerPassword.hash();
+    return 0;
   }
   if (group === 'db') {
     const config = loadDbCliConfig();

@@ -12,6 +12,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
     "skipLibCheck": true,
     "noEmit": true
   },
