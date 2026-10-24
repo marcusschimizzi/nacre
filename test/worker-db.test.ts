@@ -4,7 +4,7 @@ import { createSql, type Sql } from '../src/shared/db/sql.js';
 import { budgetState } from '../src/worker/budget.js';
 import { insertRunningRun } from '../src/worker/claims.js';
 import { ExtractorError } from '../src/worker/extractor.js';
-import { claimJob, MAX_ATTEMPTS } from '../src/worker/jobs.js';
+import { claimJob, MAX_ATTEMPTS, refreshLock } from '../src/worker/jobs.js';
 import { drain, runOnce, runWorker } from '../src/worker/loop.js';
 import { OpenAiExtractor } from '../src/worker/openai.js';
 import { configHash } from '../src/worker/process.js';
@@ -501,6 +501,47 @@ describe.skipIf(!adminUrl)('worker against Postgres, as nacre_app', () => {
       expect(
         (await activityFor(e, 'extraction_run')).map((a) => (a.details as { chunk: number }).chunk),
       ).toEqual([1, 2, 2, 3]);
+    });
+
+    it('locked_at is refreshed at the start of each chunk, so a long body stays locked', async () => {
+      const filler = 'lorem ipsum dolor '.repeat(270);
+      const [e = ''] = await seedEvents(s, [
+        { content: [`One. ${filler}`, `Two. ${filler}`, `Three. ${filler}`].join('\n\n') },
+      ]);
+      // A second ahead: run_after has microseconds, a claim at the same millisecond would miss it.
+      const t0 = new Date(Date.now() + 1000);
+      let clock = t0;
+      const lockedAtCall: (number | undefined)[] = [];
+      const fake = new FakeExtractor(async () => {
+        lockedAtCall.push((await jobFor(e)).locked_at?.getTime());
+        // Each chunk takes 4 minutes: three of them outlast the 10-minute stale-lock window.
+        clock = new Date(clock.getTime() + 4 * 60_000);
+        return [];
+      });
+      expect(await drain(makeDeps(sql, fake, { now: () => clock }))).toEqual([{ outcome: 'done' }]);
+      expect(lockedAtCall).toEqual([
+        t0.getTime(),
+        t0.getTime() + 4 * 60_000,
+        t0.getTime() + 8 * 60_000,
+      ]);
+      expect((await jobFor(e)).locked_at).toBeNull();
+    });
+
+    it('the refresh only touches a job this claim still holds', async () => {
+      const [e = ''] = await seedEvents(s, [{ content: PNPM }]);
+      // A second ahead: run_after has microseconds, a claim at the same millisecond would miss it.
+      const t0 = new Date(Date.now() + 1000);
+      const first = await claimJob(sql, t0);
+      if (!first) throw new Error('no job');
+      // The lock goes stale and another worker reclaims the job.
+      const t1 = new Date(t0.getTime() + 11 * 60_000);
+      const second = await claimJob(sql, t1);
+      expect(second?.jobId).toBe(first.jobId);
+      const t2 = new Date(t1.getTime() + 60_000);
+      expect(await refreshLock(sql, first, t2)).toBe(false);
+      expect((await jobFor(e)).locked_at?.getTime()).toBe(t1.getTime());
+      expect(second && (await refreshLock(sql, second, t2))).toBe(true);
+      expect((await jobFor(e)).locked_at?.getTime()).toBe(t2.getTime());
     });
 
     it('a run left running by a crash is closed as abandoned', async () => {

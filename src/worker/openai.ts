@@ -83,11 +83,15 @@ const claimSchema = z.strictObject({
 
 const outputSchema = z.strictObject({ claims: z.array(claimSchema) });
 
-/** Lowercase snake_case: runs of anything but a-z and 0-9 become `_`, trimmed at both ends. */
+/**
+ * Lowercase snake_case: NFC-normalized, runs of anything but letters, combining marks (Indic and Thai
+ * vowel signs) and digits, in any script, become `_`, trimmed at both ends. ASCII input behaves as before.
+ */
 export function normalizeAttribute(attribute: string): string {
   return attribute
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
+    .normalize('NFC')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '_')
     .replace(/^_|_$/g, '');
 }
 

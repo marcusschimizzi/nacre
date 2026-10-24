@@ -237,8 +237,20 @@ describe('OpenAiExtractor', () => {
     ['Preferred Package Manager', 'preferred_package_manager'],
     ['  contact-for: data contract!! ', 'contact_for_data_contract'],
     ['__employer__', 'employer'],
-    ['日本 city', 'city'],
     ['!!!', ''],
+    ['', ''],
+    ['name2 v2', 'name2_v2'],
+    // Unicode: letters and digits of any script survive, lowercased and NFC-normalized.
+    ['café', 'café'],
+    ['Café Préféré', 'café_préféré'],
+    ['cafe\u0301', 'caf\u00e9'],
+    ['名前', '名前'],
+    ['日本 city', '日本_city'],
+    ['имя пользователя', 'имя_пользователя'],
+    ['नाम', 'नाम'],
+    ['année-2026!', 'année_2026'],
+    ['¿qué?', 'qué'],
+    ['—·—', ''],
   ])('normalizes attribute %j to %j', (input, expected) => {
     expect(normalizeAttribute(input)).toBe(expected);
   });

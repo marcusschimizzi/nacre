@@ -49,6 +49,19 @@ export async function claimJob(sql: Sql, now: Date): Promise<ClaimedJob | null> 
   return row ? { jobId: Number(row.job_id), eventId: row.event_id, attempts: row.attempts } : null;
 }
 
+/**
+ * Heartbeat, at the start of each chunk: moves `locked_at` forward so a long body doesn't outlast
+ * STALE_LOCK_MS while its worker is alive. Guarded by this claim (`attempts` grows with every
+ * claim, so a reclaimed job no longer matches); false when this worker no longer holds the job.
+ */
+export async function refreshLock(tx: Db, job: ClaimedJob, now: Date): Promise<boolean> {
+  const rows = await tx`
+    UPDATE jobs SET locked_at = ${now}
+    WHERE job_id = ${job.jobId} AND status = 'running' AND attempts = ${job.attempts}
+    RETURNING job_id`;
+  return rows.length > 0;
+}
+
 /** Success or skip. Runs inside the last transaction of the job, so the record and `done` commit together. */
 export async function completeJob(tx: Db, jobId: number): Promise<void> {
   await tx`

@@ -26,6 +26,7 @@ import {
   deferJob,
   failJob,
   MAX_ATTEMPTS,
+  refreshLock,
   retryJob,
 } from './jobs.js';
 import { skipReason } from './skip.js';
@@ -294,6 +295,9 @@ async function pipeline(
       await deferJob(sql, job.jobId, deps.now(), null);
       return { outcome: 'released' };
     }
+
+    // Keep the lock fresh: a body of many slow chunks can outlast the stale-lock window.
+    await refreshLock(sql, job, deps.now());
 
     const runId = await insertRunningRun(sql, id, { eventId: event.event_id, inputEventIds });
     totals.runId = runId;
