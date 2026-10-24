@@ -169,7 +169,7 @@ Give the `/v1` sub-app an `onError` that logs **only** `{ request_id, err_name, 
       ```
     - In a `psql` on the Railway database (for example `railway connect`): `SELECT event_id, redactions, clock_flags FROM events ORDER BY received_at DESC LIMIT 1;`, `SELECT body FROM event_content WHERE event_id = '<id>';` (markers, no secret), `SELECT kind, ref_id, status FROM jobs ORDER BY job_id DESC LIMIT 1;` (`extract`, `queued`), and the `event_append` row in `activity_log`.
     - In the `api` logs, find the request line: `ingest: "created"`, no content anywhere.
-- **Spec:** leave `docs/slice-1-spec.md` alone. The numbers and rules this brief sets fill gaps the spec leaves open, and Marcus hasn't signed them off. In the PR description add a **"Spec updates to apply"** list: the limits (§6), the 413/422/429/403 behavior, the duplicate response and mismatch rule, `source_client = agent_id`, the two extra redaction kinds and the exact kind list, and the `future` tolerance gap. Marcus folds them into v0.2.16.
+- **Spec:** leave `docs/slice-1-spec.md` alone; the repo copy is synced from Marcus's design copy after merge. In the PR description add a **"Spec updates to apply"** list only for anything the build finds that the spec doesn't already say.
 
 ## Out of scope
 - `POST /v1/hooks/*`, the hook script and spool, `remember`, `recall`, `GET /v1/provenance/:id` (tasks 10 and 11).
